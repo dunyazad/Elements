@@ -5,8 +5,58 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Neon.Controls"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Title="Neon"
+        Width="1200"
+        Height="800">
+
     <Grid>
-        <local:HeliumHost />
+        <!-- 행 정의 -->
+        <Grid.RowDefinitions>
+            <!-- Helium 렌더 영역 -->
+            <RowDefinition Height="*" />
+
+            <!-- Splitter -->
+            <RowDefinition Height="5" />
+
+            <!-- 로그 영역 -->
+            <RowDefinition Height="200" />
+        </Grid.RowDefinitions>
+
+        <!-- ========================= -->
+        <!-- Helium OpenGL 렌더 영역 -->
+        <!-- ========================= -->
+        <local:HeliumHost x:Name="HeliumView" Grid.Row="0"/>
+
+        <!-- ========================= -->
+        <!-- GridSplitter -->
+        <!-- ========================= -->
+        <GridSplitter Grid.Row="1"
+                  Height="6"
+                  Background="#666"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Stretch"
+                  ShowsPreview="True"
+                  Cursor="SizeNS"
+                  Panel.ZIndex="10"/>
+
+        <!-- ========================= -->
+        <!-- 로그 창 -->
+        <!-- ========================= -->
+        <Border Grid.Row="2"
+                Background="#111"
+                BorderBrush="#333"
+                BorderThickness="1">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <TextBox x:Name="LogTextBox"
+                         Background="#111"
+                         Foreground="#0F0"
+                         FontFamily="Consolas"
+                         FontSize="12"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         BorderThickness="0"/>
+            </ScrollViewer>
+        </Border>
     </Grid>
 </Window>

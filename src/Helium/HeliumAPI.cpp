@@ -1,10 +1,14 @@
 #include "pch.h"
 #include "framework.h"
+#include <glad/glad.h>
 #include <gl/GL.h>
+#include <Monitor.h>
 
 static HDC   g_hdc = nullptr;
 static HGLRC g_hglrc = nullptr;
 static bool  g_ready = false;
+static int g_lastW = -1;
+static int g_lastH = -1;
 
 bool Helium_Initialize(HWND hwnd)
 {
@@ -32,6 +36,26 @@ bool Helium_Initialize(HWND hwnd)
     if (!wglMakeCurrent(g_hdc, g_hglrc))
         return false;
 
+    if (!gladLoadGL())
+    {
+        printf("gladLoadGL failed\n");
+        return false;
+    }
+
+    {
+        const char* vendor = (const char*)glGetString(GL_VENDOR);
+        const char* renderer = (const char*)glGetString(GL_RENDERER);
+        const char* version = (const char*)glGetString(GL_VERSION);
+
+        printf(vendor);
+        printf("\n");
+        printf(renderer);
+        printf("\n");
+        printf(version);
+        printf("\n");
+        fflush(stdout);
+    }
+
     glClearColor(0.1f, 0.2f, 0.4f, 1.0f);
 
     g_ready = true;
@@ -45,6 +69,12 @@ void Helium_Resize(int width, int height)
 
     if (width <= 0 || height <= 0)
         return;
+
+    if (width == g_lastW && height == g_lastH)
+        return;
+
+    g_lastW = width;
+    g_lastH = height;
 
     glViewport(0, 0, width, height);
 }
@@ -75,4 +105,13 @@ void Helium_Shutdown()
     }
 
     g_ready = false;
+}
+
+void Helium_CreateConsole()
+{
+	AllocConsole();
+    
+    FILE* fp;
+    freopen_s(&fp, "CONOUT$", "w", stdout);
+    setvbuf(stdout, nullptr, _IONBF, 0);
 }

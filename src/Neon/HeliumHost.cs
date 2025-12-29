@@ -12,23 +12,27 @@ namespace Neon.Controls
         protected override HandleRef BuildWindowCore(HandleRef hwndParent)
         {
             _hwnd = NativeMethods.CreateWindowEx(
-                0,
-                "STATIC",
-                "",
-                NativeMethods.WS_CHILD | NativeMethods.WS_VISIBLE,
-                0,
-                0,
-                (int)Width,
-                (int)Height,
-                hwndParent.Handle,
-                IntPtr.Zero,
-                IntPtr.Zero,
-                IntPtr.Zero);
+            0,
+            "STATIC",
+            "",
+            NativeMethods.WS_CHILD |
+            NativeMethods.WS_VISIBLE |
+            NativeMethods.WS_CLIPCHILDREN |
+            NativeMethods.WS_CLIPSIBLINGS,
+            0,
+            0,
+            (int)ActualWidth,
+            (int)ActualHeight,
+            hwndParent.Handle,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            IntPtr.Zero);
 
             if (_hwnd == IntPtr.Zero)
                 throw new InvalidOperationException("Failed to create Helium host window.");
 
             HeliumNative.Helium_Initialize(_hwnd);
+
             return new HandleRef(this, _hwnd);
         }
 

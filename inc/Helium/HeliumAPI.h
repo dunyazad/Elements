@@ -12,4 +12,6 @@ extern "C"
     HELIUM_API void Helium_Resize(int width, int height);
     HELIUM_API void Helium_Render();
     HELIUM_API void Helium_Shutdown();
+
+    HELIUM_API void Helium_CreateConsole();
 }

@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Neon")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5ede15232093bc69a1e1017eee84fa8ccc8d4872")]
 [assembly: System.Reflection.AssemblyProductAttribute("Neon")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Neon")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
