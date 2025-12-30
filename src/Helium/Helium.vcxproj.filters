@@ -27,6 +27,18 @@
     <ClInclude Include="..\..\inc\Helium\HeliumAPI.h">
       <Filter>헤더 파일\Helium</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\GraphicsBuffer.h">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\HeliumCommon.h">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Color.hpp">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Morton3D.hpp">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -42,6 +54,9 @@
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="Monitor.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="GraphicsBuffer.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

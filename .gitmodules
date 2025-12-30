@@ -1,0 +1,12 @@
+[submodule "External/Eigen"]
+	path = External/Eigen
+	url = https://github.com/PX4/eigen.git
+[submodule "External/entt"]
+	path = External/entt
+	url = https://github.com/skypjack/entt.git
+[submodule "External/json"]
+	path = External/json
+	url = https://github.com/nlohmann/json.git
+[submodule "External/RxTx"]
+	path = External/RxTx
+	url = https://github.com/dunyazad/RxTx.git

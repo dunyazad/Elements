@@ -25,7 +25,7 @@ namespace Neon
             NeonLogger.OnBatch = OnLogBatch;
 
             _logDelegate = OnHeliumLog;
-            HeliumNative.Helium_SetLogCallback(_logDelegate);
+            HeliumNative.He_SetLogCallback(_logDelegate);
 
             NeonLogger.Log("system", "Application started");
 
@@ -111,7 +111,7 @@ namespace Neon
 
         private void OnRendering(object? sender, EventArgs e)
         {
-            try { HeliumNative.Helium_Render(); }
+            try { HeliumNative.He_Render(); }
             catch { }
         }
 

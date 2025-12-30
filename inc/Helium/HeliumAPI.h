@@ -8,10 +8,10 @@
 
 enum HeliumLogLevel
 {
-    HELIUM_LOG_INFO = 0,
-    HELIUM_LOG_WARN = 1,
-    HELIUM_LOG_ERROR = 2,
-    HELIUM_LOG_DEBUG = 3
+    HE_LOG_INFO = 0,
+    HE_LOG_WARN = 1,
+    HE_LOG_ERROR = 2,
+    HE_LOG_DEBUG = 3
 };
 
 typedef void(*HeliumLogCallback)(
@@ -21,17 +21,17 @@ typedef void(*HeliumLogCallback)(
 
 extern "C"
 {
-    HELIUM_API bool Helium_Initialize(HWND hwnd);
-    HELIUM_API void Helium_Resize(int width, int height);
-    HELIUM_API void Helium_Render();
-    HELIUM_API void Helium_Shutdown();
+    HELIUM_API bool He_Initialize(HWND hwnd);
+    HELIUM_API void He_Resize(int width, int height);
+    HELIUM_API void He_Render();
+    HELIUM_API void He_Shutdown();
 
-    HELIUM_API void Helium_CreateConsole();
+    HELIUM_API void He_CreateConsole();
 
-    HELIUM_API void Helium_SetLogCallback(HeliumLogCallback cb);
+    HELIUM_API void He_SetLogCallback(HeliumLogCallback cb);
 }
 
-void Helium_Log(const char* fmt, ...);
-void Helium_Log(const char* key, const char* fmt, ...);
-void Helium_Log(HeliumLogLevel level, const char* fmt, ...);
-void Helium_Log(HeliumLogLevel level, const char* key, const char* fmt, ...);
+void He_Log(const char* fmt, ...);
+void He_Log(const char* key, const char* fmt, ...);
+void He_Log(HeliumLogLevel level, const char* fmt, ...);
+void He_Log(HeliumLogLevel level, const char* key, const char* fmt, ...);

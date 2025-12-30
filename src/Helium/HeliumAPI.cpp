@@ -1,8 +1,9 @@
 #include "pch.h"
-#include "framework.h"
+
 #include <glad/glad.h>
 #include <gl/GL.h>
 #include <Monitor.h>
+
 
 static HDC   g_hdc = nullptr;
 static HGLRC g_hglrc = nullptr;
@@ -11,9 +12,9 @@ static int g_lastW = -1;
 static int g_lastH = -1;
 static HeliumLogCallback g_LogCallback = nullptr;
 
-bool Helium_Initialize(HWND hwnd)
+bool He_Initialize(HWND hwnd)
 {
-	Helium_Log("Helium_Initialize called\n");
+	He_Log("He_Initialize called\n");
 
     if (!IsWindow(hwnd))
         return false;
@@ -51,10 +52,10 @@ bool Helium_Initialize(HWND hwnd)
         const char* version = (const char*)glGetString(GL_VERSION);
         const char* extensions = (const char*)glGetString(GL_EXTENSIONS);
 
-        Helium_Log(HELIUM_LOG_INFO, "Helium_Native", vendor);
-        Helium_Log(HELIUM_LOG_WARN, "Helium_Native", renderer);
-        Helium_Log(HELIUM_LOG_DEBUG, "Helium_Native", version);
-        Helium_Log(HELIUM_LOG_ERROR, "Helium_Native", extensions);
+        He_Log(HE_LOG_INFO, "He_Native", vendor);
+        He_Log(HE_LOG_WARN, "He_Native", renderer);
+        He_Log(HE_LOG_DEBUG, "He_Native", version);
+        He_Log(HE_LOG_ERROR, "He_Native", extensions);
     }
 
     glClearColor(0.3f, 0.5f, 0.7f, 1.0f);
@@ -63,7 +64,7 @@ bool Helium_Initialize(HWND hwnd)
     return true;
 }
 
-void Helium_Resize(int width, int height)
+void He_Resize(int width, int height)
 {
     if (!g_ready)
         return;
@@ -80,7 +81,7 @@ void Helium_Resize(int width, int height)
     glViewport(0, 0, width, height);
 }
 
-void Helium_Render()
+void He_Render()
 {
     if (!g_ready)
         return;
@@ -90,7 +91,7 @@ void Helium_Render()
     SwapBuffers(g_hdc);
 }
 
-void Helium_Shutdown()
+void He_Shutdown()
 {
     if (g_hglrc)
     {
@@ -108,7 +109,7 @@ void Helium_Shutdown()
     g_ready = false;
 }
 
-void Helium_CreateConsole()
+void He_CreateConsole()
 {
 	AllocConsole();
     
@@ -117,27 +118,27 @@ void Helium_CreateConsole()
     setvbuf(stdout, nullptr, _IONBF, 0);
 }
 
-void Helium_SetLogCallback(HeliumLogCallback cb)
+void He_SetLogCallback(HeliumLogCallback cb)
 {
     g_LogCallback = cb;
 }
 
-void Helium_Log(const char* fmt, ...)
+void He_Log(const char* fmt, ...)
 {
-	Helium_Log(HELIUM_LOG_INFO, "", fmt);
+	He_Log(HE_LOG_INFO, "", fmt);
 }
 
-void Helium_Log(const char* key, const char* fmt, ...)
+void He_Log(const char* key, const char* fmt, ...)
 {
-    Helium_Log(HELIUM_LOG_INFO, key, fmt);
+    He_Log(HE_LOG_INFO, key, fmt);
 }
 
-void Helium_Log(HeliumLogLevel level, const char* fmt, ...)
+void He_Log(HeliumLogLevel level, const char* fmt, ...)
 {
-    Helium_Log(level, "", fmt);
+    He_Log(level, "", fmt);
 }
 
-void Helium_Log(HeliumLogLevel level, const char* key, const char* fmt, ...)
+void He_Log(HeliumLogLevel level, const char* key, const char* fmt, ...)
 {
     if (!g_LogCallback)
         return;

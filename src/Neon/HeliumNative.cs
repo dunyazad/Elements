@@ -4,16 +4,16 @@ using System.Runtime.InteropServices;
 internal static class HeliumNative
 {
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern bool Helium_Initialize(IntPtr hwnd);
+    public static extern bool He_Initialize(IntPtr hwnd);
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern void Helium_Render();
+    public static extern void He_Render();
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern void Helium_Resize(int width, int height);
+    public static extern void He_Resize(int width, int height);
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern void Helium_Shutdown();
+    public static extern void He_Shutdown();
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void HeliumLogDelegate(
@@ -23,5 +23,5 @@ internal static class HeliumNative
     );
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern void Helium_SetLogCallback(HeliumLogDelegate callback);
+    public static extern void He_SetLogCallback(HeliumLogDelegate callback);
 }

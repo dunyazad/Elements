@@ -31,14 +31,14 @@ namespace Neon.Controls
             if (_hwnd == IntPtr.Zero)
                 throw new InvalidOperationException("Failed to create Helium host window.");
 
-            HeliumNative.Helium_Initialize(_hwnd);
+            HeliumNative.He_Initialize(_hwnd);
 
             return new HandleRef(this, _hwnd);
         }
 
         protected override void DestroyWindowCore(HandleRef hwnd)
         {
-            HeliumNative.Helium_Shutdown();
+            HeliumNative.He_Shutdown();
             NativeMethods.DestroyWindow(hwnd.Handle);
             _hwnd = IntPtr.Zero;
         }
@@ -49,7 +49,7 @@ namespace Neon.Controls
 
             if (_hwnd != IntPtr.Zero)
             {
-                HeliumNative.Helium_Resize(
+                HeliumNative.He_Resize(
                     (int)sizeInfo.NewSize.Width,
                     (int)sizeInfo.NewSize.Height);
             }
