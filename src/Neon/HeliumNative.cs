@@ -17,8 +17,10 @@ internal static class HeliumNative
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void HeliumLogDelegate(
-        [MarshalAs(UnmanagedType.LPStr)] string key,
-        [MarshalAs(UnmanagedType.LPStr)] string value);
+        NeonLogger.LogLevel level,
+        [MarshalAs(UnmanagedType.LPStr)] string? key,
+        [MarshalAs(UnmanagedType.LPStr)] string value
+    );
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void Helium_SetLogCallback(HeliumLogDelegate callback);

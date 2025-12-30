@@ -6,17 +6,28 @@ using System.Windows.Threading;
 
 public static class NeonLogger
 {
-    // key, formattedLine
-    public static Action<IReadOnlyList<(string? key, string line)>>? OnBatch;
+    public enum LogLevel
+    {
+        Info,
+        Warn,
+        Error,
+        Debug
+    }
 
-    private static readonly ConcurrentQueue<(string? key, string line)> _queue = new();
-    private static readonly Dictionary<string, int> _counts = new();
+    // key, level, formattedLine
+    public static Action<
+        IReadOnlyList<(string? key, LogLevel level, string line)>
+    >? OnBatch;
+
+    private static readonly ConcurrentQueue<(string? key, LogLevel level, string line)> _queue = new();
+    private static readonly Dictionary<(LogLevel level, string key), int> _counts = new();
+
 
     private static DispatcherTimer? _timer;
     private static bool _running;
 
     private const int FlushIntervalMs = 50;
-    private const int MaxBatchSize = 500;   // 한 번에 UI로 보내는 최대 줄 수
+    private const int MaxBatchSize = 500;
 
     public static void Initialize()
     {
@@ -29,20 +40,32 @@ public static class NeonLogger
 
     public static void Log(string? key, string value)
     {
+        Log(LogLevel.Info, key, value);
+    }
+
+    public static void Log(LogLevel level, string value)
+    {
+        Log(level, null, value);
+    }
+
+    public static void Log(LogLevel level, string? key, string value)
+    {
         if (string.IsNullOrEmpty(key))
         {
-            _queue.Enqueue((null, value));
+            _queue.Enqueue((null, level, value));
         }
         else
         {
-            if (!_counts.TryGetValue(key, out int count))
+            var compositeKey = (level, key);
+
+            if (!_counts.TryGetValue(compositeKey, out int count))
                 count = 0;
 
             count++;
-            _counts[key] = count;
+            _counts[compositeKey] = count;
 
-            string line = $"[{key}][count={count}] {value}";
-            _queue.Enqueue((key, line));
+            string line = $"[{level}][{key}][count={count}] {value}";
+            _queue.Enqueue((key, level, line));
         }
 
         if (!_running)
@@ -54,7 +77,7 @@ public static class NeonLogger
 
     private static void Flush(object? sender, EventArgs e)
     {
-        var batch = new List<(string? key, string line)>(MaxBatchSize);
+        var batch = new List<(string? key, LogLevel level, string line)>(MaxBatchSize);
 
         while (batch.Count < MaxBatchSize && _queue.TryDequeue(out var item))
             batch.Add(item);

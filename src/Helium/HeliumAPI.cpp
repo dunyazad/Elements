@@ -51,10 +51,10 @@ bool Helium_Initialize(HWND hwnd)
         const char* version = (const char*)glGetString(GL_VERSION);
         const char* extensions = (const char*)glGetString(GL_EXTENSIONS);
 
-        Helium_Log("Helium_Native", vendor);
-        Helium_Log("Helium_Native", renderer);
-        Helium_Log("Helium_Native", version);
-        Helium_Log("Helium_Native", extensions);
+        Helium_Log(HELIUM_LOG_INFO, "Helium_Native", vendor);
+        Helium_Log(HELIUM_LOG_WARN, "Helium_Native", renderer);
+        Helium_Log(HELIUM_LOG_DEBUG, "Helium_Native", version);
+        Helium_Log(HELIUM_LOG_ERROR, "Helium_Native", extensions);
     }
 
     glClearColor(0.3f, 0.5f, 0.7f, 1.0f);
@@ -124,10 +124,20 @@ void Helium_SetLogCallback(HeliumLogCallback cb)
 
 void Helium_Log(const char* fmt, ...)
 {
-	Helium_Log("", fmt);
+	Helium_Log(HELIUM_LOG_INFO, "", fmt);
 }
 
 void Helium_Log(const char* key, const char* fmt, ...)
+{
+    Helium_Log(HELIUM_LOG_INFO, key, fmt);
+}
+
+void Helium_Log(HeliumLogLevel level, const char* fmt, ...)
+{
+    Helium_Log(level, "", fmt);
+}
+
+void Helium_Log(HeliumLogLevel level, const char* key, const char* fmt, ...)
 {
     if (!g_LogCallback)
         return;
@@ -139,5 +149,5 @@ void Helium_Log(const char* key, const char* fmt, ...)
     vsnprintf(buffer, sizeof(buffer), fmt, args);
     va_end(args);
 
-    g_LogCallback(key, buffer);
+    g_LogCallback(level, key, buffer);
 }

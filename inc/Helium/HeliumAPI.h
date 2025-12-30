@@ -6,7 +6,18 @@
 #define HELIUM_API __declspec(dllimport)
 #endif
 
-typedef void(*HeliumLogCallback)(const char* key, const char* message);
+enum HeliumLogLevel
+{
+    HELIUM_LOG_INFO = 0,
+    HELIUM_LOG_WARN = 1,
+    HELIUM_LOG_ERROR = 2,
+    HELIUM_LOG_DEBUG = 3
+};
+
+typedef void(*HeliumLogCallback)(
+    int level,
+    const char* key,
+    const char* value);
 
 extern "C"
 {
@@ -22,3 +33,5 @@ extern "C"
 
 void Helium_Log(const char* fmt, ...);
 void Helium_Log(const char* key, const char* fmt, ...);
+void Helium_Log(HeliumLogLevel level, const char* fmt, ...);
+void Helium_Log(HeliumLogLevel level, const char* key, const char* fmt, ...);

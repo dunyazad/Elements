@@ -32,38 +32,62 @@ namespace Neon
             CompositionTarget.Rendering += OnRendering;
         }
 
-        private readonly Dictionary<string, int> _keyToIndex = new();
+        private readonly Dictionary<(NeonLogger.LogLevel level, string key), int> _keyToIndex = new();
 
-        private void OnLogBatch(IReadOnlyList<(string? key, string line)> batch)
+        private void OnLogBatch(IReadOnlyList<(string? key, NeonLogger.LogLevel level, string line)> batch)
         {
-            foreach (var (key, line) in batch)
+            foreach (var (key, level, line) in batch)
             {
                 if (key == null)
                 {
-                    LogList.Items.Add(line);
+                    LogList.Items.Add(MakeItem(level, line));
+                    continue;
                 }
-                else if (_keyToIndex.TryGetValue(key, out int index))
+
+                var id = (level, key);
+
+                if (_keyToIndex.TryGetValue(id, out int index))
                 {
-                    LogList.Items[index] = line;
+                    LogList.Items[index] = MakeItem(level, line);
                 }
                 else
                 {
                     int newIndex = LogList.Items.Count;
-                    LogList.Items.Add(line);
-                    _keyToIndex[key] = newIndex;
+                    LogList.Items.Add(MakeItem(level, line));
+                    _keyToIndex[id] = newIndex;
                 }
-
-                if (LogList.Items.Count > MaxLogLines)
-                    LogList.Items.RemoveAt(0);
             }
-
-            if (_autoScroll && LogList.Items.Count > 0)
-                LogList.ScrollIntoView(LogList.Items[^1]);
         }
 
-        private void OnHeliumLog(string key, string value)
+        private object MakeItem(NeonLogger.LogLevel level, string line)
         {
-            NeonLogger.Log(key, value);
+            Brush color = level switch
+            {
+                NeonLogger.LogLevel.Info => Brushes.LightGray,
+                NeonLogger.LogLevel.Warn => Brushes.Yellow,
+                NeonLogger.LogLevel.Error => Brushes.OrangeRed,
+                NeonLogger.LogLevel.Debug => Brushes.Cyan,
+                _ => Brushes.White
+            };
+
+            return new LogItem(line, color);
+        }
+
+        private sealed class LogItem
+        {
+            public string Text { get; }
+            public Brush Foreground { get; }
+
+            public LogItem(string text, Brush foreground)
+            {
+                Text = text;
+                Foreground = foreground;
+            }
+        }
+
+        private void OnHeliumLog(NeonLogger.LogLevel level, string key, string value)
+        {
+            NeonLogger.Log(level, key, value);
         }
 
         private void LogList_ScrollChanged(object sender, ScrollChangedEventArgs e)

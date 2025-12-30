@@ -59,9 +59,10 @@
 
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <TextBlock Text="{Binding}"
+                        <TextBlock Text="{Binding Text}"
+                       Foreground="{Binding Foreground}"
                        TextWrapping="NoWrap"
-                       Foreground="#0F0"/>
+                       IsHitTestVisible="False"/>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
 
