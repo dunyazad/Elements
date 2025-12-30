@@ -11,6 +11,8 @@
 
 #include <Helium/Components/Components.h>
 
+#include <Helium/Systems/Systems.h>
+
 using Entity = entt::entity;
 //static const Entity InvalidEntity = (Entity)entt::null;
 
@@ -20,7 +22,6 @@ using Dispatcher = entt::dispatcher;
 class HeliumCore
 {
 public:
-    // Singleton Access
     static HeliumCore& GetStaticInstance()
     {
         static HeliumCore instance;
@@ -36,32 +37,31 @@ public:
     Shader* CreateShader(const std::string& name, const std::string& vsCode, const std::string& fsCode);
     Shader* GetShader(const std::string& name);
 
-    // ECS Accessors
     inline Registry& GetRegistry() { return m_Registry; }
     inline Dispatcher& GetDispatcher() { return m_Dispatcher; }
 
-    // Backend Access
     inline IGraphicsBackend* GetGraphicsBackend() { return m_Backend.get(); }
 
-    // Entity Management
+    EventSystem* GetEventSystem() { return m_EventSystem.get(); }
+    InputSystem* GetInputSystem() { return m_InputSystem.get(); }
+
     Entity CreateEntity(const std::string& name);
     Entity GetEntityByName(const std::string& name);
     void RemoveEntity(Entity entity);
 
-    // Callbacks (Game Logic Injection)
     inline void AddOnInitializeCallback(std::function<void()> callback) { m_OnInitializeCallbacks.push_back(callback); }
     inline void AddOnUpdateCallback(std::function<void(float)> callback) { m_OnUpdateCallbacks.push_back(callback); }
     inline void AddOnRenderCallback(std::function<void()> callback) { m_OnRenderCallbacks.push_back(callback); }
     inline void AddOnShutdownCallback(std::function<void()> callback) { m_OnShutdownCallbacks.push_back(callback); }
 
-    // Logging (Helper)
     void Log(const char* key, const char* fmt, ...);
+
+    void OnResize(int width, int height);
 
 private:
     HeliumCore();
     ~HeliumCore();
 
-    // Prevent Copy
     HeliumCore(const HeliumCore&) = delete;
     HeliumCore& operator=(const HeliumCore&) = delete;
 
@@ -69,18 +69,17 @@ private:
     bool m_IsInitialized = false;
     HWND m_hWnd = nullptr;
 
-    // Backend (OpenGL / Vulkan)
     std::unique_ptr<IGraphicsBackend> m_Backend = nullptr;
 
-    // ECS
     Registry m_Registry;
     Dispatcher m_Dispatcher;
 
-    // Entity Mapping
+    std::unique_ptr<EventSystem> m_EventSystem;
+    std::unique_ptr<InputSystem> m_InputSystem;
+
     std::unordered_map<std::string, Entity> m_NameEntityMapping;
     std::unordered_map<Entity, std::string> m_EntityNameMapping;
 
-    // Callbacks
     std::vector<std::function<void()>> m_OnInitializeCallbacks;
     std::vector<std::function<void(float)>> m_OnUpdateCallbacks;
     std::vector<std::function<void()>> m_OnRenderCallbacks;

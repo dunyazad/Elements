@@ -28,6 +28,12 @@
     <Filter Include="헤더 파일\Helium\Backends">
       <UniqueIdentifier>{18c7d996-59d7-4775-86ac-40ad09bff648}</UniqueIdentifier>
     </Filter>
+    <Filter Include="헤더 파일\Helium\Systems">
+      <UniqueIdentifier>{7e8b8276-89b3-4c2d-8653-e5c8301f0a84}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\Systems">
+      <UniqueIdentifier>{f2b948e5-8169-418c-958a-5da9532a86ee}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -69,6 +75,27 @@
     <ClInclude Include="..\..\inc\Helium\Components\Shader.h">
       <Filter>헤더 파일\Helium\Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Systems\Systems.h">
+      <Filter>헤더 파일\Helium\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Systems\HeliumSystem.h">
+      <Filter>헤더 파일\Helium\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Systems\InputSystem.h">
+      <Filter>헤더 파일\Helium\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\HeliumEvents.h">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Systems\EventSystem.h">
+      <Filter>헤더 파일\Helium\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Systems\RenderSystem.h">
+      <Filter>헤더 파일\Helium\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Components\Transform.h">
+      <Filter>헤더 파일\Helium\Components</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -106,6 +133,15 @@
     </ClCompile>
     <ClCompile Include="Components\Shader.cpp">
       <Filter>소스 파일\Component</Filter>
+    </ClCompile>
+    <ClCompile Include="System\InputSystem.cpp">
+      <Filter>소스 파일\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="System\EventSystem.cpp">
+      <Filter>소스 파일\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="System\RenderSystem.cpp">
+      <Filter>소스 파일\Systems</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

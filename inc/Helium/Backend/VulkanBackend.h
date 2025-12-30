@@ -11,6 +11,7 @@ public:
     void Resize(int width, int height) override;
     void Update(float dt) override;
     void Render() override;
+    void Clear(float r, float g, float b, float a) override;
     void DrawScreenQuad() override;
     void Shutdown() override;
 

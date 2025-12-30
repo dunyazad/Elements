@@ -2,6 +2,7 @@
 #include <Helium/HeliumCore.h>
 #include <Helium/Backend/OpenGLBackend.h>
 #include <Helium/Backend/VulkanBackend.h>
+#include <Helium/HeliumEvents.h>
 
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
 
@@ -13,6 +14,12 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
     if (m_IsInitialized) return true;
 
     m_hWnd = hwnd;
+
+    m_EventSystem = std::make_unique<EventSystem>(this);
+    m_EventSystem->Initialize();
+
+    m_InputSystem = std::make_unique<InputSystem>(this);
+    m_InputSystem->Initialize();
 
     BackendType type = static_cast<BackendType>(backendType);
     if (type == BackendType::Vulkan)
@@ -45,6 +52,10 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
 void HeliumCore::Update(float dt)
 {
     if (!m_IsInitialized) return;
+
+    if (m_EventSystem) m_EventSystem->Update(dt);
+
+    if (m_InputSystem) m_InputSystem->Update(dt);
 
     if (m_Backend) m_Backend->Update(dt);
 
@@ -84,6 +95,14 @@ void HeliumCore::Render()
 void HeliumCore::Resize(int width, int height)
 {
     if (m_Backend) m_Backend->Resize(width, height);
+
+    // 2. 이벤트 발생! (이제 다른 시스템들이 이 이벤트를 구독해서 반응함)
+    if (m_EventSystem)
+    {
+        m_EventSystem->Trigger<WindowResizeEvent>(width, height);
+    }
+
+    Log("System", "Resized to %d x %d", width, height);
 }
 
 void HeliumCore::Shutdown()
@@ -93,6 +112,18 @@ void HeliumCore::Shutdown()
     for (auto& callback : m_OnShutdownCallbacks)
     {
         callback();
+    }
+
+    if (m_InputSystem)
+    {
+        m_InputSystem->Shutdown();
+        m_InputSystem.reset();
+    }
+
+    if (m_EventSystem)
+    {
+        m_EventSystem->Shutdown();
+        m_EventSystem.reset();
     }
 
     if (m_Backend)

@@ -33,6 +33,11 @@ void VulkanBackend::Render()
     // TODO: Acquire Image -> Submit Command Buffer -> Present
 }
 
+void VulkanBackend::Clear(float r, float g, float b, float a)
+{
+
+}
+
 void VulkanBackend::DrawScreenQuad()
 {
 
