@@ -1,5 +1,6 @@
 ﻿using Neon.Controls;
 using System;
+using System.Diagnostics;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,11 +12,14 @@ namespace Neon
 {
     public partial class MainWindow : Window
     {
-        private const double LogHeight = 200;
-        private const int MaxLogLines = 100_000;
+        private double _lastLogHeight = 224.0;
+        private const double MinLogHeight = 24.0;
 
         private HeliumLogDelegate _logDelegate;
         private bool _autoScroll = true;
+
+        private readonly Stopwatch _stopwatch = new();
+        private long _lastTicks = 0;
 
         public MainWindow()
         {
@@ -28,6 +32,8 @@ namespace Neon
             HeliumNative.He_SetLogCallback(_logDelegate);
 
             NeonLogger.Log("system", "Application started");
+
+            _stopwatch.Start();
 
             CompositionTarget.Rendering += OnRendering;
         }
@@ -83,6 +89,11 @@ namespace Neon
                 Text = text;
                 Foreground = foreground;
             }
+
+            public override string ToString()
+            {
+                return Text;
+            }
         }
 
         private void OnHeliumLog(NeonLogger.LogLevel level, string key, string value)
@@ -102,16 +113,33 @@ namespace Neon
             {
                 var sb = new StringBuilder();
                 foreach (var item in LogList.SelectedItems)
+                {
+                    // LogItem.ToString()이 호출됨
                     sb.AppendLine(item.ToString());
+                }
 
-                Clipboard.SetText(sb.ToString());
+                if (sb.Length > 0)
+                {
+                    Clipboard.SetText(sb.ToString());
+                }
                 e.Handled = true;
             }
         }
 
         private void OnRendering(object? sender, EventArgs e)
         {
-            try { HeliumNative.He_Render(); }
+            long currentTicks = _stopwatch.ElapsedTicks;
+            float dt = (float)(currentTicks - _lastTicks) / Stopwatch.Frequency;
+            _lastTicks = currentTicks;
+
+            if (dt > 0.1f) dt = 0.1f;
+
+            try
+            {
+                HeliumNative.He_Update(dt);
+
+                HeliumNative.He_Render();
+            }
             catch { }
         }
 
@@ -123,11 +151,24 @@ namespace Neon
 
         private void LogToggle_Click(object sender, RoutedEventArgs e)
         {
-            LogRow.Height = LogToggle.IsChecked == true
-                ? new GridLength(LogHeight)
-                : new GridLength(0);
+            if (LogToggle.IsChecked == true)
+            {
+                // [펼치기] 기억해둔 높이로 복구
+                MainLogRow.Height = new GridLength(_lastLogHeight);
+                LogToggle.Content = "▼ Log";
+            }
+            else
+            {
+                // [접기] 현재 높이를 저장해두고, 버튼 높이(24)만큼만 남김
+                // 단, 현재 높이가 버튼 높이보다 클 때만 저장 (접힌 상태 저장을 방지)
+                if (MainLogRow.Height.Value > MinLogHeight)
+                {
+                    _lastLogHeight = MainLogRow.Height.Value;
+                }
 
-            LogToggle.Content = LogToggle.IsChecked == true ? "▼ Log" : "▲ Log";
+                MainLogRow.Height = new GridLength(MinLogHeight);
+                LogToggle.Content = "▲ Log";
+            }
         }
     }
 }

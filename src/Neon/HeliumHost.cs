@@ -31,7 +31,7 @@ namespace Neon.Controls
             if (_hwnd == IntPtr.Zero)
                 throw new InvalidOperationException("Failed to create Helium host window.");
 
-            HeliumNative.He_Initialize(_hwnd);
+            HeliumNative.He_Initialize(_hwnd, 0);
 
             return new HandleRef(this, _hwnd);
         }

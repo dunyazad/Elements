@@ -16,6 +16,12 @@
     <Filter Include="헤더 파일\Helium">
       <UniqueIdentifier>{0f78f1a1-0888-437c-aac9-58380e8a2bed}</UniqueIdentifier>
     </Filter>
+    <Filter Include="헤더 파일\Helium\Backend">
+      <UniqueIdentifier>{18c7d996-59d7-4775-86ac-40ad09bff648}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\Backend">
+      <UniqueIdentifier>{f63e3800-3fc2-418a-85f1-7b2f390c9873}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -24,7 +30,7 @@
     <ClInclude Include="pch.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\inc\Helium\HeliumAPI.h">
+    <ClInclude Include="..\..\inc\Helium\Helium.h">
       <Filter>헤더 파일\Helium</Filter>
     </ClInclude>
     <ClInclude Include="..\..\inc\Helium\GraphicsBuffer.h">
@@ -39,6 +45,15 @@
     <ClInclude Include="..\..\inc\Helium\Morton3D.hpp">
       <Filter>헤더 파일\Helium</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Backend\GraphicsBackend.h">
+      <Filter>헤더 파일\Helium\Backend</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Backend\OpenGLBackend.h">
+      <Filter>헤더 파일\Helium\Backend</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Backend\VulkanBackend.h">
+      <Filter>헤더 파일\Helium\Backend</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -47,7 +62,7 @@
     <ClCompile Include="pch.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="HeliumAPI.cpp">
+    <ClCompile Include="Helium.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="glad.c">
@@ -57,6 +72,15 @@
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="GraphicsBuffer.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Backend\OpenGLBackend.cpp">
+      <Filter>소스 파일\Backend</Filter>
+    </ClCompile>
+    <ClCompile Include="Backend\VulkanBackend.cpp">
+      <Filter>소스 파일\Backend</Filter>
+    </ClCompile>
+    <ClCompile Include="HeliumLog.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

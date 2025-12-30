@@ -4,20 +4,43 @@
 #include <gl/GL.h>
 #include <Monitor.h>
 
+#include <Helium/Backend/GraphicsBackend.h>
+#include <Helium/Backend/OpenGLBackend.h>
+#include <Helium/Backend/VulkanBackend.h>
 
 static HDC   g_hdc = nullptr;
 static HGLRC g_hglrc = nullptr;
 static bool  g_ready = false;
 static int g_lastW = -1;
 static int g_lastH = -1;
-static HeliumLogCallback g_LogCallback = nullptr;
+static std::unique_ptr<IGraphicsBackend> g_backend = nullptr;
 
-bool He_Initialize(HWND hwnd)
+bool He_Initialize(HWND hwnd, int backendType)
 {
 	He_Log("He_Initialize called\n");
 
     if (!IsWindow(hwnd))
         return false;
+
+    BackendType type = static_cast<BackendType>(backendType);
+
+    if (type == BackendType::Vulkan)
+    {
+        g_backend = std::make_unique<VulanBackend>();
+        He_Log("Selected Backend: Vulkan");
+    }
+    else
+    {
+        g_backend = std::make_unique<OpenGLBackend>();
+        He_Log("Selected Backend: OpenGL");
+    }
+
+    if (!g_backend->Initialize(hwnd))
+    {
+        He_Log(HE_LOG_ERROR, "System", "Failed to initialize backend.");
+        g_backend.reset();
+        return false;
+    }
 
     g_hdc = GetDC(hwnd);
 
@@ -78,7 +101,18 @@ void He_Resize(int width, int height)
     g_lastW = width;
     g_lastH = height;
 
-    glViewport(0, 0, width, height);
+    if (g_ready && g_backend)
+    {
+        g_backend->Resize(width, height);
+    }
+}
+
+HELIUM_API void He_Update(float dt)
+{
+    if (g_ready && g_backend)
+    {
+        g_backend->Update(dt);
+    }
 }
 
 void He_Render()
@@ -86,25 +120,20 @@ void He_Render()
     if (!g_ready)
         return;
 
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    SwapBuffers(g_hdc);
+    if (g_ready && g_backend)
+    {
+        g_backend->Render();
+    }
 }
 
 void He_Shutdown()
 {
-    if (g_hglrc)
+    if (g_backend)
     {
-        wglMakeCurrent(nullptr, nullptr);
-        wglDeleteContext(g_hglrc);
-        g_hglrc = nullptr;
+        g_backend->Shutdown();
+        g_backend.reset();
     }
-
-    if (g_hdc)
-    {
-        ReleaseDC(WindowFromDC(g_hdc), g_hdc);
-        g_hdc = nullptr;
-    }
+    g_ready = false;
 
     g_ready = false;
 }
@@ -116,39 +145,4 @@ void He_CreateConsole()
     FILE* fp;
     freopen_s(&fp, "CONOUT$", "w", stdout);
     setvbuf(stdout, nullptr, _IONBF, 0);
-}
-
-void He_SetLogCallback(HeliumLogCallback cb)
-{
-    g_LogCallback = cb;
-}
-
-void He_Log(const char* fmt, ...)
-{
-	He_Log(HE_LOG_INFO, "", fmt);
-}
-
-void He_Log(const char* key, const char* fmt, ...)
-{
-    He_Log(HE_LOG_INFO, key, fmt);
-}
-
-void He_Log(HeliumLogLevel level, const char* fmt, ...)
-{
-    He_Log(level, "", fmt);
-}
-
-void He_Log(HeliumLogLevel level, const char* key, const char* fmt, ...)
-{
-    if (!g_LogCallback)
-        return;
-
-    char buffer[4096];
-
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buffer, sizeof(buffer), fmt, args);
-    va_end(args);
-
-    g_LogCallback(level, key, buffer);
 }

@@ -4,7 +4,10 @@ using System.Runtime.InteropServices;
 internal static class HeliumNative
 {
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern bool He_Initialize(IntPtr hwnd);
+    public static extern bool He_Initialize(IntPtr hwnd, int backendType);
+
+    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void He_Update(float dt);
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void He_Render();
