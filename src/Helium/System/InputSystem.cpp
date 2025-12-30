@@ -1,12 +1,12 @@
 #include "pch.h"
 #include <Helium/Systems/InputSystem.h>
 #include <Helium/HeliumCore.h>
+#include <Helium/HeliumEvents.h>
 
 InputSystem::InputSystem(HeliumCore* core)
     : HeliumSystem(core)
     , m_MousePos(0.0f, 0.0f)
 {
-    // 상태 배열 초기화
     memset(m_KeyStates, 0, sizeof(m_KeyStates));
     memset(m_PrevKeyStates, 0, sizeof(m_PrevKeyStates));
     memset(m_MouseStates, 0, sizeof(m_MouseStates));
@@ -20,27 +20,64 @@ void InputSystem::Initialize()
 
 void InputSystem::Update(float dt)
 {
+    EventSystem* eventSystem = m_Core->GetEventSystem();
+
     memcpy(m_PrevKeyStates, m_KeyStates, sizeof(m_KeyStates));
-    memcpy(m_PrevMouseStates, m_MouseStates, sizeof(m_MouseStates));
 
     for (int i = 0; i < 256; ++i)
     {
-        m_KeyStates[i] = (GetAsyncKeyState(i) & 0x8000) != 0;
+        bool isDown = (GetAsyncKeyState(i) & 0x8000) != 0;
+        m_KeyStates[i] = isDown;
+
+        if (m_KeyStates[i] != m_PrevKeyStates[i])
+        {
+            int action = isDown ? 1 : 0; // 1: Press, 0: Release
+            int mods = 0; // (필요하면 GetKeyState(VK_CONTROL) 등으로 채움)
+
+            if (eventSystem)
+            {
+                eventSystem->Enqueue<KeyEvent>(i, action, mods);
+            }
+        }
     }
 
-    m_MouseStates[0] = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-    m_MouseStates[1] = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
-    m_MouseStates[2] = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
+    memcpy(m_PrevMouseStates, m_MouseStates, sizeof(m_MouseStates));
+
+    // VK 코드 매핑: Left(0), Right(1), Middle(2)
+    int mouseVKs[3] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON };
+
+    for (int i = 0; i < 3; ++i)
+    {
+        bool isDown = (GetAsyncKeyState(mouseVKs[i]) & 0x8000) != 0;
+        m_MouseStates[i] = isDown;
+
+        if (m_MouseStates[i] != m_PrevMouseStates[i])
+        {
+            int action = isDown ? 1 : 0;
+            if (eventSystem)
+            {
+                eventSystem->Enqueue<MouseButtonEvent>(i, action, 0);
+            }
+        }
+    }
 
     POINT pt;
     if (GetCursorPos(&pt))
     {
-        // 스크린 좌표를 클라이언트(렌더링 영역) 좌표로 변환
-        // (HeliumCore가 HWND를 가지고 있다고 가정)
-        // HWND를 가져오는 방법은 Core에 GetHWND()를 추가하거나 친구 클래스로 접근
-        ScreenToClient(GetActiveWindow(), &pt);
-        m_MousePos.x() = static_cast<float>(pt.x);
-        m_MousePos.y() = static_cast<float>(pt.y);
+        ScreenToClient(m_Core->GetHWND(), &pt);
+        float x = static_cast<float>(pt.x);
+        float y = static_cast<float>(pt.y);
+
+        if (x != m_MousePos.x() || y != m_MousePos.y())
+        {
+            m_MousePos.x() = x;
+            m_MousePos.y() = y;
+
+            if (eventSystem)
+            {
+                eventSystem->Enqueue<MousePositionEvent>(x, y);
+            }
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 #include "pch.h"
 
-#include <Helium/HeliumCommon.h>
+#include <Helium/HeliumLog.h>
 
 static HeliumLogCallback g_LogCallback = nullptr;
 

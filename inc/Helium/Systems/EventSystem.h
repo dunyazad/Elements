@@ -2,6 +2,7 @@
 
 #include <Helium/Systems/HeliumSystem.h>
 #include <entt/entt.hpp>
+#include <Helium/HeliumCommon.h>
 
 class EventSystem : public HeliumSystem
 {

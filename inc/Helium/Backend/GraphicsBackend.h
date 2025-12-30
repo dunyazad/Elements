@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Helium/HeliumCommon.h>
-
 enum class BackendType
 {
     OpenGL = 0,

@@ -96,7 +96,6 @@ void HeliumCore::Resize(int width, int height)
 {
     if (m_Backend) m_Backend->Resize(width, height);
 
-    // 2. 이벤트 발생! (이제 다른 시스템들이 이 이벤트를 구독해서 반응함)
     if (m_EventSystem)
     {
         m_EventSystem->Trigger<WindowResizeEvent>(width, height);

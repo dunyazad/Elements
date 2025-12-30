@@ -118,62 +118,6 @@ struct d4
 	static d4 Invalid() { return d4{ invalid_f64, invalid_f64, invalid_f64, invalid_f64 }; }
 };
 
-struct FrameEvent
-{
-	ui32 frameNo;
-	f32 timeDelta;
-};
-
-struct FrameBufferResizeEvent
-{
-	i32 width = 0;
-	i32 height = 0;
-};
-
-struct KeyEvent
-{
-	i32 keyCode = 0;
-	i32 scanCode = 0;
-	i32 action = 0;
-	i32 mods = 0;
-};
-
-struct MousePositionEvent
-{
-	f64 xpos = 0.0;
-	f64 ypos = 0.0;
-};
-
-struct MouseButtonEvent
-{
-	i32 button = 0;
-	i32 action = 0;
-	i32 mods = 0;
-	f64 xpos = 0.0;
-	f64 ypos = 0.0;
-};
-
-struct MouseWheelEvent
-{
-	f64 xoffset = 0.0;
-	f64 yoffset = 0.0;
-};
-
-struct JoystickEvent
-{
-	float AxisX = 0.0f;
-	float AxisY = 0.0f;
-	float AxisZ = 0.0f;
-	float RotX = 0.0f;
-	float RotY = 0.0f;
-	float RotZ = 0.0f;
-	bool Buttons[16] = {
-		false, false, false, false,
-		false, false, false, false,
-		false, false, false, false,
-		false, false, false, false };
-};
-
 struct PointP
 {
 	f3 position = { 0.0f, 0.0f, 0.0f };

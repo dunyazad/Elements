@@ -4,94 +4,241 @@
         xmlns:local="clr-namespace:Neon.Controls"
         Title="Neon"
         Width="1200"
-        Height="800">
+        Height="800"
+        Background="#333"
+        Foreground="#DDD"
+        PreviewKeyDown="Window_PreviewKeyDown">
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="30"  
+                      ResizeBorderThickness="5" 
+                      GlassFrameThickness="0" 
+                      CornerRadius="0"/>
+    </WindowChrome.WindowChrome>
 
-            <RowDefinition Height="5" />
+    <Window.Resources>
+        <Style TargetType="{x:Type MenuItem}">
+            <Setter Property="Foreground" Value="#DDD"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="10,5,10,5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type MenuItem}">
+                        <Grid>
+                            <Border x:Name="Border" 
+                                    Background="Transparent" 
+                                    BorderThickness="0"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Icon"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="Shortcut"/>
+                                    <ColumnDefinition Width="15"/>
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter Grid.Column="1" 
+                                                  ContentSource="Header" 
+                                                  Margin="{TemplateBinding Padding}"
+                                                  RecognizesAccessKey="True"/>
+                                <TextBlock Grid.Column="2" 
+                                           Text="{TemplateBinding InputGestureText}" 
+                                           Foreground="#888"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Popup x:Name="PART_Popup" 
+                                   AllowsTransparency="True" 
+                                   Focusable="False" 
+                                   IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}" 
+                                   Placement="Bottom" 
+                                   PopupAnimation="Fade">
+                                <Border Background="#222" 
+                                        BorderBrush="#444" 
+                                        BorderThickness="1" 
+                                        Padding="2">
+                                    <StackPanel IsItemsHost="True" 
+                                                KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Role" Value="TopLevelHeader">
+                                <Setter TargetName="PART_Popup" Property="Placement" Value="Bottom"/>
+                            </Trigger>
+                            <Trigger Property="Role" Value="SubmenuItem">
+                                <Setter TargetName="PART_Popup" Property="Placement" Value="Right"/>
+                            </Trigger>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="#444"/>
+                                <Setter TargetName="Border" Property="BorderBrush" Value="#666"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#666"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
-            <RowDefinition x:Name="MainLogRow" Height="224" MinHeight="24" />
-        </Grid.RowDefinitions>
+        <Style x:Key="CaptionButtonStyle" TargetType="Button">
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#AAA"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width" Value="45"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="FontFamily" Value="Marlett"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#444"/>
+                    <Setter Property="Foreground" Value="#FFF"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
 
-        <local:HeliumHost Grid.Row="0"/>
+        <Style x:Key="CloseButtonStyle" TargetType="Button" BasedOn="{StaticResource CaptionButtonStyle}">
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E81123"/>
+                    <Setter Property="Foreground" Value="White"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
 
-        <GridSplitter Grid.Row="1" 
-                      Height="5" 
-                      HorizontalAlignment="Stretch" 
-                      VerticalAlignment="Center"
-                      Background="#444"
-                      ResizeBehavior="PreviousAndNext"/>
-
-        <Grid Grid.Row="2">
+    <Border BorderThickness="1" BorderBrush="#555">
+        <Grid Background="#1E1E1E">
             <Grid.RowDefinitions>
-                <RowDefinition Height="24" />
+                <RowDefinition Height="30" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="5" />
+                <RowDefinition x:Name="MainLogRow" Height="224" MinHeight="24" />
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Background="#222" BorderBrush="#333" BorderThickness="1">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="100" />
-                    </Grid.ColumnDefinitions>
+            <Grid Grid.Row="0" Background="#333">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-                    <ToggleButton x:Name="LogToggle"
-                                  Grid.Column="0"
-                                  Content="▼ Log"
-                                  IsChecked="True"
-                                  Click="LogToggle_Click"
-                                  Background="Transparent"
-                                  Foreground="#AAA"
-                                  BorderThickness="0"
-                                  HorizontalAlignment="Stretch"/>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0,10,0" VerticalAlignment="Center">
+                    <TextBlock Text="Neon" FontWeight="Bold" Foreground="#FFF" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                </StackPanel>
 
-                    <Button Grid.Column="1"
-                            Content="Add Entity"
-                            Click="TestEntity_Click"
-                            Background="#444"
-                            Foreground="#FFF"
-                            BorderThickness="0"/>
-                </Grid>
-            </Border>
+                <Menu Grid.Column="1" 
+                      Background="Transparent" 
+                      WindowChrome.IsHitTestVisibleInChrome="True"
+                      VerticalAlignment="Center"
+                      HorizontalAlignment="Left">
+                    <MenuItem Header="_File">
+                        <MenuItem Header="_Exit" Click="MenuExit_Click" InputGestureText="Alt+F4"/>
+                    </MenuItem>
+                    <MenuItem Header="_View">
+                        <MenuItem Header="Toggle _Log" Click="LogToggle_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Reset Layout"/>
+                    </MenuItem>
+                    <MenuItem Header="_Tools">
+                        <MenuItem Header="Add _Entity" Click="TestEntity_Click"/>
+                    </MenuItem>
+                    <MenuItem Header="_Help">
+                        <MenuItem Header="_About"/>
+                    </MenuItem>
+                </Menu>
 
-            <Border Grid.Row="1"
-                    Background="#111"
-                    BorderBrush="#333"
-                    BorderThickness="1">
-                <ListBox x:Name="LogList"
-                         Background="#111"
-                         Foreground="#0F0"
-                         BorderThickness="0"
-                         FontFamily="Consolas"
-                         FontSize="12"
-                         KeyDown="LogList_KeyDown"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                         ScrollViewer.CanContentScroll="True"
-                         ScrollViewer.ScrollChanged="LogList_ScrollChanged"
-                         SelectionMode="Extended"
-                         VirtualizingPanel.IsVirtualizing="True"
-                         VirtualizingPanel.VirtualizationMode="Recycling">
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Content="0" Style="{StaticResource CaptionButtonStyle}" Click="Min_Click"/>
+                    <Button x:Name="MaxBtn" Content="1" Style="{StaticResource CaptionButtonStyle}" Click="Max_Click"/>
+                    <Button Content="r" Style="{StaticResource CloseButtonStyle}" Click="Close_Click"/>
+                </StackPanel>
+            </Grid>
 
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Text}"
-                                       Foreground="{Binding Foreground}"
-                                       TextWrapping="NoWrap"
-                                       IsHitTestVisible="False"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
+            <local:HeliumHost Grid.Row="1"/>
 
-                    <ListBox.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <VirtualizingStackPanel/>
-                        </ItemsPanelTemplate>
-                    </ListBox.ItemsPanel>
-                </ListBox>
-            </Border>
+            <GridSplitter Grid.Row="2" 
+                          Height="5" 
+                          HorizontalAlignment="Stretch" 
+                          VerticalAlignment="Center"
+                          Background="#444"
+                          ResizeBehavior="PreviousAndNext"/>
+
+            <Grid Grid.Row="3">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="30" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Background="#222" BorderBrush="#333" BorderThickness="1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="100" />
+                        </Grid.ColumnDefinitions>
+
+                        <ToggleButton x:Name="LogToggle"
+                                      Grid.Column="0"
+                                      Content="Log"
+                                      IsChecked="True"
+                                      Click="LogToggle_Click"
+                                      Background="Transparent"
+                                      Foreground="#AAA"
+                                      BorderThickness="0"
+                                      HorizontalAlignment="Stretch"/>
+
+                        <Button Grid.Column="1"
+                                Content="Add Entity"
+                                Click="TestEntity_Click"
+                                Background="#444"
+                                Foreground="#FFF"
+                                BorderThickness="0"/>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="1" Background="#111" BorderBrush="#333" BorderThickness="1">
+                    <ListBox x:Name="LogList"
+                             Background="#111"
+                             Foreground="#0F0"
+                             BorderThickness="0"
+                             FontFamily="Consolas"
+                             FontSize="12"
+                             KeyDown="LogList_KeyDown"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                             ScrollViewer.CanContentScroll="True"
+                             ScrollViewer.ScrollChanged="LogList_ScrollChanged"
+                             SelectionMode="Extended"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling">
+
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Text}"
+                                           Foreground="{Binding Foreground}"
+                                           TextWrapping="NoWrap"
+                                           IsHitTestVisible="False"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel/>
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                    </ListBox>
+                </Border>
+            </Grid>
         </Grid>
-    </Grid>
+    </Border>
 </Window>
-    

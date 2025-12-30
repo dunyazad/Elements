@@ -54,9 +54,9 @@ public:
     inline void AddOnRenderCallback(std::function<void()> callback) { m_OnRenderCallbacks.push_back(callback); }
     inline void AddOnShutdownCallback(std::function<void()> callback) { m_OnShutdownCallbacks.push_back(callback); }
 
-    void Log(const char* key, const char* fmt, ...);
+	inline HWND GetHWND() const { return m_hWnd; }
 
-    void OnResize(int width, int height);
+    void Log(const char* key, const char* fmt, ...);
 
 private:
     HeliumCore();

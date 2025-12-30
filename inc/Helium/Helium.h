@@ -6,6 +6,8 @@
 #define HELIUM_API __declspec(dllimport)
 #endif
 
+#include <Helium/HeliumLog.h>
+
 extern "C"
 {
     HELIUM_API bool He_Initialize(HWND hwnd, int backendType);

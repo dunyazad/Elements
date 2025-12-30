@@ -96,6 +96,9 @@
     <ClInclude Include="..\..\inc\Helium\Components\Transform.h">
       <Filter>헤더 파일\Helium\Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\HeliumLog.h">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
