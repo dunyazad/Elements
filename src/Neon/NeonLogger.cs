@@ -64,7 +64,7 @@ public static class NeonLogger
             count++;
             _counts[compositeKey] = count;
 
-            string line = $"[{level}][{key}][count={count}] {value}";
+            string line = $"[{level}][{key} ({count})] {value}";
             _queue.Enqueue((key, level, line));
         }
 

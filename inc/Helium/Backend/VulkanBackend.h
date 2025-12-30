@@ -4,13 +4,14 @@
 // Vulkan 헤더 필요 (pch.h에 포함하거나 여기서 포함)
 // #include <vulkan/vulkan.h> 
 
-class VulanBackend : public IGraphicsBackend
+class VulkanBackend : public IGraphicsBackend
 {
 public:
     bool Initialize(HWND hwnd) override;
     void Resize(int width, int height) override;
     void Update(float dt) override;
     void Render() override;
+    void DrawScreenQuad() override;
     void Shutdown() override;
 
 private:

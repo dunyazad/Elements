@@ -17,5 +17,6 @@ public:
     virtual void Resize(int width, int height) = 0;
     virtual void Update(float dt) = 0;
     virtual void Render() = 0;
+    virtual void DrawScreenQuad() = 0;
     virtual void Shutdown() = 0;
 };

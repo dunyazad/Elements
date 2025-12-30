@@ -94,9 +94,12 @@
     <ClInclude Include="..\..\inc\Helium\Backend\OpenGLBackend.h" />
     <ClInclude Include="..\..\inc\Helium\Backend\VulkanBackend.h" />
     <ClInclude Include="..\..\inc\Helium\Color.hpp" />
+    <ClInclude Include="..\..\inc\Helium\Components\Components.h" />
+    <ClInclude Include="..\..\inc\Helium\Components\Shader.h" />
     <ClInclude Include="..\..\inc\Helium\GraphicsBuffer.h" />
     <ClInclude Include="..\..\inc\Helium\Helium.h" />
     <ClInclude Include="..\..\inc\Helium\HeliumCommon.h" />
+    <ClInclude Include="..\..\inc\Helium\HeliumCore.h" />
     <ClInclude Include="..\..\inc\Helium\Morton3D.hpp" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
@@ -104,6 +107,7 @@
   <ItemGroup>
     <ClCompile Include="Backend\OpenGLBackend.cpp" />
     <ClCompile Include="Backend\VulkanBackend.cpp" />
+    <ClCompile Include="Components\Shader.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="glad.c">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
@@ -111,6 +115,8 @@
     </ClCompile>
     <ClCompile Include="GraphicsBuffer.cpp" />
     <ClCompile Include="Helium.cpp" />
+    <ClCompile Include="HeliumCommon.cpp" />
+    <ClCompile Include="HeliumCore.cpp" />
     <ClCompile Include="HeliumLog.cpp" />
     <ClCompile Include="Monitor.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>

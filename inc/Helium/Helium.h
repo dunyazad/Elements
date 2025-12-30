@@ -21,4 +21,6 @@ extern "C"
     HELIUM_API void He_CreateConsole();
 
     HELIUM_API void He_SetLogCallback(HeliumLogCallback cb);
+
+    HELIUM_API void He_TestCreateEntity();
 }

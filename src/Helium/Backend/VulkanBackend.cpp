@@ -3,7 +3,7 @@
 
 extern void He_Log(const char* fmt, ...);
 
-bool VulanBackend::Initialize(HWND hwnd)
+bool VulkanBackend::Initialize(HWND hwnd)
 {
     m_hWnd = hwnd;
     He_Log("Initializing Vulkan Backend... (Not implemented fully yet)");
@@ -18,22 +18,27 @@ bool VulanBackend::Initialize(HWND hwnd)
     return true;
 }
 
-void VulanBackend::Resize(int width, int height)
+void VulkanBackend::Resize(int width, int height)
 {
     // TODO: Recreate Swapchain
 }
 
-void VulanBackend::Update(float dt)
+void VulkanBackend::Update(float dt)
 {
 	// TODO: Update Logic
 }
 
-void VulanBackend::Render()
+void VulkanBackend::Render()
 {
     // TODO: Acquire Image -> Submit Command Buffer -> Present
 }
 
-void VulanBackend::Shutdown()
+void VulkanBackend::DrawScreenQuad()
+{
+
+}
+
+void VulkanBackend::Shutdown()
 {
     // TODO: Destroy Vulkan Resources
 }

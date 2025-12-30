@@ -30,18 +30,30 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0"
-                    Background="#222"
-                    BorderBrush="#333"
-                    BorderThickness="1">
-                <ToggleButton x:Name="LogToggle"
-                              Content="▼ Log"
-                              IsChecked="True"
-                              Click="LogToggle_Click"
-                              Background="Transparent"
-                              Foreground="#AAA"
-                              BorderThickness="0"
-                              HorizontalAlignment="Stretch"/>
+            <Border Grid.Row="0" Background="#222" BorderBrush="#333" BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="100" />
+                    </Grid.ColumnDefinitions>
+
+                    <ToggleButton x:Name="LogToggle"
+                                  Grid.Column="0"
+                                  Content="▼ Log"
+                                  IsChecked="True"
+                                  Click="LogToggle_Click"
+                                  Background="Transparent"
+                                  Foreground="#AAA"
+                                  BorderThickness="0"
+                                  HorizontalAlignment="Stretch"/>
+
+                    <Button Grid.Column="1"
+                            Content="Add Entity"
+                            Click="TestEntity_Click"
+                            Background="#444"
+                            Foreground="#FFF"
+                            BorderThickness="0"/>
+                </Grid>
             </Border>
 
             <Border Grid.Row="1"

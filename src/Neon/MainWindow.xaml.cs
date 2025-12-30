@@ -170,5 +170,11 @@ namespace Neon
                 LogToggle.Content = "▲ Log";
             }
         }
+
+        private void TestEntity_Click(object sender, RoutedEventArgs e)
+        {
+            // C++로 요청 보냄 -> HeliumCore가 엔티티 생성 -> 로그 출력됨
+            HeliumNative.He_TestCreateEntity();
+        }
     }
 }

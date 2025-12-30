@@ -16,11 +16,17 @@
     <Filter Include="헤더 파일\Helium">
       <UniqueIdentifier>{0f78f1a1-0888-437c-aac9-58380e8a2bed}</UniqueIdentifier>
     </Filter>
-    <Filter Include="헤더 파일\Helium\Backend">
-      <UniqueIdentifier>{18c7d996-59d7-4775-86ac-40ad09bff648}</UniqueIdentifier>
-    </Filter>
     <Filter Include="소스 파일\Backend">
       <UniqueIdentifier>{f63e3800-3fc2-418a-85f1-7b2f390c9873}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\Component">
+      <UniqueIdentifier>{c5c7d311-d6dd-4b5c-98f9-dbd6268c5297}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\Helium\Components">
+      <UniqueIdentifier>{3842a6ae-baa6-4718-bab8-9c7b89d1614f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\Helium\Backends">
+      <UniqueIdentifier>{18c7d996-59d7-4775-86ac-40ad09bff648}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -46,13 +52,22 @@
       <Filter>헤더 파일\Helium</Filter>
     </ClInclude>
     <ClInclude Include="..\..\inc\Helium\Backend\GraphicsBackend.h">
-      <Filter>헤더 파일\Helium\Backend</Filter>
+      <Filter>헤더 파일\Helium\Backends</Filter>
     </ClInclude>
     <ClInclude Include="..\..\inc\Helium\Backend\OpenGLBackend.h">
-      <Filter>헤더 파일\Helium\Backend</Filter>
+      <Filter>헤더 파일\Helium\Backends</Filter>
     </ClInclude>
     <ClInclude Include="..\..\inc\Helium\Backend\VulkanBackend.h">
-      <Filter>헤더 파일\Helium\Backend</Filter>
+      <Filter>헤더 파일\Helium\Backends</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\HeliumCore.h">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Components\Components.h">
+      <Filter>헤더 파일\Helium\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Components\Shader.h">
+      <Filter>헤더 파일\Helium\Components</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -82,6 +97,15 @@
     </ClCompile>
     <ClCompile Include="HeliumLog.cpp">
       <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="HeliumCore.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="HeliumCommon.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Components\Shader.cpp">
+      <Filter>소스 파일\Component</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

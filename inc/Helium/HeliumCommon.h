@@ -1,5 +1,7 @@
 #pragma once
 
+#define _CRT_SECURE_NO_WARNINGS
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -45,11 +47,8 @@
 #include <unordered_set>
 #include <vector>
 
-
-
 #define SAFE_DELETE(p) { if(nullptr != (p)) { delete (p); (p) = nullptr; } }
 #define SAFE_DELETE_ARRAY(p) { if(nullptr != (p)) { delete[] (p); (p) = nullptr; } }
-
 
 enum HeliumLogLevel
 {
@@ -105,17 +104,17 @@ const std::string EmptyString = "";
 #include <RxTx/RxTx.h>
 
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
-#define GLFW_EXPOSE_NATIVE_WIN32  // Win32 관련 기능을 활성화
-#include <GLFW/glfw3native.h>
+//#include <GLFW/glfw3.h>
+//#define GLFW_EXPOSE_NATIVE_WIN32
+//#include <GLFW/glfw3native.h>
 
-#include "imgui.h"
-#include "imgui_internal.h"
-#include "backends/imgui_impl_glfw.h"
-#include "backends/imgui_impl_opengl3.h"
-#include "implot.h"
+//#include "imgui.h"
+//#include "imgui_internal.h"
+//#include "backends/imgui_impl_glfw.h"
+//#include "backends/imgui_impl_opengl3.h"
+//#include "implot.h"
 
-#define Feather libFeather::GetStaticInstance()
+#define Helium HeliumCore::GetStaticInstance()
 
 #include <Helium/TypeDefinitions.h>
 

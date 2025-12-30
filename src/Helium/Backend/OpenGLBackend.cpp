@@ -31,11 +31,12 @@ bool OpenGLBackend::Initialize(HWND hwnd)
         return false;
     }
 
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f); // OpenGL 기본 배경색
-
-    // 버전 정보 로그
     const char* version = (const char*)glGetString(GL_VERSION);
     He_Log("OpenGL Initialized: %s", version);
+
+    glClearColor(0.3f, 0.5f, 0.7f, 1.0f); // OpenGL 기본 배경색
+
+    InitializeScreenQuad();
 
     return true;
 }
@@ -50,7 +51,7 @@ void OpenGLBackend::Update(float dt)
     std::stringstream ss;
 	ss << "Delta Time: " << dt << " seconds";
 
-    He_Log("dt", "%s\n", ss.str().c_str());
+    He_Log("dt", "%s", ss.str().c_str());
 }
 
 void OpenGLBackend::Render()
@@ -59,9 +60,21 @@ void OpenGLBackend::Render()
     SwapBuffers(m_hDC);
 }
 
+void OpenGLBackend::DrawScreenQuad()
+{
+    glBindVertexArray(m_QuadVAO);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+}
+
 void OpenGLBackend::Shutdown()
 {
+    if (m_QuadVAO) glDeleteVertexArrays(1, &m_QuadVAO);
+    if (m_QuadVBO) glDeleteBuffers(1, &m_QuadVBO);
+    if (m_QuadEBO) glDeleteBuffers(1, &m_QuadEBO);
+
     wglMakeCurrent(nullptr, nullptr);
+
     if (m_hRC)
     {
         wglDeleteContext(m_hRC);
@@ -72,4 +85,36 @@ void OpenGLBackend::Shutdown()
         // WindowFromDC 등은 상황에 따라 생략 가능하나 원칙적으로 Release
         // HWND를 멤버로 저장하지 않았으므로 여기선 생략하거나 상위에서 처리
     }
+}
+
+void OpenGLBackend::InitializeScreenQuad()
+{
+    float vertices[] = {
+         1.0f,  1.0f, 0.0f,  1.0f, 1.0f,
+         1.0f, -1.0f, 0.0f,  1.0f, 0.0f,
+        -1.0f, -1.0f, 0.0f,  0.0f, 0.0f,
+        -1.0f,  1.0f, 0.0f,  0.0f, 1.0f
+    };
+    unsigned int indices[] = { 0, 1, 3, 1, 2, 3 };
+
+    glGenVertexArrays(1, &m_QuadVAO);
+    glGenBuffers(1, &m_QuadVBO);
+    glGenBuffers(1, &m_QuadEBO);
+
+    glBindVertexArray(m_QuadVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_QuadVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_QuadEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    // Position
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    // TexCoord
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindVertexArray(0);
 }

@@ -27,4 +27,9 @@ internal static class HeliumNative
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void He_SetLogCallback(HeliumLogDelegate callback);
+
+
+    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void He_TestCreateEntity();
+
 }
