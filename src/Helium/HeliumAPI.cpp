@@ -9,9 +9,12 @@ static HGLRC g_hglrc = nullptr;
 static bool  g_ready = false;
 static int g_lastW = -1;
 static int g_lastH = -1;
+static HeliumLogCallback g_LogCallback = nullptr;
 
 bool Helium_Initialize(HWND hwnd)
 {
+	Helium_Log("Helium_Initialize called\n");
+
     if (!IsWindow(hwnd))
         return false;
 
@@ -46,17 +49,15 @@ bool Helium_Initialize(HWND hwnd)
         const char* vendor = (const char*)glGetString(GL_VENDOR);
         const char* renderer = (const char*)glGetString(GL_RENDERER);
         const char* version = (const char*)glGetString(GL_VERSION);
+        const char* extensions = (const char*)glGetString(GL_EXTENSIONS);
 
-        printf(vendor);
-        printf("\n");
-        printf(renderer);
-        printf("\n");
-        printf(version);
-        printf("\n");
-        fflush(stdout);
+        Helium_Log("Helium_Native", vendor);
+        Helium_Log("Helium_Native", renderer);
+        Helium_Log("Helium_Native", version);
+        Helium_Log("Helium_Native", extensions);
     }
 
-    glClearColor(0.1f, 0.2f, 0.4f, 1.0f);
+    glClearColor(0.3f, 0.5f, 0.7f, 1.0f);
 
     g_ready = true;
     return true;
@@ -114,4 +115,29 @@ void Helium_CreateConsole()
     FILE* fp;
     freopen_s(&fp, "CONOUT$", "w", stdout);
     setvbuf(stdout, nullptr, _IONBF, 0);
+}
+
+void Helium_SetLogCallback(HeliumLogCallback cb)
+{
+    g_LogCallback = cb;
+}
+
+void Helium_Log(const char* fmt, ...)
+{
+	Helium_Log("", fmt);
+}
+
+void Helium_Log(const char* key, const char* fmt, ...)
+{
+    if (!g_LogCallback)
+        return;
+
+    char buffer[4096];
+
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+
+    g_LogCallback(key, buffer);
 }

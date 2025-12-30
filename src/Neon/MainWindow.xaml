@@ -1,62 +1,77 @@
 ﻿<Window x:Class="Neon.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Neon.Controls"
-        mc:Ignorable="d"
         Title="Neon"
         Width="1200"
         Height="800">
 
     <Grid>
-        <!-- 행 정의 -->
         <Grid.RowDefinitions>
-            <!-- Helium 렌더 영역 -->
+            <!-- Helium -->
             <RowDefinition Height="*" />
 
-            <!-- Splitter -->
-            <RowDefinition Height="5" />
+            <!-- 로그 토글 바 -->
+            <RowDefinition Height="24" />
 
-            <!-- 로그 영역 -->
-            <RowDefinition Height="200" />
+            <!-- 로그 본문 -->
+            <RowDefinition x:Name="LogRow" Height="200" />
         </Grid.RowDefinitions>
 
-        <!-- ========================= -->
-        <!-- Helium OpenGL 렌더 영역 -->
-        <!-- ========================= -->
-        <local:HeliumHost x:Name="HeliumView" Grid.Row="0"/>
+        <!-- Helium 렌더 영역 -->
+        <local:HeliumHost Grid.Row="0"/>
 
-        <!-- ========================= -->
-        <!-- GridSplitter -->
-        <!-- ========================= -->
-        <GridSplitter Grid.Row="1"
-                  Height="6"
-                  Background="#666"
-                  HorizontalAlignment="Stretch"
-                  VerticalAlignment="Stretch"
-                  ShowsPreview="True"
-                  Cursor="SizeNS"
-                  Panel.ZIndex="10"/>
+        <!-- 로그 토글 바 -->
+        <Border Grid.Row="1"
+                Background="#222"
+                BorderBrush="#333"
+                BorderThickness="1">
+            <ToggleButton x:Name="LogToggle"
+                          Content="▼ Log"
+                          IsChecked="True"
+                          Click="LogToggle_Click"
+                          Background="Transparent"
+                          Foreground="#AAA"
+                          BorderThickness="0"
+                          HorizontalAlignment="Stretch"/>
+        </Border>
 
-        <!-- ========================= -->
-        <!-- 로그 창 -->
-        <!-- ========================= -->
+        <!-- 로그 영역 (대량 로그용) -->
         <Border Grid.Row="2"
                 Background="#111"
                 BorderBrush="#333"
                 BorderThickness="1">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <TextBox x:Name="LogTextBox"
-                         Background="#111"
-                         Foreground="#0F0"
-                         FontFamily="Consolas"
-                         FontSize="12"
-                         IsReadOnly="True"
-                         AcceptsReturn="True"
-                         TextWrapping="Wrap"
-                         BorderThickness="0"/>
-            </ScrollViewer>
+
+            <ListBox x:Name="LogList"
+                     Background="#111"
+                     Foreground="#0F0"
+                     BorderThickness="0"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     KeyDown="LogList_KeyDown"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     ScrollViewer.CanContentScroll="True"
+                     ScrollViewer.ScrollChanged="LogList_ScrollChanged"
+                     SelectionMode="Extended"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling">
+
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}"
+                       TextWrapping="NoWrap"
+                       Foreground="#0F0"/>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel/>
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+
+            </ListBox>
         </Border>
     </Grid>
 </Window>
