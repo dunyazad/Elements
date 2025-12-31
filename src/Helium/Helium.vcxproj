@@ -45,11 +45,11 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
-    <IntDir>$(SolutionDir)tmp\$(Configuration)\$(ProjectName)</IntDir>
+    <IntDir>$(SolutionDir)tmp\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
-    <IntDir>$(SolutionDir)tmp\$(Configuration)\$(ProjectName)</IntDir>
+    <IntDir>$(SolutionDir)tmp\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -90,13 +90,19 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\inc\Helium\AttributeBuffer.h" />
     <ClInclude Include="..\..\inc\Helium\Backend\GraphicsBackend.h" />
     <ClInclude Include="..\..\inc\Helium\Backend\OpenGLBackend.h" />
     <ClInclude Include="..\..\inc\Helium\Backend\VulkanBackend.h" />
     <ClInclude Include="..\..\inc\Helium\Color.hpp" />
+    <ClInclude Include="..\..\inc\Helium\Components\Camera.h" />
+    <ClInclude Include="..\..\inc\Helium\Components\CameraManipulator.h" />
     <ClInclude Include="..\..\inc\Helium\Components\Components.h" />
+    <ClInclude Include="..\..\inc\Helium\Components\Light.h" />
+    <ClInclude Include="..\..\inc\Helium\Components\Renderable.h" />
     <ClInclude Include="..\..\inc\Helium\Components\Shader.h" />
     <ClInclude Include="..\..\inc\Helium\Components\Transform.h" />
+    <ClInclude Include="..\..\inc\Helium\EventCallback.hpp" />
     <ClInclude Include="..\..\inc\Helium\GraphicsBuffer.h" />
     <ClInclude Include="..\..\inc\Helium\Helium.h" />
     <ClInclude Include="..\..\inc\Helium\HeliumCommon.h" />
@@ -106,6 +112,7 @@
     <ClInclude Include="..\..\inc\Helium\Morton3D.hpp" />
     <ClInclude Include="..\..\inc\Helium\Systems\EventSystem.h" />
     <ClInclude Include="..\..\inc\Helium\Systems\HeliumSystem.h" />
+    <ClInclude Include="..\..\inc\Helium\Systems\ImmediateModeRenderSystem.h" />
     <ClInclude Include="..\..\inc\Helium\Systems\InputSystem.h" />
     <ClInclude Include="..\..\inc\Helium\Systems\RenderSystem.h" />
     <ClInclude Include="..\..\inc\Helium\Systems\Systems.h" />
@@ -115,6 +122,9 @@
   <ItemGroup>
     <ClCompile Include="Backend\OpenGLBackend.cpp" />
     <ClCompile Include="Backend\VulkanBackend.cpp" />
+    <ClCompile Include="Components\Camera.cpp" />
+    <ClCompile Include="Components\CameraManipulator.cpp" />
+    <ClCompile Include="Components\Renderable.cpp" />
     <ClCompile Include="Components\Shader.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="glad.c">
@@ -135,6 +145,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="System\EventSystem.cpp" />
+    <ClCompile Include="System\ImmediateModeRenderSystem.cpp" />
     <ClCompile Include="System\InputSystem.cpp" />
     <ClCompile Include="System\RenderSystem.cpp" />
   </ItemGroup>

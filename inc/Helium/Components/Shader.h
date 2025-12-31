@@ -2,6 +2,8 @@
 
 #include <Helium/HeliumCommon.h>
 
+#include <Eigen/Dense>
+
 class Shader
 {
 public:

@@ -1,43 +1,42 @@
 #pragma once
 
+#include <vector>
+#include <map>
+
 #include <Helium/Systems/HeliumSystem.h>
+
 #include <entt/entt.hpp>
-#include <Helium/HeliumCommon.h>
+
+class HeliumCore;
 
 class EventSystem : public HeliumSystem
 {
 public:
-    EventSystem(HeliumCore* core);
-    virtual ~EventSystem() = default;
+	EventSystem(HeliumCore* core);
 
-    void Initialize() override;
-    void Update(float dt) override;
-    void Shutdown() override;
+	virtual void Initialize();
+	virtual void Update(float timeDelta);
 
-    template<typename T, typename... Args>
+    template<typename EventType, typename Handler>
+    void Subscribe(Handler&& handler)
+    {
+        dispatcher.sink<EventType>().connect(std::forward<Handler>(handler));
+    }
+
+    template<typename EventType>
+    void Dispatch(const EventType& event)
+    {
+        dispatcher.trigger(event);
+    }
+
+    template<typename EventType, typename... Args>
     void Trigger(Args&&... args)
     {
-        m_Dispatcher.trigger(T(std::forward<Args>(args)...));
+        //dispatcher.trigger<EventType>(std::forward<Args>(args)...);
     }
 
-    template<typename T, typename... Args>
-    void Enqueue(Args&&... args)
-    {
-        m_Dispatcher.enqueue<T>(std::forward<Args>(args)...);
-    }
-
-    template<typename T, typename Receiver>
-    void Subscribe(Receiver* instance, void(Receiver::* callback)(const T&))
-    {
-        m_Dispatcher.sink<T>().template connect<Receiver, callback>(instance);
-    }
-
-    template<typename T, typename Receiver>
-    void Unsubscribe(Receiver* instance)
-    {
-        m_Dispatcher.sink<T>().template disconnect<Receiver>(instance);
-    }
+	
 
 private:
-    entt::dispatcher m_Dispatcher;
+    entt::dispatcher dispatcher;
 };

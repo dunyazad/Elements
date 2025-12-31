@@ -2,6 +2,8 @@
 #include <Helium/Components/Shader.h>
 #include <Helium/HeliumCore.h>
 
+#include <glad/glad.h>
+
 Shader::Shader(const std::string& name, const std::string& vertexSrc, const std::string& fragmentSrc)
     : m_Name(name)
 {

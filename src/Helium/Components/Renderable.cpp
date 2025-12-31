@@ -1,0 +1,192 @@
+#include "pch.h"
+#include <Helium/Components/Renderable.h>
+#include <Helium/Components/Shader.h>
+
+Renderable::Renderable()
+{
+}
+
+Renderable::~Renderable()
+{
+    if (vao != 0) glDeleteVertexArrays(1, &vao);
+}
+
+void Renderable::Initialize(GeometryMode mode)
+{
+    geometryMode = mode;
+
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    vertices.Initialize(0);
+    normals.Initialize(1);
+    colors3.Initialize(2);
+    colors4.Initialize(3);
+    uvs.Initialize(4);
+
+    indices.Initialize(0xFFFFFFFF, GL_ELEMENT_ARRAY_BUFFER);
+
+    instanceColors.Initialize(5);
+    instanceNormals.Initialize(6);
+    instanceTransforms.Initialize(7);
+
+    glBindVertexArray(0);
+}
+
+void Renderable::EnableInstancing(bool enable)
+{
+    instancingEnabled = enable;
+
+    instanceColors.SetUseInstancing(enable);
+    instanceNormals.SetUseInstancing(enable);
+    instanceTransforms.SetUseInstancing(enable);
+}
+
+void Renderable::Clear()
+{
+    vertices.Clear();
+    normals.Clear();
+    colors3.Clear();
+    colors4.Clear();
+    uvs.Clear();
+    indices.Clear();
+}
+
+void Renderable::ClearInstancingData()
+{
+    instanceTransforms.Clear();
+    instanceColors.Clear();
+    instanceNormals.Clear();
+    numberOfInstances = 0;
+}
+
+void Renderable::Update()
+{
+    glBindVertexArray(vao);
+
+    vertices.Update();
+    normals.Update();
+    colors3.Update();
+    colors4.Update();
+    uvs.Update();
+    indices.Update();
+
+    if (instancingEnabled)
+    {
+        instanceColors.Update();
+        instanceNormals.Update();
+        instanceTransforms.Update();
+    }
+
+    glBindVertexArray(0);
+}
+
+void Renderable::AddShader(Shader* shader)
+{
+    shaders.push_back(shader);
+}
+
+Shader* Renderable::GetActiveShader() const
+{
+    if (shaders.empty() || activeShaderIndex >= shaders.size())
+        return nullptr;
+    return shaders[activeShaderIndex];
+}
+
+void Renderable::SetActiveShaderIndex(unsigned int index)
+{
+    if (index < shaders.size())
+        activeShaderIndex = index;
+}
+
+void Renderable::Draw()
+{
+    if (!visible || drawingMode == None) return;
+    if (vertices.Size() == 0 && indices.Size() == 0) return;
+
+    Shader* shader = GetActiveShader();
+    if (shader) shader->Bind();
+
+    glBindVertexArray(vao);
+
+    GLint oldPolygonMode[2];
+    glGetIntegerv(GL_POLYGON_MODE, oldPolygonMode);
+
+    switch (drawingMode)
+    {
+    case Solid:
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        DrawImplementation();
+        break;
+    case WireFrame:
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        DrawImplementation();
+        break;
+    case Point:
+        glPolygonMode(GL_FRONT_AND_BACK, GL_POINT);
+        glPointSize(3.0f);
+        DrawImplementation();
+        glPointSize(1.0f);
+        break;
+    case WireFrameOverSolid:
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(1.0f, 1.0f);
+        DrawImplementation();
+        glDisable(GL_POLYGON_OFFSET_FILL);
+
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        DrawImplementation();
+        break;
+    default:
+        break;
+    }
+
+    glPolygonMode(GL_FRONT_AND_BACK, oldPolygonMode[0]);
+    glBindVertexArray(0);
+}
+
+void Renderable::DrawImplementation()
+{
+    GLsizei count = (indices.Size() > 0) ? (GLsizei)indices.Size() : (GLsizei)vertices.Size();
+    bool useIndices = (indices.Size() > 0);
+
+    if (instancingEnabled && numberOfInstances > 0)
+    {
+        if (useIndices)
+        {
+            glDrawElementsInstanced(geometryMode, count, GL_UNSIGNED_INT, 0, numberOfInstances);
+        }
+        else
+        {
+            glDrawArraysInstanced(geometryMode, 0, count, numberOfInstances);
+        }
+    }
+    else
+    {
+        if (useIndices)
+        {
+            glDrawElements(geometryMode, count, GL_UNSIGNED_INT, 0);
+        }
+        else
+        {
+            glDrawArrays(geometryMode, 0, count);
+        }
+    }
+}
+
+void Renderable::AddInstanceTransform(const Eigen::Matrix4f& transform)
+{
+    instanceTransforms.AddData(transform);
+    IncreaseNumberOfInstances();
+}
+
+void Renderable::AddInstanceColor(const Eigen::Vector4f& color)
+{
+    instanceColors.AddData(color);
+}
+
+void Renderable::AddInstanceNormal(const Eigen::Vector3f& normal)
+{
+    instanceNormals.AddData(normal);
+}

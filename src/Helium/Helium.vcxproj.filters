@@ -99,6 +99,27 @@
     <ClInclude Include="..\..\inc\Helium\HeliumLog.h">
       <Filter>헤더 파일\Helium</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\AttributeBuffer.h">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Components\Renderable.h">
+      <Filter>헤더 파일\Helium\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Components\Camera.h">
+      <Filter>헤더 파일\Helium\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Components\Light.h">
+      <Filter>헤더 파일\Helium\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Systems\ImmediateModeRenderSystem.h">
+      <Filter>헤더 파일\Helium\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Components\CameraManipulator.h">
+      <Filter>헤더 파일\Helium\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\EventCallback.hpp">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -145,6 +166,18 @@
     </ClCompile>
     <ClCompile Include="System\RenderSystem.cpp">
       <Filter>소스 파일\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="Components\Renderable.cpp">
+      <Filter>소스 파일\Component</Filter>
+    </ClCompile>
+    <ClCompile Include="Components\Camera.cpp">
+      <Filter>소스 파일\Component</Filter>
+    </ClCompile>
+    <ClCompile Include="System\ImmediateModeRenderSystem.cpp">
+      <Filter>소스 파일\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="Components\CameraManipulator.cpp">
+      <Filter>소스 파일\Component</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

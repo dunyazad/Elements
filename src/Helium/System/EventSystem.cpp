@@ -9,15 +9,10 @@ EventSystem::EventSystem(HeliumCore* core)
 
 void EventSystem::Initialize()
 {
-    m_Core->Log("System", "EventSystem Initialized");
 }
 
-void EventSystem::Update(float dt)
+void EventSystem::Update(float timeDelta)
 {
-    m_Dispatcher.update();
-}
-
-void EventSystem::Shutdown()
-{
-    m_Dispatcher.clear();
+	auto& dispatcher = Helium.GetDispatcher();
+	dispatcher.update();
 }

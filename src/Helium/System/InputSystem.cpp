@@ -5,43 +5,40 @@
 
 InputSystem::InputSystem(HeliumCore* core)
     : HeliumSystem(core)
-    , m_MousePos(0.0f, 0.0f)
+    , mousePos(0.0f, 0.0f)
 {
-    memset(m_KeyStates, 0, sizeof(m_KeyStates));
-    memset(m_PrevKeyStates, 0, sizeof(m_PrevKeyStates));
-    memset(m_MouseStates, 0, sizeof(m_MouseStates));
-    memset(m_PrevMouseStates, 0, sizeof(m_PrevMouseStates));
+    memset(keyStates, 0, sizeof(keyStates));
+    memset(prevKeyStates, 0, sizeof(prevKeyStates));
+    memset(mouseStates, 0, sizeof(mouseStates));
+    memset(prevMouseStates, 0, sizeof(prevMouseStates));
 }
 
 void InputSystem::Initialize()
 {
-    m_Core->Log("System", "InputSystem Initialized");
+    core->Log("System", "InputSystem Initialized");
 }
 
 void InputSystem::Update(float dt)
 {
-    EventSystem* eventSystem = m_Core->GetEventSystem();
+    auto& dispatcher = Helium.GetDispatcher();
 
-    memcpy(m_PrevKeyStates, m_KeyStates, sizeof(m_KeyStates));
+    memcpy(prevKeyStates, keyStates, sizeof(keyStates));
 
     for (int i = 0; i < 256; ++i)
     {
         bool isDown = (GetAsyncKeyState(i) & 0x8000) != 0;
-        m_KeyStates[i] = isDown;
+        keyStates[i] = isDown;
 
-        if (m_KeyStates[i] != m_PrevKeyStates[i])
+        if (keyStates[i] != prevKeyStates[i])
         {
             int action = isDown ? 1 : 0; // 1: Press, 0: Release
             int mods = 0; // (필요하면 GetKeyState(VK_CONTROL) 등으로 채움)
 
-            if (eventSystem)
-            {
-                eventSystem->Enqueue<KeyEvent>(i, action, mods);
-            }
+            dispatcher.enqueue<KeyEvent>({ i, action, mods });
         }
     }
 
-    memcpy(m_PrevMouseStates, m_MouseStates, sizeof(m_MouseStates));
+    memcpy(prevMouseStates, mouseStates, sizeof(mouseStates));
 
     // VK 코드 매핑: Left(0), Right(1), Middle(2)
     int mouseVKs[3] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON };
@@ -49,62 +46,56 @@ void InputSystem::Update(float dt)
     for (int i = 0; i < 3; ++i)
     {
         bool isDown = (GetAsyncKeyState(mouseVKs[i]) & 0x8000) != 0;
-        m_MouseStates[i] = isDown;
+        mouseStates[i] = isDown;
 
-        if (m_MouseStates[i] != m_PrevMouseStates[i])
+        if (mouseStates[i] != prevMouseStates[i])
         {
             int action = isDown ? 1 : 0;
-            if (eventSystem)
-            {
-                eventSystem->Enqueue<MouseButtonEvent>(i, action, 0);
-            }
+            dispatcher.enqueue<MouseButtonEvent>({ i, action, 0, mousePos.x(), mousePos.y() });
         }
     }
 
     POINT pt;
     if (GetCursorPos(&pt))
     {
-        ScreenToClient(m_Core->GetHWND(), &pt);
+        ScreenToClient(core->GetHWND(), &pt);
         float x = static_cast<float>(pt.x);
         float y = static_cast<float>(pt.y);
 
-        if (x != m_MousePos.x() || y != m_MousePos.y())
+        if (x != mousePos.x() || y != mousePos.y())
         {
-            m_MousePos.x() = x;
-            m_MousePos.y() = y;
+            mousePos.x() = x;
+            mousePos.y() = y;
 
-            if (eventSystem)
-            {
-                eventSystem->Enqueue<MousePositionEvent>(x, y);
-            }
+            dispatcher.enqueue<MousePositionEvent>({ x, y });
         }
     }
 }
 
 bool InputSystem::IsKeyDown(int key)
 {
-    return m_KeyStates[key];
+    return keyStates[key];
 }
 
 bool InputSystem::IsKeyPressed(int key)
 {
     // 이번엔 눌려있고(Current), 저번엔 안 눌려있었으면(Prev) -> Pressed
-    return m_KeyStates[key] && !m_PrevKeyStates[key];
+    return keyStates[key] && !prevKeyStates[key];
 }
 
 bool InputSystem::IsKeyReleased(int key)
 {
     // 이번엔 안 눌려있고, 저번엔 눌려있었으면 -> Released
-    return !m_KeyStates[key] && m_PrevKeyStates[key];
+    return !keyStates[key] && prevKeyStates[key];
 }
 
 bool InputSystem::IsMouseButtonDown(int button)
 {
     if (button < 0 || button > 2) return false;
-    return m_MouseStates[button];
+    return mouseStates[button];
 }
 
 Eigen::Vector2f InputSystem::GetMousePosition() const
 {
-    return m_MousePos;
+    return mousePos;
 }

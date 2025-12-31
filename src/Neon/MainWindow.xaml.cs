@@ -38,6 +38,8 @@ namespace Neon
 
             _stopwatch.Start();
             CompositionTarget.Rendering += OnRendering;
+
+            this.WindowState = WindowState.Maximized;
         }
 
         private void Window_PreviewKeyDown(object sender, KeyEventArgs e)

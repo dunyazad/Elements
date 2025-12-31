@@ -1,5 +1,10 @@
 #pragma once
+
+#include <map>
+
 #include <Helium/Systems/HeliumSystem.h>
+
+#include <Eigen/Dense>
 
 class InputSystem : public HeliumSystem
 {
@@ -18,11 +23,14 @@ public:
     Eigen::Vector2f GetMousePosition() const;
 
 private:
-    bool m_KeyStates[256];
-    bool m_PrevKeyStates[256];
+    bool keyStates[256];
+    bool prevKeyStates[256];
 
-    bool m_MouseStates[3];
-    bool m_PrevMouseStates[3];
+    bool mouseStates[3];
+    bool prevMouseStates[3];
 
-    Eigen::Vector2f m_MousePos;
+    Eigen::Vector2f mousePos;
+    Eigen::Vector2f lastMousePos;
+
+    static std::map<int, bool> s_keyStates;
 };

@@ -18,30 +18,31 @@ struct FrameBufferResizeEvent
 
 struct KeyEvent
 {
-    int KeyCode;
-    int Action;
-    int Mods;
+    int keyCode;
+    int action;
+    int mods;
 
-    KeyEvent(int key, int action, int mods) : KeyCode(key), Action(action), Mods(mods) {}
+    KeyEvent(int key, int action, int mods) : keyCode(key), action(action), mods(mods) {}
 };
 
 struct MousePositionEvent
 {
-    float X;
-    float Y;
+    float xpos;
+    float ypos;
 
-    MousePositionEvent(float x, float y) : X(x), Y(y) {}
+    MousePositionEvent(float xpos, float ypos) : xpos(xpos), ypos(ypos) {}
 };
 
 struct MouseButtonEvent
 {
-    int Button; // 0: Left, 1: Right, 2: Middle
-    int Action; // 0: Release, 1: Press
-    int Mods;
+    int button; // 0: Left, 1: Right, 2: Middle
+    int action; // 0: Release, 1: Press
+    int mods;
 	float xpos = 0.0;
 	float ypos = 0.0;
 
-    MouseButtonEvent(int btn, int action, int mods) : Button(btn), Action(action), Mods(mods) {}
+    MouseButtonEvent(int btn, int action, int mods, float xpos, float ypos) :
+		button(btn), action(action), mods(mods), xpos(xpos), ypos(ypos) {}
 };
 
 struct MouseWheelEvent

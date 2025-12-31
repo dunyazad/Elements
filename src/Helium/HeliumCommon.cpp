@@ -2,6 +2,8 @@
 
 #include <Helium/HeliumCommon.h>
 
+#include <sstream>
+
 namespace Time
 {
     std::chrono::steady_clock::time_point Now()

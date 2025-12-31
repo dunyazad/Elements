@@ -5,7 +5,7 @@ class HeliumCore;
 class HeliumSystem
 {
 public:
-    HeliumSystem(HeliumCore* core) : m_Core(core) {}
+    HeliumSystem(HeliumCore* core) : core(core) {}
     virtual ~HeliumSystem() = default;
 
     virtual void Initialize() {}
@@ -14,5 +14,5 @@ public:
     virtual void Shutdown() {}
 
 protected:
-    HeliumCore* m_Core = nullptr;
+    HeliumCore* core = nullptr;
 };

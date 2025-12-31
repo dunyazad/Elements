@@ -2,6 +2,8 @@
 #include <Helium/Backend/OpenGLBackend.h>
 #include <glad/glad.h>
 
+#include <sstream>
+
 extern void He_Log(const char* fmt, ...); // Helium.cpp의 로그 함수 참조
 
 bool OpenGLBackend::Initialize(HWND hwnd)
@@ -44,6 +46,8 @@ bool OpenGLBackend::Initialize(HWND hwnd)
 void OpenGLBackend::Resize(int width, int height)
 {
     glViewport(0, 0, width, height);
+
+	He_Log("Resized OpenGL viewport to %d x %d", width, height);
 }
 
 void OpenGLBackend::Update(float dt)
@@ -56,7 +60,6 @@ void OpenGLBackend::Update(float dt)
 
 void OpenGLBackend::Render()
 {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     SwapBuffers(m_hDC);
 }
 
