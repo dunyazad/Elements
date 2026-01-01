@@ -32,12 +32,12 @@ public:
         SetData(data.data(), data.size() * sizeof(T), usage);
     }
 
-    GLuint GetID() const { return m_RendererID; }
-    GLenum GetTarget() const { return m_Target; }
-    GLsizeiptr GetSize() const { return m_Size; }
+    GLuint GetID() const { return rendererID; }
+    GLenum GetTarget() const { return target; }
+    GLsizeiptr GetSize() const { return size; }
 
 private:
-    GLuint m_RendererID;
-    GLenum m_Target;
-    GLsizeiptr m_Size;
+    GLuint rendererID;
+    GLenum target;
+    GLsizeiptr size;
 };

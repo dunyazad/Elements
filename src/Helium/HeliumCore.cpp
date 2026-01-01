@@ -16,7 +16,6 @@
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
 
 HeliumCore::HeliumCore()
-    : width(1200), height(800)
 {
 }
 
@@ -27,9 +26,9 @@ HeliumCore::~HeliumCore()
 
 bool HeliumCore::Initialize(HWND hwnd, int backendType)
 {
-    if (m_IsInitialized) return true;
+    if (isInitialized) return true;
 
-    m_hWnd = hwnd;
+    hWnd = hwnd;
 
     eventSystem = std::make_unique<EventSystem>(this);
     eventSystem->Initialize();
@@ -46,22 +45,22 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
     BackendType type = static_cast<BackendType>(backendType);
     if (type == BackendType::Vulkan)
     {
-        m_Backend = std::make_unique<VulkanBackend>();
+        backend = std::make_unique<VulkanBackend>();
         Log("System", "Backend Selected: Vulkan");
     }
     else
     {
-        m_Backend = std::make_unique<OpenGLBackend>();
+        backend = std::make_unique<OpenGLBackend>();
         Log("System", "Backend Selected: OpenGL");
     }
 
-    if (!m_Backend->Initialize(hwnd))
+    if (!backend->Initialize(hwnd))
     {
         Log("System", "Failed to initialize backend.");
         return false;
     }
 
-    m_IsInitialized = true;
+    isInitialized = true;
 
     {
         auto cameraEntity = CreateEntity("MainCamera");
@@ -78,7 +77,7 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
                 auto cmeraEntity = Helium.GetEntityByName("MainCamera");
                 auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
                 if (cameraManipulator) cameraManipulator->OnMousePosition(e);
-				He_Log("Input", "Mouse Position Event: x=%f, y=%f", e.xpos, e.ypos);
+				He_Log(HE_LOG_INFO, "Input", "Mouse Position Event: x=%f, y=%f", e.xpos, e.ypos);
 				});
 
             CreateEventCallback<MouseButtonEvent>(cameraEntity, [](Entity entity, const MouseButtonEvent& e) {
@@ -96,38 +95,10 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
                 auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
                 if (cameraManipulator) cameraManipulator->OnKey(e);
 				});
-
- /*           eventSystem->Subscribe<MousePositionEvent>([](const MousePositionEvent& e) {
-				auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-				auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
-
-                if (cameraManipulator) cameraManipulator->OnMousePosition(e);
-                });
-
-            eventSystem->Subscribe<MouseButtonEvent>([](const MouseButtonEvent& e) {
-                auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-                auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
-
-                if (cameraManipulator) cameraManipulator->OnMouseButton(e);
-                });
-
-            eventSystem->Subscribe<MouseWheelEvent>([](const MouseWheelEvent& e) {
-                auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-                auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
-
-                if (cameraManipulator) cameraManipulator->OnMouseWheel(e);
-                });
-
-            eventSystem->Subscribe<KeyEvent>([](const KeyEvent& e) {
-                auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-                auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
-
-                if (cameraManipulator) cameraManipulator->OnKey(e);
-                });*/
         }
     }
 
-    for (auto& callback : m_OnInitializeCallbacks)
+    for (auto& callback : onInitializeCallbacks)
     {
         callback();
     }
@@ -137,7 +108,7 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
 
 void HeliumCore::Update(float dt)
 {
-    if (!m_IsInitialized) return;
+    if (!isInitialized) return;
 
     if (eventSystem) eventSystem->Update(dt);
 
@@ -145,9 +116,9 @@ void HeliumCore::Update(float dt)
 
     if (renderSystem) renderSystem->Update(dt);
 
-    if (m_Backend) m_Backend->Update(dt);
+    if (backend) backend->Update(dt);
 
-    for (auto& callback : m_OnUpdateCallbacks)
+    for (auto& callback : onUpdateCallbacks)
     {
         callback(dt);
     }
@@ -155,9 +126,9 @@ void HeliumCore::Update(float dt)
 
 void HeliumCore::Render()
 {
-    if (!m_IsInitialized) return;
+    if (!isInitialized) return;
 
-    for (auto& callback : m_OnRenderCallbacks)
+    for (auto& callback : onRenderCallbacks)
     {
         callback();
     }
@@ -167,15 +138,15 @@ void HeliumCore::Render()
     {
         shader->Bind();
 
-        if (m_Backend)
+        if (backend)
         {
-            m_Backend->DrawScreenQuad();
+            backend->DrawScreenQuad();
         }
 
         shader->Unbind();
     }
 
-    if (m_Backend) m_Backend->Clear(0.3f, 0.5f, 0.7f, 1.0f);
+    if (backend) backend->Clear(0.3f, 0.5f, 0.7f, 1.0f);
 
     if (renderSystem)
     {
@@ -197,25 +168,32 @@ void HeliumCore::Render()
         glEnable(GL_DEPTH_TEST);
     }
 
-    if (m_Backend) m_Backend->Render();
+    if (backend) backend->Render();
 }
 
 void HeliumCore::Resize(int width, int height)
 {
-    if (m_hWnd)
+    //if (m_hWnd)
+    //{
+    //    RECT rect;
+    //    if (GetClientRect(m_hWnd, &rect))
+    //    {
+    //        width = rect.right - rect.left;
+    //        height = rect.bottom - rect.top;
+    //    }
+    //}
+
+    //this->width = width;
+    //this->height = height;
+
+    auto entites = registry.view<Camera>();
+    for (auto& entity : entites)
     {
-        RECT rect;
-        if (GetClientRect(m_hWnd, &rect))
-        {
-            width = rect.right - rect.left;
-            height = rect.bottom - rect.top;
-        }
+        auto& camera = entites.get<Camera>(entity);
+		camera.GetPerspectiveSettings().SetAspectRatio(static_cast<float>(width) / static_cast<float>(height));
     }
 
-    this->width = width;
-    this->height = height;
-
-    if (m_Backend) m_Backend->Resize(width, height);
+    if (backend) backend->Resize(width, height);
 
     if (eventSystem) eventSystem->Trigger<WindowResizeEvent>(width, height);
 
@@ -224,9 +202,9 @@ void HeliumCore::Resize(int width, int height)
 
 void HeliumCore::Shutdown()
 {
-    if (!m_IsInitialized) return;
+    if (!isInitialized) return;
 
-    for (auto& callback : m_OnShutdownCallbacks)
+    for (auto& callback : onShutdownCallbacks)
     {
         callback();
     }
@@ -255,43 +233,43 @@ void HeliumCore::Shutdown()
         immediateModeRenderSystem.reset();
     }
 
-    if (m_Backend)
+    if (backend)
     {
-        m_Backend->Shutdown();
-        m_Backend.reset();
+        backend->Shutdown();
+        backend.reset();
     }
 
     registry.clear();
-    m_IsInitialized = false;
+    isInitialized = false;
 }
 
 Shader* HeliumCore::CreateShader(const std::string& name, const std::string& vsCode, const std::string& fsCode)
 {
     Shader* shader = new Shader(name, vsCode, fsCode);
-    m_Shaders[name] = shader;
+    shaders[name] = shader;
     return shader;
 }
 
 Shader* HeliumCore::GetShader(const std::string& name)
 {
-    if (m_Shaders.find(name) != m_Shaders.end())
-        return m_Shaders[name];
+    if (shaders.find(name) != shaders.end())
+        return shaders[name];
     return nullptr;
 }
 
 Entity HeliumCore::CreateEntity(const std::string& name)
 {
     Entity entity = registry.create();
-    m_NameEntityMapping[name] = entity;
-    m_EntityNameMapping[entity] = name;
+    nameEntityMapping[name] = entity;
+    entityNameMapping[entity] = name;
     Log("Entity", "Created Entity: %s", name.c_str());
     return entity;
 }
 
 Entity HeliumCore::GetEntityByName(const std::string& name)
 {
-    if (m_NameEntityMapping.find(name) != m_NameEntityMapping.end())
-        return m_NameEntityMapping[name];
+    if (nameEntityMapping.find(name) != nameEntityMapping.end())
+        return nameEntityMapping[name];
     return InvalidEntity;
 }
 
@@ -299,11 +277,11 @@ void HeliumCore::RemoveEntity(Entity entity)
 {
     if (registry.valid(entity))
     {
-        if (m_EntityNameMapping.count(entity))
+        if (entityNameMapping.count(entity))
         {
-            std::string name = m_EntityNameMapping[entity];
-            m_NameEntityMapping.erase(name);
-            m_EntityNameMapping.erase(entity);
+            std::string name = entityNameMapping[entity];
+            nameEntityMapping.erase(name);
+            entityNameMapping.erase(entity);
         }
         registry.destroy(entity);
     }
@@ -317,10 +295,4 @@ void HeliumCore::Log(const char* key, const char* fmt, ...)
     _vsnprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
     va_end(args);
     He_LogInternal(HE_LOG_INFO, key, buffer);
-}
-
-void HeliumCore::OnResize(int newWidth, int newHeight)
-{
-    width = newWidth;
-    height = newHeight;
 }

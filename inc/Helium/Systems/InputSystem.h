@@ -22,6 +22,8 @@ public:
     bool IsMouseButtonDown(int button); // 0: Left, 1: Right, 2: Middle
     Eigen::Vector2f GetMousePosition() const;
 
+	void OnMouseWheel(float xoffset, float yoffset);
+
 private:
     bool keyStates[256];
     bool prevKeyStates[256];

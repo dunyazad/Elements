@@ -43,6 +43,15 @@ void He_CreateConsole()
 	freopen_s(&fp, "CONOUT$", "w", stderr);
 }
 
+void He_ProcessMouseWheel(float xoffset, float yoffset)
+{
+	auto inputSystem = Helium.GetInputSystem();
+	if (inputSystem)
+	{
+		inputSystem->OnMouseWheel(xoffset, yoffset);
+	}
+}
+
 HELIUM_API void He_TestCreateEntity()
 {
 	Helium.CreateEntity("TestEntity_From_CSharp");

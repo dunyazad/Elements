@@ -24,5 +24,7 @@ extern "C"
 
     HELIUM_API void He_SetLogCallback(HeliumLogCallback cb);
 
+    HELIUM_API void He_ProcessMouseWheel(float xoffset, float yoffset);
+
     HELIUM_API void He_TestCreateEntity();
 }

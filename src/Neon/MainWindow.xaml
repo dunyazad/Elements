@@ -165,7 +165,7 @@
                 </StackPanel>
             </Grid>
 
-            <local:HeliumHost Grid.Row="1"/>
+            <local:HeliumHost x:Name="HeliumHostControl" Grid.Row="1"/>
 
             <GridSplitter Grid.Row="2" 
                           Height="5" 

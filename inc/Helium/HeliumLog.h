@@ -10,7 +10,7 @@ enum HeliumLogLevel
 
 typedef void(*HeliumLogCallback)(int level, const char* key, const char* value);
 
-void He_Log(const char* fmt, ...);
-void He_Log(const char* key, const char* fmt, ...);
-void He_Log(HeliumLogLevel level, const char* fmt, ...);
+//void He_Log(const char* fmt, ...);
+//void He_Log(const char* key, const char* fmt, ...);
+//void He_Log(HeliumLogLevel level, const char* fmt, ...);
 void He_Log(HeliumLogLevel level, const char* key, const char* fmt, ...);

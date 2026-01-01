@@ -99,3 +99,9 @@ Eigen::Vector2f InputSystem::GetMousePosition() const
 {
     return mousePos;
 }
+
+void InputSystem::OnMouseWheel(float xoffset, float yoffset)
+{
+    auto& dispatcher = Helium.GetDispatcher();
+	dispatcher.enqueue<MouseWheelEvent>({ xoffset, yoffset });
+}

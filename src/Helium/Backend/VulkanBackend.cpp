@@ -5,8 +5,8 @@ extern void He_Log(const char* fmt, ...);
 
 bool VulkanBackend::Initialize(HWND hwnd)
 {
-    m_hWnd = hwnd;
-    He_Log("Initializing Vulkan Backend... (Not implemented fully yet)");
+    hWnd = hwnd;
+    He_Log(HE_LOG_INFO, "", "Initializing Vulkan Backend... (Not implemented fully yet)");
 
     // TODO: 
     // 1. Create Vulkan Instance
@@ -20,6 +20,9 @@ bool VulkanBackend::Initialize(HWND hwnd)
 
 void VulkanBackend::Resize(int width, int height)
 {
+    this->width = width;
+    this->height = height;
+
     // TODO: Recreate Swapchain
 }
 

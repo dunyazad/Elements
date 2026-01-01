@@ -37,44 +37,44 @@ void He_Log(HeliumLogLevel level, const char* key, const char* fmt, ...)
     He_LogInternal(level, key, buffer);
 }
 
-void He_Log(const char* fmt, ...)
-{
-    if (!g_LogCallback) return;
-    char buffer[4096];
-    memset(buffer, 0, sizeof(buffer));
+//void He_Log(const char* fmt, ...)
+//{
+//    if (!g_LogCallback) return;
+//    char buffer[4096];
+//    memset(buffer, 0, sizeof(buffer));
+//
+//    va_list args;
+//    va_start(args, fmt);
+//    _vsnprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
+//    va_end(args);
+//
+//    He_LogInternal(HE_LOG_INFO, "", buffer);
+//}
 
-    va_list args;
-    va_start(args, fmt);
-    _vsnprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
-    va_end(args);
+//void He_Log(const char* key, const char* fmt, ...)
+//{
+//    if (!g_LogCallback) return;
+//    char buffer[4096];
+//    memset(buffer, 0, sizeof(buffer));
+//
+//    va_list args;
+//    va_start(args, fmt);
+//    _vsnprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
+//    va_end(args);
+//
+//    He_LogInternal(HE_LOG_INFO, key, buffer);
+//}
 
-    He_LogInternal(HE_LOG_INFO, "", buffer);
-}
-
-void He_Log(const char* key, const char* fmt, ...)
-{
-    if (!g_LogCallback) return;
-    char buffer[4096];
-    memset(buffer, 0, sizeof(buffer));
-
-    va_list args;
-    va_start(args, fmt);
-    _vsnprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
-    va_end(args);
-
-    He_LogInternal(HE_LOG_INFO, key, buffer);
-}
-
-void He_Log(HeliumLogLevel level, const char* fmt, ...)
-{
-    if (!g_LogCallback) return;
-    char buffer[4096];
-    memset(buffer, 0, sizeof(buffer));
-
-    va_list args;
-    va_start(args, fmt);
-    _vsnprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
-    va_end(args);
-
-    He_LogInternal(level, "", buffer);
-}
+//void He_Log(HeliumLogLevel level, const char* fmt, ...)
+//{
+//    if (!g_LogCallback) return;
+//    char buffer[4096];
+//    memset(buffer, 0, sizeof(buffer));
+//
+//    va_list args;
+//    va_start(args, fmt);
+//    _vsnprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
+//    va_end(args);
+//
+//    He_LogInternal(level, "", buffer);
+//}

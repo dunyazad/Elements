@@ -13,12 +13,12 @@ public:
     void Shutdown() override;
 
 private:
-    HDC m_hDC = nullptr;
-    HGLRC m_hRC = nullptr;
+    HDC hDC = nullptr;
+    HGLRC hRC = nullptr;
 
-    unsigned int m_QuadVAO = 0;
-    unsigned int m_QuadVBO = 0;
-    unsigned int m_QuadEBO = 0;
+    unsigned int quadVAO = 0;
+    unsigned int quadVBO = 0;
+    unsigned int quadEBO = 0;
 
     void InitializeScreenQuad();
 };

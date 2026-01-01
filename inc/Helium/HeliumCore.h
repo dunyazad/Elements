@@ -61,15 +61,13 @@ public:
     void Resize(int width, int height);
     void Shutdown();
 
-    void OnResize(int newWidth, int newHeight);
-
-    inline int GetWidth() const { return width; }
-    inline int GetHeight() const { return height; }
+    inline int GetWidth() const { if (backend) return backend->GetWidth(); else return 0; }
+    inline int GetHeight() const { if (backend) return backend->GetHeight(); else return 0; }
 
     inline Registry& GetRegistry() { return registry; }
     inline Dispatcher& GetDispatcher() { return dispatcher; }
 
-    inline IGraphicsBackend* GetGraphicsBackend() { return m_Backend.get(); }
+    inline IGraphicsBackend* GetGraphicsBackend() { return backend.get(); }
 
     EventSystem* GetEventSystem() { return eventSystem.get(); }
     InputSystem* GetInputSystem() { return inputSystem.get(); }
@@ -115,10 +113,10 @@ public:
         return &(registry.emplace<T>(entity, std::forward<Args>(args)...));
     }
 
-    inline void AddOnInitializeCallback(std::function<void()> callback) { m_OnInitializeCallbacks.push_back(callback); }
-    inline void AddOnUpdateCallback(std::function<void(float)> callback) { m_OnUpdateCallbacks.push_back(callback); }
-    inline void AddOnRenderCallback(std::function<void()> callback) { m_OnRenderCallbacks.push_back(callback); }
-    inline void AddOnShutdownCallback(std::function<void()> callback) { m_OnShutdownCallbacks.push_back(callback); }
+    inline void AddOnInitializeCallback(std::function<void()> callback) { onInitializeCallbacks.push_back(callback); }
+    inline void AddOnUpdateCallback(std::function<void(float)> callback) { onUpdateCallbacks.push_back(callback); }
+    inline void AddOnRenderCallback(std::function<void()> callback) { onRenderCallbacks.push_back(callback); }
+    inline void AddOnShutdownCallback(std::function<void()> callback) { onShutdownCallbacks.push_back(callback); }
 
 
     template<typename T>
@@ -149,7 +147,7 @@ public:
     Shader* CreateShader(const std::string& name, const std::string& vsCode, const std::string& fsCode);
     Shader* GetShader(const std::string& name);
 
-	inline HWND GetHWND() const { return m_hWnd; }
+	inline HWND GetHWND() const { return hWnd; }
 
     void Log(const char* key, const char* fmt, ...);
 
@@ -161,12 +159,10 @@ private:
     HeliumCore& operator=(const HeliumCore&) = delete;
 
 private:
-    bool m_IsInitialized = false;
-    HWND m_hWnd = nullptr;
-    int width = 1200;
-    int height = 800;
+    bool isInitialized = false;
+    HWND hWnd = nullptr;
 
-    std::unique_ptr<IGraphicsBackend> m_Backend = nullptr;
+    std::unique_ptr<IGraphicsBackend> backend = nullptr;
 
     Registry registry;
     Dispatcher dispatcher;
@@ -176,15 +172,15 @@ private:
     std::unique_ptr<RenderSystem> renderSystem;
     std::unique_ptr<ImmediateModeRenderSystem> immediateModeRenderSystem;
 
-    std::unordered_map<std::string, Entity> m_NameEntityMapping;
-    std::unordered_map<Entity, std::string> m_EntityNameMapping;
+    std::unordered_map<std::string, Entity> nameEntityMapping;
+    std::unordered_map<Entity, std::string> entityNameMapping;
 
-    std::vector<std::function<void()>> m_OnInitializeCallbacks;
-    std::vector<std::function<void(float)>> m_OnUpdateCallbacks;
-    std::vector<std::function<void()>> m_OnRenderCallbacks;
-    std::vector<std::function<void()>> m_OnShutdownCallbacks;
+    std::vector<std::function<void()>> onInitializeCallbacks;
+    std::vector<std::function<void(float)>> onUpdateCallbacks;
+    std::vector<std::function<void()>> onRenderCallbacks;
+    std::vector<std::function<void()>> onShutdownCallbacks;
 
-    std::unordered_map<std::string, Shader*> m_Shaders;
+    std::unordered_map<std::string, Shader*> shaders;
 };
 
 #define Helium HeliumCore::GetStaticInstance()

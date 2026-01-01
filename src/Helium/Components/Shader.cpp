@@ -5,21 +5,21 @@
 #include <glad/glad.h>
 
 Shader::Shader(const std::string& name, const std::string& vertexSrc, const std::string& fragmentSrc)
-    : m_Name(name)
+    : name(name)
 {
     unsigned int vs = CompileShader(GL_VERTEX_SHADER, vertexSrc);
     unsigned int fs = CompileShader(GL_FRAGMENT_SHADER, fragmentSrc);
 
-    m_RendererID = glCreateProgram();
-    glAttachShader(m_RendererID, vs);
-    glAttachShader(m_RendererID, fs);
-    glLinkProgram(m_RendererID);
+    rendererID = glCreateProgram();
+    glAttachShader(rendererID, vs);
+    glAttachShader(rendererID, fs);
+    glLinkProgram(rendererID);
 
     int success;
     char infoLog[512];
-    glGetProgramiv(m_RendererID, GL_LINK_STATUS, &success);
+    glGetProgramiv(rendererID, GL_LINK_STATUS, &success);
     if (!success) {
-        glGetProgramInfoLog(m_RendererID, 512, NULL, infoLog);
+        glGetProgramInfoLog(rendererID, 512, NULL, infoLog);
         Helium.Log("Shader", "Link Error (%s): %s", name.c_str(), infoLog);
     }
 
@@ -29,7 +29,7 @@ Shader::Shader(const std::string& name, const std::string& vertexSrc, const std:
 
 Shader::~Shader()
 {
-    glDeleteProgram(m_RendererID);
+    glDeleteProgram(rendererID);
 }
 
 unsigned int Shader::CompileShader(unsigned int type, const std::string& source)
@@ -57,12 +57,12 @@ unsigned int Shader::CompileShader(unsigned int type, const std::string& source)
     return id;
 }
 
-void Shader::Bind() const { glUseProgram(m_RendererID); }
+void Shader::Bind() const { glUseProgram(rendererID); }
 void Shader::Unbind() const { glUseProgram(0); }
 
 int Shader::GetUniformLocation(const std::string& name)
 {
-    return glGetUniformLocation(m_RendererID, name.c_str());
+    return glGetUniformLocation(rendererID, name.c_str());
 }
 
 void Shader::SetInt(const std::string& name, int value)

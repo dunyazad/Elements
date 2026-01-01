@@ -3,74 +3,74 @@
 #include <Helium/GraphicsBuffer.h>
 
 GraphicsBuffer::GraphicsBuffer(GLenum target)
-    : m_RendererID(0)
-    , m_Target(target)
-    , m_Size(0)
+    : rendererID(0)
+    , target(target)
+    , size(0)
 {
-    glGenBuffers(1, &m_RendererID);
+    glGenBuffers(1, &rendererID);
 }
 
 GraphicsBuffer::~GraphicsBuffer()
 {
-    if (m_RendererID != 0)
+    if (rendererID != 0)
     {
-        glDeleteBuffers(1, &m_RendererID);
+        glDeleteBuffers(1, &rendererID);
     }
 }
 
 GraphicsBuffer::GraphicsBuffer(GraphicsBuffer&& other) noexcept
-    : m_RendererID(other.m_RendererID)
-    , m_Target(other.m_Target)
-    , m_Size(other.m_Size)
+    : rendererID(other.rendererID)
+    , target(other.target)
+    , size(other.size)
 {
-    other.m_RendererID = 0;
-    other.m_Size = 0;
+    other.rendererID = 0;
+    other.size = 0;
 }
 
 GraphicsBuffer& GraphicsBuffer::operator=(GraphicsBuffer&& other) noexcept
 {
     if (this != &other)
     {
-        if (m_RendererID != 0)
+        if (rendererID != 0)
         {
-            glDeleteBuffers(1, &m_RendererID);
+            glDeleteBuffers(1, &rendererID);
         }
 
-        m_RendererID = other.m_RendererID;
-        m_Target = other.m_Target;
-        m_Size = other.m_Size;
+        rendererID = other.rendererID;
+        target = other.target;
+        size = other.size;
 
-        other.m_RendererID = 0;
-        other.m_Size = 0;
+        other.rendererID = 0;
+        other.size = 0;
     }
     return *this;
 }
 
 void GraphicsBuffer::Bind() const
 {
-    glBindBuffer(m_Target, m_RendererID);
+    glBindBuffer(target, rendererID);
 }
 
 void GraphicsBuffer::Unbind() const
 {
-    glBindBuffer(m_Target, 0);
+    glBindBuffer(target, 0);
 }
 
 void GraphicsBuffer::SetData(const void* data, GLsizeiptr size, GLenum usage)
 {
     Bind();
-    glBufferData(m_Target, size, data, usage);
-    m_Size = size;
+    glBufferData(target, size, data, usage);
+    size = size;
 }
 
 void GraphicsBuffer::SetSubData(const void* data, GLsizeiptr size, GLintptr offset)
 {
     Bind();
-    glBufferSubData(m_Target, offset, size, data);
+    glBufferSubData(target, offset, size, data);
 }
 
 void GraphicsBuffer::BindBufferBase(GLuint index) const
 {
     // Usually for GL_UNIFORM_BUFFER or GL_SHADER_STORAGE_BUFFER
-    glBindBufferBase(m_Target, index, m_RendererID);
+    glBindBufferBase(target, index, rendererID);
 }

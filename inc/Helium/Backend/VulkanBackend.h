@@ -16,6 +16,6 @@ public:
     void Shutdown() override;
 
 private:
-    HWND m_hWnd = nullptr;
+    HWND hWnd = nullptr;
     // VkInstance, VkDevice, VkSwapchainKHR 등이 들어갈 자리
 };

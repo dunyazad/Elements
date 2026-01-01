@@ -6,6 +6,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using static HeliumNative;
 
@@ -24,10 +25,14 @@ namespace Neon
         private double _lastLogHeight = 224.0;
         private const double MinLogHeight = 30.0;
 
-        
+        private const int WM_MOUSEWHEEL = 0x020A;  // Vertical
+        private const int WM_MOUSEHWHEEL = 0x020E; // Horizontal
+
         public MainWindow()
         {
             InitializeComponent();
+
+            ComponentDispatcher.ThreadFilterMessage += ComponentDispatcher_ThreadFilterMessage;
 
             NeonLogger.Initialize();
             NeonLogger.OnBatch = OnLogBatch;
@@ -40,6 +45,52 @@ namespace Neon
             CompositionTarget.Rendering += OnRendering;
 
             this.WindowState = WindowState.Maximized;
+        }
+
+        private void ComponentDispatcher_ThreadFilterMessage(ref MSG msg, ref bool handled)
+        {
+            // 1. 휠 메시지인지 확인
+            if (msg.message == WM_MOUSEWHEEL || msg.message == WM_MOUSEHWHEEL)
+            {
+                // 2. 마우스가 HeliumHost(3D 뷰포트) 위에 있는지 확인
+                // (다른 UI를 스크롤할 때는 엔진으로 이벤트를 보내지 않기 위함)
+                if (IsMouseOverHeliumHost())
+                {
+                    if (msg.message == WM_MOUSEWHEEL) // 수직
+                    {
+                        int rawDelta = (short)((msg.wParam.ToInt64() >> 16) & 0xFFFF);
+                        float delta = rawDelta / 120.0f;
+
+                        HeliumNative.He_ProcessMouseWheel(0.0f, delta);
+                        handled = true; // 이벤트 전파 막기 (선택사항)
+                    }
+                    else // 수평 (WM_MOUSEHWHEEL)
+                    {
+                        int rawDelta = (short)((msg.wParam.ToInt64() >> 16) & 0xFFFF);
+                        float delta = rawDelta / 120.0f;
+
+                        HeliumNative.He_ProcessMouseWheel(-delta, 0.0f);
+                        handled = true;
+                    }
+                }
+            }
+        }
+
+        private bool IsMouseOverHeliumHost()
+        {
+            // HeliumHostControl은 XAML에서 지정한 x:Name입니다.
+            if (HeliumHostControl == null) return false;
+
+            // 현재 마우스 위치 가져오기 (스크린 좌표 -> 클라이언트 좌표 변환 필요 없음, HitTest 사용)
+            Point mousePt = Mouse.GetPosition(HeliumHostControl);
+
+            // 마우스가 컨트롤 영역(0 ~ ActualWidth/Height) 안에 있는지 검사
+            if (mousePt.X >= 0 && mousePt.X < HeliumHostControl.ActualWidth &&
+                mousePt.Y >= 0 && mousePt.Y < HeliumHostControl.ActualHeight)
+            {
+                return true;
+            }
+            return false;
         }
 
         private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -95,6 +146,12 @@ namespace Neon
                     LogList.Items.Add(MakeItem(level, line));
                     _keyToIndex[id] = newIndex;
                 }
+            }
+
+            if (_autoScroll && LogList.Items.Count > 0)
+            {
+                var lastItem = LogList.Items[LogList.Items.Count - 1];
+                LogList.ScrollIntoView(lastItem);
             }
         }
 
@@ -188,6 +245,7 @@ namespace Neon
         protected override void OnClosed(EventArgs e)
         {
             CompositionTarget.Rendering -= OnRendering;
+            ComponentDispatcher.ThreadFilterMessage -= ComponentDispatcher_ThreadFilterMessage;
             base.OnClosed(e);
         }
 

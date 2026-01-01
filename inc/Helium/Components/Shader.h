@@ -20,12 +20,12 @@ public:
     void SetVec4(const std::string& name, const Eigen::Vector4f& value);
     void SetMat4(const std::string& name, const Eigen::Matrix4f& value);
 
-    inline unsigned int GetID() const { return m_RendererID; }
-    inline const std::string& GetName() const { return m_Name; }
+    inline unsigned int GetID() const { return rendererID; }
+    inline const std::string& GetName() const { return name; }
 
 private:
-    unsigned int m_RendererID;
-    std::string m_Name;
+    unsigned int rendererID;
+    std::string name;
 
     unsigned int CompileShader(unsigned int type, const std::string& source);
     int GetUniformLocation(const std::string& name);
