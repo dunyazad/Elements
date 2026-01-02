@@ -1,22 +1,33 @@
 #pragma once
 
-#include <Helium/HeliumCommon.h>
+#include <Eigen/Dense>
+#include <set>
 
-struct TransformComponent
+class Transform
 {
-    Eigen::Vector3f Position = { 0.0f, 0.0f, 0.0f };
-    Eigen::Vector3f Rotation = { 0.0f, 0.0f, 0.0f }; // Euler Angles
-    Eigen::Vector3f Scale = { 1.0f, 1.0f, 1.0f };
+public:
+	Transform();
+	~Transform();
 
-    // 행렬 계산 헬퍼
-    Eigen::Matrix4f GetTransform() const
-    {
-        Eigen::Affine3f t = Eigen::Affine3f::Identity();
-        t.translate(Position);
-        t.rotate(Eigen::AngleAxisf(Rotation.x(), Eigen::Vector3f::UnitX())
-            * Eigen::AngleAxisf(Rotation.y(), Eigen::Vector3f::UnitY())
-            * Eigen::AngleAxisf(Rotation.z(), Eigen::Vector3f::UnitZ()));
-        t.scale(Scale);
-        return t.matrix();
-    }
+	Transform* GetParent() const;
+	void SetParent(Transform* transform);
+
+	void AddChild(Transform* child);
+	void RemoveChild(Transform* child);
+
+	inline const Eigen::Matrix4f& GetLocalTransformMatrix() const { return localTransformMatrix; }
+	inline void SetLocalTransformMatrix(const Eigen::Matrix4f& m) { localTransformMatrix = m; dirty = true; }
+
+	inline const Eigen::Matrix4f& GetAbsoluteTransformMatrix() const { return absoluteTransformMatrix; }
+	inline void SetAbsoluteTransformMatrix(const Eigen::Matrix4f& m) { absoluteTransformMatrix = m; dirty = true; }
+
+	void UpdateAbsoluteTransformMatrix();
+
+private:
+	bool dirty = true;
+	Transform* parent = nullptr;
+	std::set<Transform*> children;
+
+	Eigen::Matrix4f localTransformMatrix = Eigen::Matrix4f::Identity();
+	Eigen::Matrix4f absoluteTransformMatrix = Eigen::Matrix4f::Identity();
 };

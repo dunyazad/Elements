@@ -34,6 +34,9 @@
     <Filter Include="소스 파일\Systems">
       <UniqueIdentifier>{f2b948e5-8169-418c-958a-5da9532a86ee}</UniqueIdentifier>
     </Filter>
+    <Filter Include="리소스 파일\Shader">
+      <UniqueIdentifier>{ce543324-e4a5-4dd6-8869-9bdf51d757e8}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -120,6 +123,15 @@
     <ClInclude Include="..\..\inc\Helium\EventCallback.hpp">
       <Filter>헤더 파일\Helium</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Components\Texture.h">
+      <Filter>헤더 파일\Helium\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\File.h">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\GeometryBuilder.h">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -179,5 +191,88 @@
     <ClCompile Include="Components\CameraManipulator.cpp">
       <Filter>소스 파일\Component</Filter>
     </ClCompile>
+    <ClCompile Include="Components\Transform.cpp">
+      <Filter>소스 파일\Component</Filter>
+    </ClCompile>
+    <ClCompile Include="Components\Texture.cpp">
+      <Filter>소스 파일\Component</Filter>
+    </ClCompile>
+    <ClCompile Include="File.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="GeometryBuilder.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\res\Shaders\Default.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Default.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Flat.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Flat.gs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Flat.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Grid.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Grid.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Instancing.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Instancing.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\InstancingWithoutLighting.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\InstancingWithoutLighting.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\InstancingWithoutNormal.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\InstancingWithoutNormal.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Line.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Line.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Mesh.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Mesh.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\ScreenQuad.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\ScreenQuad.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Texturing.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\Texturing.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\TwoSide.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
+    <None Include="..\..\res\Shaders\TwoSide.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </None>
   </ItemGroup>
 </Project>

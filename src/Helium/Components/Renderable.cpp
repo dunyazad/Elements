@@ -21,7 +21,7 @@ void Renderable::Initialize(GeometryMode mode)
     vertices.Initialize(0);
     normals.Initialize(1);
     colors3.Initialize(2);
-    colors4.Initialize(3);
+    colors4.Initialize(2);
     uvs.Initialize(4);
 
     indices.Initialize(0xFFFFFFFF, GL_ELEMENT_ARRAY_BUFFER);
@@ -66,8 +66,14 @@ void Renderable::Update()
 
     vertices.Update();
     normals.Update();
-    colors3.Update();
-    colors4.Update();
+    if (colors4.Size() > 0)
+    {
+        colors4.Update();
+    }
+    else
+    {
+        colors3.Update();
+    }
     uvs.Update();
     indices.Update();
 

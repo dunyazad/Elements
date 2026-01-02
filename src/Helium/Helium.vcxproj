@@ -101,8 +101,11 @@
     <ClInclude Include="..\..\inc\Helium\Components\Light.h" />
     <ClInclude Include="..\..\inc\Helium\Components\Renderable.h" />
     <ClInclude Include="..\..\inc\Helium\Components\Shader.h" />
+    <ClInclude Include="..\..\inc\Helium\Components\Texture.h" />
     <ClInclude Include="..\..\inc\Helium\Components\Transform.h" />
     <ClInclude Include="..\..\inc\Helium\EventCallback.hpp" />
+    <ClInclude Include="..\..\inc\Helium\File.h" />
+    <ClInclude Include="..\..\inc\Helium\GeometryBuilder.h" />
     <ClInclude Include="..\..\inc\Helium\GraphicsBuffer.h" />
     <ClInclude Include="..\..\inc\Helium\Helium.h" />
     <ClInclude Include="..\..\inc\Helium\HeliumCommon.h" />
@@ -126,7 +129,11 @@
     <ClCompile Include="Components\CameraManipulator.cpp" />
     <ClCompile Include="Components\Renderable.cpp" />
     <ClCompile Include="Components\Shader.cpp" />
+    <ClCompile Include="Components\Texture.cpp" />
+    <ClCompile Include="Components\Transform.cpp" />
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="File.cpp" />
+    <ClCompile Include="GeometryBuilder.cpp" />
     <ClCompile Include="glad.c">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
@@ -148,6 +155,31 @@
     <ClCompile Include="System\ImmediateModeRenderSystem.cpp" />
     <ClCompile Include="System\InputSystem.cpp" />
     <ClCompile Include="System\RenderSystem.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\res\Shaders\Default.fs" />
+    <None Include="..\..\res\Shaders\Default.vs" />
+    <None Include="..\..\res\Shaders\Flat.fs" />
+    <None Include="..\..\res\Shaders\Flat.gs" />
+    <None Include="..\..\res\Shaders\Flat.vs" />
+    <None Include="..\..\res\Shaders\Grid.fs" />
+    <None Include="..\..\res\Shaders\Grid.vs" />
+    <None Include="..\..\res\Shaders\Instancing.fs" />
+    <None Include="..\..\res\Shaders\Instancing.vs" />
+    <None Include="..\..\res\Shaders\InstancingWithoutLighting.fs" />
+    <None Include="..\..\res\Shaders\InstancingWithoutLighting.vs" />
+    <None Include="..\..\res\Shaders\InstancingWithoutNormal.fs" />
+    <None Include="..\..\res\Shaders\InstancingWithoutNormal.vs" />
+    <None Include="..\..\res\Shaders\Line.fs" />
+    <None Include="..\..\res\Shaders\Line.vs" />
+    <None Include="..\..\res\Shaders\Mesh.fs" />
+    <None Include="..\..\res\Shaders\Mesh.vs" />
+    <None Include="..\..\res\Shaders\ScreenQuad.fs" />
+    <None Include="..\..\res\Shaders\ScreenQuad.vs" />
+    <None Include="..\..\res\Shaders\Texturing.fs" />
+    <None Include="..\..\res\Shaders\Texturing.vs" />
+    <None Include="..\..\res\Shaders\TwoSide.fs" />
+    <None Include="..\..\res\Shaders\TwoSide.vs" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

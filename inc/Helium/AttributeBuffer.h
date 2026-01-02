@@ -39,6 +39,19 @@ public:
         dirty = true;
     }
 
+    void SetData(unsigned int index, const T& element)
+    {
+        if (index >= data.size()) return;
+        data[index] = element;
+        dirty = true;
+    }
+
+    void SetDatas(const std::vector<T>& elements)
+    {
+        data = elements;
+        dirty = true;
+	}
+
     void Update()
     {
         if (data.empty() || !gpuBuffer) return;

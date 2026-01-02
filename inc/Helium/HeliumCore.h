@@ -7,6 +7,9 @@
 #include <memory>
 
 #include <entt/entt.hpp>
+
+#include <Helium/File.h>
+
 #include <Helium/Backend/GraphicsBackend.h>
 
 #include <Helium/Components/Components.h>
@@ -145,6 +148,7 @@ public:
 
 
     Shader* CreateShader(const std::string& name, const std::string& vsCode, const std::string& fsCode);
+    Shader* CreateShader(const std::string& name, const File& vsFile, const File& fsFile);
     Shader* GetShader(const std::string& name);
 
 	inline HWND GetHWND() const { return hWnd; }

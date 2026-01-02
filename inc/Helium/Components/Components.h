@@ -5,4 +5,5 @@
 #include <Helium/Components/Light.h>
 #include <Helium/Components/Renderable.h>
 #include <Helium/Components/Shader.h>
+#include <Helium/Components/Texture.h>
 #include <Helium/Components/Transform.h>

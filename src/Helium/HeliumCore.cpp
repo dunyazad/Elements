@@ -1,4 +1,7 @@
 #include "pch.h"
+
+#include <glad/glad.h>
+
 #include <Helium/HeliumCore.h>
 #include <Helium/Backend/OpenGLBackend.h>
 #include <Helium/Backend/VulkanBackend.h>
@@ -11,7 +14,7 @@
 
 #include <Helium/Components/Components.h>
 
-#include <glad/glad.h>
+#include <Helium/GeometryBuilder.h>
 
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
 
@@ -96,6 +99,25 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
                 if (cameraManipulator) cameraManipulator->OnKey(e);
 				});
         }
+    }
+
+    {
+		auto entity = CreateEntity("Sphere");
+		auto renderable = CreateComponent<Renderable>(entity);
+		renderable->Initialize(Renderable::Triangles);
+
+        GeometryBuilder::BuildPlane(
+            renderable,
+            10.0f,
+            10.0f,
+            10,
+            10,
+            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
+            Eigen::Vector3f(0.0f, 0.0f, 1.0f),
+            Eigen::Vector4f(0.7f, 0.5f, 0.3f, 1.0f)
+		);
+
+		renderable->AddShader(CreateShader("Default", File("../../res/Shaders/Default.vs"), File("../../res/Shaders/Default.fs")));
     }
 
     for (auto& callback : onInitializeCallbacks)
@@ -248,6 +270,15 @@ Shader* HeliumCore::CreateShader(const std::string& name, const std::string& vsC
     Shader* shader = new Shader(name, vsCode, fsCode);
     shaders[name] = shader;
     return shader;
+}
+
+Shader* HeliumCore::CreateShader(const std::string& name, const File& vsFile, const File& fsFile)
+{
+	auto vsCode = vsFile.ReadAll();
+	auto fsCode = fsFile.ReadAll();
+    Shader* shader = new Shader(name, vsCode, fsCode);
+    shaders[name] = shader;
+	return shader;
 }
 
 Shader* HeliumCore::GetShader(const std::string& name)
