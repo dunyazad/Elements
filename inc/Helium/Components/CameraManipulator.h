@@ -101,7 +101,7 @@ public:
 	virtual void SyncRadius() override;
 	void MakeDefault();
 
-	inline void SetCamera(Camera* camera) { this->camera = camera; if (camera) PushCameraHistory(); }
+	void SetCamera(Camera* camera);
 
 	void SetCenter(const Eigen::Vector3f& center);
 	void SetCenterFromScreenPoint(float x, float y, float depth, int screenWidth, int screenHeight);
@@ -128,4 +128,7 @@ private:
 
 	std::vector<std::tuple<Eigen::Vector3f, Eigen::Vector3f, Eigen::Vector3f, float>> cameraHistory;
 	size_t cameraHistoryIndex = 0;
+
+	Eigen::Quaternionf orbitRot = Eigen::Quaternionf::Identity();
+	float minPitchCos = 0.01f;
 };

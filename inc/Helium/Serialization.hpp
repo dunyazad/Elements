@@ -878,7 +878,11 @@ public:
 
 	virtual inline void SwapAxisYZ() override
 	{
-		for (auto& p : points) std::swap(p.y(), p.z());
+		for (auto& p : points)
+		{
+			std::swap(p.y(), p.z());
+			p.z() = -p.z();
+		}
 		for (auto& n : normals) std::swap(n.y(), n.z());
 		aabb.setEmpty();
 		for (const auto& p : points) aabb.extend(p);

@@ -49,29 +49,46 @@ void CameraManipulatorTrackball::OnMousePosition(const MousePositionEvent& event
 
 	if (isRButtonPressed)
 	{
-		float angleX = -dx * mouseSensitivity;
-		float angleY = -dy * mouseSensitivity;
+		float angleYaw = -dx * mouseSensitivity;
+		float anglePitch = -dy * mouseSensitivity;
 
 		Eigen::Vector3f eye = camera->GetEye();
 		Eigen::Vector3f target = camera->GetTarget();
-		Eigen::Vector3f up = camera->GetUp();
+		Eigen::Vector3f up0 = camera->GetUp().normalized();
 
-		Eigen::Vector3f viewDir = (eye - target).normalized();
-		Eigen::Vector3f right = up.cross(viewDir).normalized();
+		float dist = (eye - target).norm();
 
-		Eigen::Quaternionf rotX = Eigen::Quaternionf(Eigen::AngleAxisf(angleX, up));
-		Eigen::Quaternionf rotY = Eigen::Quaternionf(Eigen::AngleAxisf(angleY, right));
+		Eigen::Vector3f viewDir = (orbitRot * Eigen::Vector3f(0, 0, 1)).normalized();
 
-		Eigen::Quaternionf rot = rotX * rotY;
+		Eigen::Vector3f right = up0.cross(viewDir).normalized();
 
-		Eigen::Vector3f rotatedViewDir = (rot * viewDir).normalized();
-		Eigen::Vector3f rotatedUp = (rot * up).normalized();
+		Eigen::Quaternionf qYaw(Eigen::AngleAxisf(angleYaw, up0));
+		Eigen::Quaternionf qPitch(Eigen::AngleAxisf(anglePitch, right));
 
-		float currentDist = (eye - target).norm();
-		Eigen::Vector3f newEye = target + rotatedViewDir * currentDist;
+		Eigen::Vector3f testView = (qPitch * viewDir).normalized();
+
+		float cosPitch = testView.dot(up0);
+		if (std::abs(cosPitch) < 1.0f - minPitchCos)
+		{
+			orbitRot = (qYaw * qPitch) * orbitRot;
+		}
+		else
+		{
+			orbitRot = qYaw * orbitRot;
+		}
+
+		orbitRot.normalize();
+
+		Eigen::Vector3f finalView = (orbitRot * Eigen::Vector3f(0, 0, 1)).normalized();
+
+		Eigen::Vector3f finalRight = up0.cross(finalView).normalized();
+
+		Eigen::Vector3f finalUp = finalView.cross(finalRight).normalized();
+
+		Eigen::Vector3f newEye = target + finalView * dist;
 
 		camera->SetEye(newEye);
-		camera->SetUp(rotatedUp);
+		camera->SetUp(finalUp);
 	}
 
 	if (isMButtonPressed)
@@ -133,12 +150,10 @@ void CameraManipulatorTrackball::OnMouseWheel(const MouseWheelEvent& event)
 		}
 		else
 		{
-			// [FIX] 현재 카메라의 실제 위치를 기반으로 radius 동기화
 			auto eye = camera->GetEye();
 			auto target = camera->GetTarget();
 			Eigen::Vector3f viewVec = eye - target;
 
-			// 현재 거리를 radius로 갱신
 			radius = viewVec.norm();
 
 			if (event.yoffset < 0) radius *= 1.1f;
@@ -302,6 +317,10 @@ void CameraManipulatorTrackball::Reset()
 	camera->SetTarget(target);
 	camera->SetUp(up);
 	camera->SetProjectionMode(Camera::Perspective);
+
+	Eigen::Vector3f viewDir = (camera->GetEye() - camera->GetTarget()).normalized();
+	orbitRot = Eigen::Quaternionf::FromTwoVectors(Eigen::Vector3f(0, 0, 1), viewDir);
+	orbitRot.normalize();
 }
 
 void CameraManipulatorTrackball::SyncRadius()
@@ -316,6 +335,16 @@ void CameraManipulatorTrackball::MakeDefault()
 	cameraHistory.clear();
 	cameraHistory.push_back({ camera->GetEye(), camera->GetTarget(), camera->GetUp(), radius });
 	cameraHistoryIndex = 0;
+}
+
+void CameraManipulatorTrackball::SetCamera(Camera* camera)
+{
+	this->camera = camera;
+	if (camera) PushCameraHistory();
+
+	Eigen::Vector3f viewDir = (camera->GetEye() - camera->GetTarget()).normalized();
+	orbitRot = Eigen::Quaternionf::FromTwoVectors(Eigen::Vector3f(0, 0, 1), viewDir);
+	orbitRot.normalize();
 }
 
 void CameraManipulatorTrackball::SetCenter(const Eigen::Vector3f& center)
