@@ -59,6 +59,7 @@ public:
     }
 
     bool Initialize(HWND hwnd, int backendType);
+    void InitializeScene();
     void Update(float dt);
     void Render();
     void Resize(int width, int height);

@@ -133,6 +133,14 @@ void CameraManipulatorTrackball::OnMouseWheel(const MouseWheelEvent& event)
 		}
 		else
 		{
+			// [FIX] 현재 카메라의 실제 위치를 기반으로 radius 동기화
+			auto eye = camera->GetEye();
+			auto target = camera->GetTarget();
+			Eigen::Vector3f viewVec = eye - target;
+
+			// 현재 거리를 radius로 갱신
+			radius = viewVec.norm();
+
 			if (event.yoffset < 0) radius *= 1.1f;
 			else if (event.yoffset > 0) radius *= 0.9f;
 
@@ -140,11 +148,10 @@ void CameraManipulatorTrackball::OnMouseWheel(const MouseWheelEvent& event)
 			if (radius < settings.GetZNear()) radius = settings.GetZNear();
 			if (radius > settings.GetZFar()) radius = settings.GetZFar();
 
-			auto eye = camera->GetEye();
-			auto target = camera->GetTarget();
-
-			Eigen::Vector3f viewDir = (eye - target).normalized();
+			Eigen::Vector3f viewDir = viewVec.normalized();
 			camera->SetEye(target + viewDir * radius);
+
+			He_Log(HE_LOG_DEBUG, "", "Camera radius: %f", radius);
 		}
 	}
 	else if (camera->GetProjectionMode() == Camera::Orthogonal)

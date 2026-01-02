@@ -142,6 +142,7 @@
     <ClCompile Include="Helium.cpp" />
     <ClCompile Include="HeliumCommon.cpp" />
     <ClCompile Include="HeliumCore.cpp" />
+    <ClCompile Include="HeliumCoreInitialize.cpp" />
     <ClCompile Include="HeliumLog.cpp" />
     <ClCompile Include="Monitor.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>

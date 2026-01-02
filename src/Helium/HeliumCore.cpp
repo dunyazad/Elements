@@ -63,62 +63,9 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
         return false;
     }
 
+    InitializeScene();
+
     isInitialized = true;
-
-    {
-        auto cameraEntity = CreateEntity("MainCamera");
-        auto camera = CreateComponent<Camera>(cameraEntity);
-        camera->SetProjectionMode(Camera::Perspective);
-
-        auto cameraManipulator = CreateComponent<CameraManipulatorTrackball>(cameraEntity);
-        cameraManipulator->SetCamera(camera);
-
-        auto eventSystem = GetEventSystem();
-        if (eventSystem)
-        {
-            CreateEventCallback<MousePositionEvent>(cameraEntity, [](Entity entity, const MousePositionEvent& e) {
-                auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-                auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
-                if (cameraManipulator) cameraManipulator->OnMousePosition(e);
-				He_Log(HE_LOG_INFO, "Input", "Mouse Position Event: x=%f, y=%f", e.xpos, e.ypos);
-				});
-
-            CreateEventCallback<MouseButtonEvent>(cameraEntity, [](Entity entity, const MouseButtonEvent& e) {
-                auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-                auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
-                if (cameraManipulator) cameraManipulator->OnMouseButton(e);
-                });
-            CreateEventCallback<MouseWheelEvent>(cameraEntity, [](Entity entity, const MouseWheelEvent& e) {
-                auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-                auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
-                if (cameraManipulator) cameraManipulator->OnMouseWheel(e);
-                });
-            CreateEventCallback<KeyEvent>(cameraEntity, [](Entity entity, const KeyEvent& e) {
-                auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-                auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
-                if (cameraManipulator) cameraManipulator->OnKey(e);
-				});
-        }
-    }
-
-    {
-		auto entity = CreateEntity("Sphere");
-		auto renderable = CreateComponent<Renderable>(entity);
-		renderable->Initialize(Renderable::Triangles);
-
-        GeometryBuilder::BuildPlane(
-            renderable,
-            10.0f,
-            10.0f,
-            10,
-            10,
-            Eigen::Vector3f(0.0f, 0.0f, 0.0f),
-            Eigen::Vector3f(0.0f, 0.0f, 1.0f),
-            Eigen::Vector4f(0.7f, 0.5f, 0.3f, 1.0f)
-		);
-
-		renderable->AddShader(CreateShader("Default", File("../../res/Shaders/Default.vs"), File("../../res/Shaders/Default.fs")));
-    }
 
     for (auto& callback : onInitializeCallbacks)
     {

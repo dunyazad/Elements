@@ -16,10 +16,17 @@ public:
 	void RemoveChild(Transform* child);
 
 	inline const Eigen::Matrix4f& GetLocalTransformMatrix() const { return localTransformMatrix; }
-	inline void SetLocalTransformMatrix(const Eigen::Matrix4f& m) { localTransformMatrix = m; dirty = true; }
+	void SetLocalTransformMatrix(const Eigen::Matrix4f& m); // 구현부로 이동 (dirty 처리를 위해)
 
 	inline const Eigen::Matrix4f& GetAbsoluteTransformMatrix() const { return absoluteTransformMatrix; }
-	inline void SetAbsoluteTransformMatrix(const Eigen::Matrix4f& m) { absoluteTransformMatrix = m; dirty = true; }
+	void SetAbsoluteTransformMatrix(const Eigen::Matrix4f& m); // 구현부로 이동
+
+	void SetLocalPosition(const Eigen::Vector3f& position);
+	void SetLocalRotation(const Eigen::Quaternionf& rotation);
+
+	Eigen::Vector3f GetLocalPosition() const;
+	Eigen::Quaternionf GetLocalRotation() const;
+	Eigen::Vector3f GetLocalScale() const;
 
 	void UpdateAbsoluteTransformMatrix();
 
