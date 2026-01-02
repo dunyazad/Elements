@@ -6,6 +6,9 @@
 #include <limits>
 #include <numeric>
 
+#undef min
+#undef max
+
 namespace Color
 {
 	// glm::fract 대응을 위한 헬퍼 함수

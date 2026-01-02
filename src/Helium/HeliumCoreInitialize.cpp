@@ -17,6 +17,8 @@
 #include <Helium/GeometryBuilder.h>
 #include <Helium/Serialization.hpp>
 
+#include <Helium/VisualDebugging.h>
+
 #include <thread>
 
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
@@ -319,6 +321,101 @@ void HeliumCore::InitializeScene()
                 });
         }
     }
+
+#if 0
+    {
+        // ------------------------------------------------------------------
+        // Line 테스트
+        // ------------------------------------------------------------------
+        VisualDebugging::AddLine(
+            "Test_Line",
+            Eigen::Vector3f(0, 0, 0),
+            Eigen::Vector3f(1, 1, 0),
+            Eigen::Vector4f(1, 0, 0, 1)
+        );
+
+        VisualDebugging::AddLine(
+            "Test_Line",
+            Eigen::Vector3f(1, 0, 0),
+            Eigen::Vector3f(0, 1, 0),
+            Eigen::Vector4f(0, 1, 0, 1)
+        );
+
+        VisualDebugging::AddLine(
+            "Test_Line",
+            Eigen::Vector3f(0, 1, 0),
+            Eigen::Vector3f(1, 0, 1),
+            Eigen::Vector4f(0, 0, 1, 1)
+        );
+
+        // ------------------------------------------------------------------
+        // Triangle 테스트
+        // ------------------------------------------------------------------
+        VisualDebugging::AddTriangle(
+            "Test_Triangle",
+            Eigen::Vector3f(0, 0, 0),
+            Eigen::Vector3f(1, 0, 0),
+            Eigen::Vector3f(0, 1, 0),
+            Eigen::Vector4f(1, 1, 0, 1)
+        );
+
+        // ------------------------------------------------------------------
+        // Box (Instancing) 테스트
+        // ------------------------------------------------------------------
+        VisualDebugging::AddBox(
+            "Test_Box",
+            Eigen::Vector3f(0, 0, 0),
+            Eigen::Vector3f(1, 1, 1),
+            Eigen::Vector4f(0, 0.5f, 1, 1)
+        );
+
+        VisualDebugging::AddBox(
+            "Test_Box",
+            Eigen::Vector3f(2, 0, 0),
+            Eigen::Vector3f(1, 1, 0),     // normal
+            Eigen::Vector3f(0.5f, 2, 0.5f),
+            Eigen::Vector4f(1, 0, 0, 1)
+        );
+
+        // ------------------------------------------------------------------
+        // WiredBox 테스트
+        // ------------------------------------------------------------------
+        VisualDebugging::AddWiredBox(
+            "Test_WiredBox",
+            Eigen::Vector3f(0, 2, 0),
+            Eigen::Vector3f(1, 1, 1),
+            Eigen::Vector4f(0, 1, 0, 1)
+        );
+
+        // ------------------------------------------------------------------
+        // Sphere 테스트
+        // ------------------------------------------------------------------
+        VisualDebugging::AddSphere(
+            "Test_Sphere",
+            Eigen::Vector3f(-2, 0, 0),
+            0.5f,
+            Eigen::Vector4f(1, 0, 1, 1)
+        );
+
+        VisualDebugging::AddSphere(
+            "Test_Sphere",
+            Eigen::Vector3f(-2, 2, 0),
+            Eigen::Vector3f(0, 1, 0),
+            0.3f,
+            Eigen::Vector4f(1, 1, 1, 1)
+        );
+
+        // ------------------------------------------------------------------
+        // Selection 테스트
+        // ------------------------------------------------------------------
+        VisualDebugging::ClearSelectionList();
+        VisualDebugging::AddToSelectionList("Test_Line");
+        VisualDebugging::AddToSelectionList("Test_Triangle");
+        VisualDebugging::AddToSelectionList("Test_Box");
+        VisualDebugging::AddToSelectionList("Test_WiredBox");
+        VisualDebugging::AddToSelectionList("Test_Sphere");
+    }
+#endif // 0
 
     {
         auto entity = CreateEntity("Grid");

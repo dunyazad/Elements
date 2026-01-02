@@ -120,6 +120,7 @@
     <ClInclude Include="..\..\inc\Helium\Systems\InputSystem.h" />
     <ClInclude Include="..\..\inc\Helium\Systems\RenderSystem.h" />
     <ClInclude Include="..\..\inc\Helium\Systems\Systems.h" />
+    <ClInclude Include="..\..\inc\Helium\VisualDebugging.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
   </ItemGroup>
@@ -157,6 +158,7 @@
     <ClCompile Include="System\ImmediateModeRenderSystem.cpp" />
     <ClCompile Include="System\InputSystem.cpp" />
     <ClCompile Include="System\RenderSystem.cpp" />
+    <ClCompile Include="VisualDebugging.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\res\Shaders\Default.fs" />

@@ -58,12 +58,12 @@ public:
     inline Eigen::Vector2f GetUV(unsigned int index) const { return uvs.GetCpuData()[index]; }
     inline unsigned int GetIndex(unsigned int index) const { return indices.GetCpuData()[index]; }
 
-    inline void AddVertex(const Eigen::Vector3f& v) { vertices.AddData(v); }
-    inline void AddNormal(const Eigen::Vector3f& n) { normals.AddData(n); }
-    inline void AddColor3(const Eigen::Vector3f& c) { colors3.AddData(c); }
-    inline void AddColor4(const Eigen::Vector4f& c) { colors4.AddData(c); }
-    inline void AddUV(const Eigen::Vector2f& uv) { uvs.AddData(uv); }
-    inline void AddIndex(unsigned int i) { indices.AddData(i); }
+    inline size_t AddVertex(const Eigen::Vector3f& v) { return vertices.AddData(v); }
+    inline size_t AddNormal(const Eigen::Vector3f& n) { return normals.AddData(n); }
+    inline size_t AddColor3(const Eigen::Vector3f& c) { return colors3.AddData(c); }
+    inline size_t AddColor4(const Eigen::Vector4f& c) { return colors4.AddData(c); }
+    inline size_t AddUV(const Eigen::Vector2f& uv) { return uvs.AddData(uv); }
+    inline size_t AddIndex(unsigned int i) { return indices.AddData(i); }
 
 	inline void SetVertex(unsigned int index, const Eigen::Vector3f& v) { vertices.SetData(index, v); }
 	inline void SetNormal(unsigned int index, const Eigen::Vector3f& n) { normals.SetData(index, n); }
@@ -95,6 +95,7 @@ public:
     inline void AddIndices(const std::vector<unsigned int>& list) { indices.AddDatas(list); }
 
     // Instancing
+	bool IsInstancingEnabled() const;
     void EnableInstancing(bool enable = true);
     void AddInstanceTransform(const Eigen::Matrix4f& transform);
     void AddInstanceColor(const Eigen::Vector4f& color);

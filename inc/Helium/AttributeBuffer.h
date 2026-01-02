@@ -27,16 +27,20 @@ public:
         dirty = true;
     }
 
-    void AddData(const T& element)
+    size_t AddData(const T& element)
     {
         data.push_back(element);
         dirty = true;
+
+		return data.size() - 1;
     }
 
-    void AddDatas(const std::vector<T>& elements)
+    size_t AddDatas(const std::vector<T>& elements)
     {
         data.insert(data.end(), elements.begin(), elements.end());
         dirty = true;
+
+		return data.size() - 1;
     }
 
     void SetData(unsigned int index, const T& element)

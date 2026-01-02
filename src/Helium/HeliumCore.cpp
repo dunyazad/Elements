@@ -16,6 +16,8 @@
 
 #include <Helium/GeometryBuilder.h>
 
+#include <Helium/VisualDebugging.h>
+
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
 
 HeliumCore::HeliumCore()
@@ -63,14 +65,16 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
         return false;
     }
 
-    InitializeScene();
+    VisualDebugging::Initialize();
 
-    isInitialized = true;
+    InitializeScene();
 
     for (auto& callback : onInitializeCallbacks)
     {
         callback();
     }
+
+    isInitialized = true;
 
     return true;
 }
@@ -78,6 +82,8 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
 void HeliumCore::Update(float dt)
 {
     if (!isInitialized) return;
+
+    VisualDebugging::DispatchCommands();
 
     if (eventSystem) eventSystem->Update(dt);
 

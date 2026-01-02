@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Neon": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}

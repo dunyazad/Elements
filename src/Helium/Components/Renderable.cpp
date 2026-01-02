@@ -33,6 +33,11 @@ void Renderable::Initialize(GeometryMode mode)
     glBindVertexArray(0);
 }
 
+bool Renderable::IsInstancingEnabled() const
+{
+    return instancingEnabled;
+}
+
 void Renderable::EnableInstancing(bool enable)
 {
     instancingEnabled = enable;
