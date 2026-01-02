@@ -22,13 +22,13 @@ void Renderable::Initialize(GeometryMode mode)
     normals.Initialize(1);
     colors3.Initialize(2);
     colors4.Initialize(2);
-    uvs.Initialize(4);
+    uvs.Initialize(3);
 
     indices.Initialize(0xFFFFFFFF, GL_ELEMENT_ARRAY_BUFFER);
 
-    instanceColors.Initialize(5);
-    instanceNormals.Initialize(6);
-    instanceTransforms.Initialize(7);
+    instanceColors.Initialize(4);
+    instanceNormals.Initialize(5);
+    instanceTransforms.Initialize(6);
 
     glBindVertexArray(0);
 }

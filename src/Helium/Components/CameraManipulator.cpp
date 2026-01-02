@@ -150,8 +150,6 @@ void CameraManipulatorTrackball::OnMouseWheel(const MouseWheelEvent& event)
 
 			Eigen::Vector3f viewDir = viewVec.normalized();
 			camera->SetEye(target + viewDir * radius);
-
-			He_Log(HE_LOG_DEBUG, "", "Camera radius: %f", radius);
 		}
 	}
 	else if (camera->GetProjectionMode() == Camera::Orthogonal)

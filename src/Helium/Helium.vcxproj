@@ -113,6 +113,7 @@
     <ClInclude Include="..\..\inc\Helium\HeliumEvents.h" />
     <ClInclude Include="..\..\inc\Helium\HeliumLog.h" />
     <ClInclude Include="..\..\inc\Helium\Morton3D.hpp" />
+    <ClInclude Include="..\..\inc\Helium\Serialization.hpp" />
     <ClInclude Include="..\..\inc\Helium\Systems\EventSystem.h" />
     <ClInclude Include="..\..\inc\Helium\Systems\HeliumSystem.h" />
     <ClInclude Include="..\..\inc\Helium\Systems\ImmediateModeRenderSystem.h" />

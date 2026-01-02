@@ -132,6 +132,9 @@
     <ClInclude Include="..\..\inc\Helium\GeometryBuilder.h">
       <Filter>헤더 파일\Helium</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Serialization.hpp">
+      <Filter>헤더 파일\Helium</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
