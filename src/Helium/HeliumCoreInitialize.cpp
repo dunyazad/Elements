@@ -1,5 +1,7 @@
 #include "pch.h"
 
+#include <thread>
+
 #include <glad/glad.h>
 
 #include <Helium/HeliumCore.h>
@@ -19,7 +21,7 @@
 
 #include <Helium/VisualDebugging.h>
 
-#include <thread>
+using VD = VisualDebugging;
 
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
 
@@ -283,6 +285,131 @@ void InitializePrimitives()
     }
 }
 
+const Eigen::Vector4f RED = { 1.0f, 0.0f, 0.0f, 1.0f };
+const Eigen::Vector4f GREEN = { 0.0f, 1.0f, 0.0f, 1.0f };
+const Eigen::Vector4f BLUE = { 0.0f, 0.0f, 1.0f, 1.0f };
+const Eigen::Vector4f WHITE = { 1.0f, 1.0f, 1.0f, 1.0f };
+const Eigen::Vector4f YELLOW = { 1.0f, 1.0f, 0.0f, 1.0f };
+const Eigen::Vector4f CYAN = { 0.0f, 1.0f, 1.0f, 1.0f };
+const Eigen::Vector4f MAGENTA = { 1.0f, 0.0f, 1.0f, 1.0f };
+
+inline Eigen::Matrix4f Translate(const Eigen::Vector3f& t)
+{
+    Eigen::Matrix4f m = Eigen::Matrix4f::Identity();
+    m.block<3, 1>(0, 3) = t;
+    return m;
+}
+
+inline Eigen::Matrix4f Scale(const Eigen::Vector3f& s)
+{
+    Eigen::Matrix4f m = Eigen::Matrix4f::Identity();
+    m(0, 0) = s.x();
+    m(1, 1) = s.y();
+    m(2, 2) = s.z();
+    return m;
+}
+
+void InitializeVisualDebugging()
+{
+    // 1. 기본 도형 테스트 (Row 0: Z = 0)
+    // ---------------------------------------------------------
+    float x = -10.0f;
+    float z = 0.0f;
+    float spacing = 3.0f;
+
+    // Box
+    VisualDebugging::AddBox("Test_Box", { x, 1.0f, z }, { 1.0f, 1.0f, 1.0f }, RED);
+    x += spacing;
+
+    // Sphere
+    VisualDebugging::AddSphere("Test_Sphere", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f}, 0.5f, GREEN);
+    x += spacing;
+
+    // Cylinder (기본 Up 방향)
+    VisualDebugging::AddCylinder("Test_Cylinder", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 0.5f, 2.0f, BLUE);
+    x += spacing;
+
+    // Cone
+    VisualDebugging::AddCone("Test_Cone", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 0.5f, 2.0f, YELLOW);
+    x += spacing;
+
+    // Capsule
+    VisualDebugging::AddCapsule("Test_Capsule", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 0.5f, 1.0f, 16, CYAN);
+    x += spacing;
+
+    // Disk
+    VisualDebugging::AddDisk("Test_Disk", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 1.0f, MAGENTA);
+    x += spacing;
+
+    // Torus
+    VisualDebugging::AddTorus("Test_Torus", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 1.0f, 0.3f, 32, 16, WHITE);
+
+    // ---------------------------------------------------------
+    // 2. 특수 및 복합 도형 (Row 1: Z = 3)
+    // ---------------------------------------------------------
+    x = -10.0f;
+    z = 3.0f;
+
+    // Wired Box
+    VisualDebugging::AddWiredBox("Test_WiredBox", { x, 1.0f, z }, { 1.2f, 1.2f, 1.2f }, WHITE);
+    x += spacing;
+
+    // Tube (수정된 로직 검증: ControlPoints 기반)
+    // 반지름 0.5, 곡선분할 16, 원형분할 16
+    VisualDebugging::AddTube("Test_Tube", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 0.5f, 16, 16, CYAN);
+    x += spacing;
+
+    // Arrow (Up)
+    VisualDebugging::AddArrow("Test_Arrow_Up", { x, 0.0f, z }, { 0.0f, 1.0f, 0.0f }, 2.0f, GREEN);
+    x += spacing;
+
+    // Arrow (Right) - 회전 로직 검증
+    VisualDebugging::AddArrow("Test_Arrow_Right", { x, 1.0f, z }, { 1.0f, 0.0f, 0.0f }, 2.0f, RED);
+    x += spacing;
+
+    // Arrow (Forward) - 회전 로직 검증
+    VisualDebugging::AddArrow("Test_Arrow_Forward", { x, 1.0f, z }, { 0.0f, 0.0f, 1.0f }, 2.0f, BLUE);
+    x += spacing;
+
+    // Arrow (Diagonal) - 임의의 방향 회전 검증
+    Eigen::Vector3f diag = Eigen::Vector3f(1.0f, 1.0f, 1.0f).normalized();
+    VisualDebugging::AddArrow("Test_Arrow_Diag", { x, 1.0f, z }, diag, 2.0f, YELLOW);
+
+    // ---------------------------------------------------------
+    // 3. 라인 및 기타 (Row 2: Z = 6)
+    // ---------------------------------------------------------
+    x = -10.0f;
+    z = 6.0f;
+
+    // Line
+    VisualDebugging::AddLine("Test_Line", { x - 1.0f, 0.0f, z }, { x + 1.0f, 2.0f, z }, RED, BLUE);
+    x += spacing;
+
+    // Triangle
+    VisualDebugging::AddTriangle("Test_Triangle",
+        { x, 0.0f, z }, { x - 1.0f, 2.0f, z }, { x + 1.0f, 2.0f, z },
+        YELLOW);
+    x += spacing;
+
+    // Frustum (가상의 ViewProj 역행렬 생성)
+    // 간단한 박스 형태의 Frustum 테스트
+    Eigen::Matrix4f fakeInvViewProj = Eigen::Matrix4f::Identity();
+    fakeInvViewProj = Translate({ x, 1.0f, z }) * Scale({ 1.0f, 1.0f, 1.0f });
+    VisualDebugging::AddFrustum("Test_Frustum", fakeInvViewProj, MAGENTA);
+    x += spacing;
+
+    // ---------------------------------------------------------
+    // 4. 바닥 그리드
+    // ---------------------------------------------------------
+    // 원점(0,0,0) 바닥에 20x20 그리드
+    VisualDebugging::AddGrid("Test_Grid", 20, 1.0f, { 0.3f, 0.3f, 0.3f, 1.0f });
+
+    // 좌표축 표시 (원점)
+    VisualDebugging::AddArrow("Axis_X", { 0.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }, 1.0f, RED);
+    VisualDebugging::AddArrow("Axis_Y", { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 1.0f, GREEN);
+    VisualDebugging::AddArrow("Axis_Z", { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, 1.0f, BLUE);
+}
+
 void HeliumCore::InitializeScene()
 {
     {
@@ -322,101 +449,6 @@ void HeliumCore::InitializeScene()
         }
     }
 
-#if 0
-    {
-        // ------------------------------------------------------------------
-        // Line 테스트
-        // ------------------------------------------------------------------
-        VisualDebugging::AddLine(
-            "Test_Line",
-            Eigen::Vector3f(0, 0, 0),
-            Eigen::Vector3f(1, 1, 0),
-            Eigen::Vector4f(1, 0, 0, 1)
-        );
-
-        VisualDebugging::AddLine(
-            "Test_Line",
-            Eigen::Vector3f(1, 0, 0),
-            Eigen::Vector3f(0, 1, 0),
-            Eigen::Vector4f(0, 1, 0, 1)
-        );
-
-        VisualDebugging::AddLine(
-            "Test_Line",
-            Eigen::Vector3f(0, 1, 0),
-            Eigen::Vector3f(1, 0, 1),
-            Eigen::Vector4f(0, 0, 1, 1)
-        );
-
-        // ------------------------------------------------------------------
-        // Triangle 테스트
-        // ------------------------------------------------------------------
-        VisualDebugging::AddTriangle(
-            "Test_Triangle",
-            Eigen::Vector3f(0, 0, 0),
-            Eigen::Vector3f(1, 0, 0),
-            Eigen::Vector3f(0, 1, 0),
-            Eigen::Vector4f(1, 1, 0, 1)
-        );
-
-        // ------------------------------------------------------------------
-        // Box (Instancing) 테스트
-        // ------------------------------------------------------------------
-        VisualDebugging::AddBox(
-            "Test_Box",
-            Eigen::Vector3f(0, 0, 0),
-            Eigen::Vector3f(1, 1, 1),
-            Eigen::Vector4f(0, 0.5f, 1, 1)
-        );
-
-        VisualDebugging::AddBox(
-            "Test_Box",
-            Eigen::Vector3f(2, 0, 0),
-            Eigen::Vector3f(1, 1, 0),     // normal
-            Eigen::Vector3f(0.5f, 2, 0.5f),
-            Eigen::Vector4f(1, 0, 0, 1)
-        );
-
-        // ------------------------------------------------------------------
-        // WiredBox 테스트
-        // ------------------------------------------------------------------
-        VisualDebugging::AddWiredBox(
-            "Test_WiredBox",
-            Eigen::Vector3f(0, 2, 0),
-            Eigen::Vector3f(1, 1, 1),
-            Eigen::Vector4f(0, 1, 0, 1)
-        );
-
-        // ------------------------------------------------------------------
-        // Sphere 테스트
-        // ------------------------------------------------------------------
-        VisualDebugging::AddSphere(
-            "Test_Sphere",
-            Eigen::Vector3f(-2, 0, 0),
-            0.5f,
-            Eigen::Vector4f(1, 0, 1, 1)
-        );
-
-        VisualDebugging::AddSphere(
-            "Test_Sphere",
-            Eigen::Vector3f(-2, 2, 0),
-            Eigen::Vector3f(0, 1, 0),
-            0.3f,
-            Eigen::Vector4f(1, 1, 1, 1)
-        );
-
-        // ------------------------------------------------------------------
-        // Selection 테스트
-        // ------------------------------------------------------------------
-        VisualDebugging::ClearSelectionList();
-        VisualDebugging::AddToSelectionList("Test_Line");
-        VisualDebugging::AddToSelectionList("Test_Triangle");
-        VisualDebugging::AddToSelectionList("Test_Box");
-        VisualDebugging::AddToSelectionList("Test_WiredBox");
-        VisualDebugging::AddToSelectionList("Test_Sphere");
-    }
-#endif // 0
-
     {
         auto entity = CreateEntity("Grid");
         auto renderable = CreateComponent<Renderable>(entity);
@@ -434,6 +466,10 @@ void HeliumCore::InitializeScene()
     }
 
     //InitializePrimitives();
+
+    InitializeVisualDebugging();
+
+    return;
 
     {
         std::string plyFilename = "../../res/PLY/Compound.ply";
