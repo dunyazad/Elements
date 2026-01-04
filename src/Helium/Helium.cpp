@@ -52,7 +52,7 @@ void He_ProcessMouseWheel(float xoffset, float yoffset)
 	}
 }
 
-HELIUM_API void He_TestCreateEntity()
+bool He_LoadPointCloudsFromPLY(const char* filename)
 {
-	Helium.CreateEntity("TestEntity_From_CSharp");
+	return Helium.LoadPointCloudsFromPLY(filename);
 }

@@ -26,5 +26,6 @@ extern "C"
 
     HELIUM_API void He_ProcessMouseWheel(float xoffset, float yoffset);
 
-    HELIUM_API void He_TestCreateEntity();
+    HELIUM_API bool He_LoadPointCloudsFromPLY(const char* filename);
 }
+

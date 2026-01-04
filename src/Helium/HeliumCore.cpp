@@ -18,6 +18,8 @@
 
 #include <Helium/VisualDebugging.h>
 
+#include <Helium/PointCloud.h>
+
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
 
 HeliumCore::HeliumCore()
@@ -26,6 +28,16 @@ HeliumCore::HeliumCore()
 
 HeliumCore::~HeliumCore()
 {
+    for (auto& pointCloud : pointClouds)
+    {
+        if(nullptr != pointCloud)
+        {
+            delete pointCloud;
+            pointCloud = nullptr;
+		}
+    }
+	pointClouds.clear();
+
     Shutdown();
 }
 
@@ -257,6 +269,17 @@ Entity HeliumCore::GetEntityByName(const std::string& name)
     return InvalidEntity;
 }
 
+void HeliumCore::RemoveEntity(const std::string& name)
+{
+    if (nameEntityMapping.find(name) != nameEntityMapping.end())
+    {
+        Entity entity = nameEntityMapping[name];
+        nameEntityMapping.erase(name);
+        entityNameMapping.erase(entity);
+        registry.destroy(entity);
+	}
+}
+
 void HeliumCore::RemoveEntity(Entity entity)
 {
     if (registry.valid(entity))
@@ -279,4 +302,19 @@ void HeliumCore::Log(const char* key, const char* fmt, ...)
     _vsnprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
     va_end(args);
     He_LogInternal(HE_LOG_INFO, key, buffer);
+}
+
+bool HeliumCore::LoadPointCloudsFromPLY(const std::string& filename)
+{
+	PointCloud* pointCloud = new PointCloud();
+    if (pointCloud->LoadFromPLY(filename))
+    {
+        pointClouds.push_back(pointCloud);
+        return true;
+    }
+    else
+    {
+        delete pointCloud;
+        return false;
+	}
 }

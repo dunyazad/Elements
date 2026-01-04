@@ -31,7 +31,7 @@ internal static class HeliumNative
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void He_ProcessMouseWheel(float xoffset, float yoffset);
 
-    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern void He_TestCreateEntity();
 
+    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
+    public static extern bool He_LoadPointCloudsFromPLY([MarshalAs(UnmanagedType.LPStr)] string filename);
 }

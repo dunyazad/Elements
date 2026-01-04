@@ -21,6 +21,8 @@
 
 #include <Helium/VisualDebugging.h>
 
+#include <Helium/PointCloud.h>
+
 using VD = VisualDebugging;
 
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
@@ -467,7 +469,7 @@ void HeliumCore::InitializeScene()
 
     //InitializePrimitives();
 
-    InitializeVisualDebugging();
+    //InitializeVisualDebugging();
 
     return;
 

@@ -121,6 +121,7 @@
         <Grid Background="#1E1E1E">
             <Grid.RowDefinitions>
                 <RowDefinition Height="30" />
+                <RowDefinition Height="25" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="5" />
                 <RowDefinition x:Name="MainLogRow" Height="224" MinHeight="24" />
@@ -128,21 +129,27 @@
 
             <Grid Grid.Row="0" Background="#333">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0,10,0" VerticalAlignment="Center">
-                    <TextBlock Text="Neon" FontWeight="Bold" Foreground="#FFF" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="Neon" FontWeight="Bold" Foreground="#FFF" VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <Menu Grid.Column="1" 
-                      Background="Transparent" 
-                      WindowChrome.IsHitTestVisibleInChrome="True"
-                      VerticalAlignment="Center"
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Content="0" Style="{StaticResource CaptionButtonStyle}" Click="Min_Click"/>
+                    <Button x:Name="MaxBtn" Content="1" Style="{StaticResource CaptionButtonStyle}" Click="Max_Click"/>
+                    <Button Content="r" Style="{StaticResource CloseButtonStyle}" Click="Close_Click"/>
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="1" Background="#2D2D30">
+                <Menu Background="Transparent" 
+                      VerticalAlignment="Center" 
                       HorizontalAlignment="Left">
                     <MenuItem Header="_File">
+                        <MenuItem Header="_Open" Click="MenuOpen_Click" InputGestureText="Ctrl+O"/>
                         <MenuItem Header="_Exit" Click="MenuExit_Click" InputGestureText="Alt+F4"/>
                     </MenuItem>
                     <MenuItem Header="_View">
@@ -150,31 +157,85 @@
                         <Separator/>
                         <MenuItem Header="Reset Layout"/>
                     </MenuItem>
-                    <MenuItem Header="_Tools">
-                        <MenuItem Header="Add _Entity" Click="TestEntity_Click"/>
-                    </MenuItem>
                     <MenuItem Header="_Help">
                         <MenuItem Header="_About"/>
                     </MenuItem>
                 </Menu>
-
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Button Content="0" Style="{StaticResource CaptionButtonStyle}" Click="Min_Click"/>
-                    <Button x:Name="MaxBtn" Content="1" Style="{StaticResource CaptionButtonStyle}" Click="Max_Click"/>
-                    <Button Content="r" Style="{StaticResource CloseButtonStyle}" Click="Close_Click"/>
-                </StackPanel>
             </Grid>
 
-            <local:HeliumHost x:Name="HeliumHostControl" Grid.Row="1"/>
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="250" MinWidth="150" MaxWidth="400"/>
+                    <ColumnDefinition Width="5"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-            <GridSplitter Grid.Row="2" 
+                <Border Grid.Column="0" Background="#222" BorderBrush="#333" BorderThickness="0,0,1,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="30"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0" Background="#2D2D30" BorderBrush="#333" BorderThickness="0,0,0,1">
+                            <TextBlock Text="Scene Explorer" 
+                                       Foreground="#DDD" 
+                                       FontWeight="Bold" 
+                                       VerticalAlignment="Center" 
+                                       Margin="10,0,0,0"/>
+                        </Border>
+
+                        <TreeView x:Name="SceneTree"
+                                  Grid.Row="1"
+                                  Background="Transparent"
+                                  BorderThickness="0"
+                                  Foreground="#DDD"
+                                  Padding="5"
+                                  ItemsSource="{Binding SceneItems}"
+                                  SelectedItemChanged="SceneTree_SelectedItemChanged">
+
+                        <TreeView.Resources>
+                                <Style TargetType="{x:Type TreeViewItem}">
+                                    <Setter Property="Foreground" Value="#DDD"/>
+                                    <Setter Property="FontSize" Value="13"/>
+                                    <Setter Property="Padding" Value="5,2"/>
+                                    <Style.Resources>
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#444"/>
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#333"/>
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#CCC"/>
+                                    </Style.Resources>
+                                </Style>
+                            </TreeView.Resources>
+
+                            <TreeView.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="C" FontFamily="Wingdings" Foreground="#4CAF50" Margin="0,0,5,0"/>
+                                        <TextBlock Text="{Binding Name}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
+                    </Grid>
+                </Border>
+
+                <GridSplitter Grid.Column="1" 
+                              HorizontalAlignment="Stretch" 
+                              Background="#444" 
+                              ResizeBehavior="PreviousAndNext"/>
+
+                <local:HeliumHost x:Name="HeliumHostControl" Grid.Column="2"/>
+            </Grid>
+
+            <GridSplitter Grid.Row="3" 
                           Height="5" 
                           HorizontalAlignment="Stretch" 
                           VerticalAlignment="Center"
                           Background="#444"
                           ResizeBehavior="PreviousAndNext"/>
 
-            <Grid Grid.Row="3">
+            <Grid Grid.Row="4">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="30" />
                     <RowDefinition Height="*" />
@@ -196,13 +257,6 @@
                                       Foreground="#AAA"
                                       BorderThickness="0"
                                       HorizontalAlignment="Stretch"/>
-
-                        <Button Grid.Column="1"
-                                Content="Add Entity"
-                                Click="TestEntity_Click"
-                                Background="#444"
-                                Foreground="#FFF"
-                                BorderThickness="0"/>
                     </Grid>
                 </Border>
 

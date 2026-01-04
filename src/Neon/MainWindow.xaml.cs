@@ -1,6 +1,7 @@
 ﻿using Neon.Controls;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Text;
 using System.Windows;
@@ -12,8 +13,17 @@ using static HeliumNative;
 
 namespace Neon
 {
+    public class SceneNode
+    {
+        public int ID { get; set; }
+        public string Name { get; set; }
+        public string FullPath { get; set; }
+    }
+
     public partial class MainWindow : Window
     {
+        public ObservableCollection<SceneNode> SceneItems { get; set; }
+
         private HeliumLogDelegate _logDelegate;
         private bool _autoScroll = true;
 
@@ -32,6 +42,9 @@ namespace Neon
         {
             InitializeComponent();
 
+            SceneItems = new ObservableCollection<SceneNode>();
+            this.DataContext = this;
+
             ComponentDispatcher.ThreadFilterMessage += ComponentDispatcher_ThreadFilterMessage;
 
             NeonLogger.Initialize();
@@ -45,6 +58,35 @@ namespace Neon
             CompositionTarget.Rendering += OnRendering;
 
             this.WindowState = WindowState.Maximized;
+        }
+
+        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            // Check for Ctrl key combination
+            if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            {
+                switch (e.Key)
+                {
+                    case Key.O:
+                        {
+                            MenuOpen_Click(sender, e);
+                            e.Handled = true; // Mark event as handled so it doesn't bubble up
+                            break;
+                        }
+                }
+            }
+            else
+            {
+                switch (e.Key)
+                {
+                    case Key.Escape:
+                        {
+                            e.Handled = true;
+                            this.Close();
+                            break;
+                        }
+                }
+            }
         }
 
         private void ComponentDispatcher_ThreadFilterMessage(ref MSG msg, ref bool handled)
@@ -93,14 +135,6 @@ namespace Neon
             return false;
         }
 
-        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Escape)
-            {
-                this.Close();
-            }
-        }
-
         private void OnRendering(object? sender, EventArgs e)
         {
             long currentTicks = _stopwatch.ElapsedTicks;
@@ -117,9 +151,6 @@ namespace Neon
             catch { }
         }
 
-        // --------------------------------------------------------------------
-        // 로그 관련
-        // --------------------------------------------------------------------
         private void OnHeliumLog(NeonLogger.LogLevel level, string? key, string value)
         {
             NeonLogger.Log(level, key, value);
@@ -131,19 +162,19 @@ namespace Neon
             {
                 if (key == null)
                 {
-                    LogList.Items.Add(MakeItem(level, line));
+                    LogList.Items.Add(MakeLogItem(level, line));
                     continue;
                 }
 
                 var id = (level, key);
                 if (_keyToIndex.TryGetValue(id, out int index))
                 {
-                    LogList.Items[index] = MakeItem(level, line);
+                    LogList.Items[index] = MakeLogItem(level, line);
                 }
                 else
                 {
                     int newIndex = LogList.Items.Count;
-                    LogList.Items.Add(MakeItem(level, line));
+                    LogList.Items.Add(MakeLogItem(level, line));
                     _keyToIndex[id] = newIndex;
                 }
             }
@@ -155,7 +186,7 @@ namespace Neon
             }
         }
 
-        private object MakeItem(NeonLogger.LogLevel level, string line)
+        private object MakeLogItem(NeonLogger.LogLevel level, string line)
         {
             Brush color = level switch
             {
@@ -205,9 +236,30 @@ namespace Neon
             }
         }
 
-        private void TestEntity_Click(object sender, RoutedEventArgs e)
+        private void MenuOpen_Click(object sender, RoutedEventArgs e)
         {
-            HeliumNative.He_TestCreateEntity();
+            var dialog = new Microsoft.Win32.OpenFileDialog();
+            dialog.FileName = "";
+            dialog.DefaultExt = ".ply";
+            dialog.Filter = "Point Cloud Files (*.ply)|*.ply|All files (*.*)|*.*";
+
+            if (dialog.ShowDialog() == true)
+            {
+                string filename = dialog.FileName;
+
+                if (HeliumNative.He_LoadPointCloudsFromPLY(filename))
+                {
+                    var node = new SceneNode
+                    {
+                        ID = SceneItems.Count,
+                        Name = System.IO.Path.GetFileName(filename),
+                        FullPath = filename
+                    };
+                    SceneItems.Add(node);
+
+                    NeonLogger.Log("", $"Loaded: {node.Name}");
+                }
+            }
         }
 
         private void MenuExit_Click(object sender, RoutedEventArgs e)
@@ -247,6 +299,18 @@ namespace Neon
             CompositionTarget.Rendering -= OnRendering;
             ComponentDispatcher.ThreadFilterMessage -= ComponentDispatcher_ThreadFilterMessage;
             base.OnClosed(e);
+        }
+
+        private void SceneTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        {
+            // e.NewValue는 선택된 데이터 객체(SceneNode)입니다.
+            if (e.NewValue is SceneNode selectedNode)
+            {
+                NeonLogger.Log("", $"Selected: {selectedNode.Name}");
+
+                // 예시: C++ 엔진에 해당 파일(객체)을 선택하라고 알림
+                // HeliumNative.SelectObject(selectedNode.FullPath); 
+            }
         }
 
         private sealed class LogItem

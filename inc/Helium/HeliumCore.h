@@ -11,10 +11,11 @@
 #include <Helium/File.h>
 
 #include <Helium/Backend/GraphicsBackend.h>
-
 #include <Helium/Components/Components.h>
-
 #include <Helium/Systems/Systems.h>
+
+class Scene;
+class PointCloud;
 
 using Entity = entt::entity;
 #define InvalidEntity ((Entity)UINT32_MAX)
@@ -47,7 +48,6 @@ protected:
 
     static inline std::set<EventCallback<T>*> instances;
 };
-
 
 class HeliumCore
 {
@@ -96,7 +96,6 @@ public:
         return InvalidEntity;
     }
 
-    const std::string& GetEntityName(Entity entity);
     void RemoveEntity(const std::string& name);
     void RemoveEntity(Entity entity);
 
@@ -122,7 +121,6 @@ public:
     inline void AddOnRenderCallback(std::function<void()> callback) { onRenderCallbacks.push_back(callback); }
     inline void AddOnShutdownCallback(std::function<void()> callback) { onShutdownCallbacks.push_back(callback); }
 
-
     template<typename T>
     EventCallback<T>& GetEventCallback(Entity entity)
     {
@@ -147,7 +145,6 @@ public:
         }
     }
 
-
     Shader* CreateShader(const std::string& name, const std::string& vsCode, const std::string& fsCode);
     Shader* CreateShader(const std::string& name, const File& vsFile, const File& fsFile);
     Shader* GetShader(const std::string& name);
@@ -155,6 +152,8 @@ public:
 	inline HWND GetHWND() const { return hWnd; }
 
     void Log(const char* key, const char* fmt, ...);
+
+	bool LoadPointCloudsFromPLY(const std::string& filename);
 
 private:
     HeliumCore();
@@ -186,6 +185,10 @@ private:
     std::vector<std::function<void()>> onShutdownCallbacks;
 
     std::unordered_map<std::string, Shader*> shaders;
+
+    std::unordered_map<std::string, Scene*> scenes;
+
+	std::vector<PointCloud*> pointClouds;
 };
 
 #define Helium HeliumCore::GetStaticInstance()
