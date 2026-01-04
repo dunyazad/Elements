@@ -37,7 +37,7 @@ namespace Neon
 
         private const int WM_MOUSEWHEEL = 0x020A;  // Vertical
         private const int WM_MOUSEHWHEEL = 0x020E; // Horizontal
-
+                
         public MainWindow()
         {
             InitializeComponent();
