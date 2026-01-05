@@ -343,15 +343,15 @@ PointCloud* HeliumCore::GetSelectedPointCloud()
     return selectedPointCloud;
 }
 
-int HeliumCore::Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const
-{
-	int pickedIndex = -1;
-
-	auto pointCloud = selectedPointCloud;
-    if (nullptr != pointCloud)
-    {
-        pickedIndex = pointCloud->Pick(rayOrigin, rayDirection);
-    }
-
-    return pickedIndex;
-}
+//int HeliumCore::Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const
+//{
+//	int pickedIndex = -1;
+//
+//	auto pointCloud = selectedPointCloud;
+//    if (nullptr != pointCloud)
+//    {
+//        pickedIndex = pointCloud->Pick(rayOrigin, rayDirection);
+//    }
+//
+//    return pickedIndex;
+//}

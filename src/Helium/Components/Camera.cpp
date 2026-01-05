@@ -1,6 +1,9 @@
 #include "pch.h"
 #include <Helium/Components/Camera.h>
 
+#include <Helium/VisualDebugging.h>
+using VD = VisualDebugging;
+
 Camera::Camera()
 {
     UpdateViewMatrix();
@@ -102,26 +105,27 @@ Ray Camera::ScreenPointToRay(float mouseX, float mouseY, int screenWidth, int sc
 
     Eigen::Vector4f clipCoords(ndcX, ndcY, -1.0f, 1.0f);
 
-    Eigen::Vector4f eyeCoords = projectionMatrix.inverse() * clipCoords;
-    eyeCoords.z() = -1.0f;
-    eyeCoords.w() = 0.0f;
+    Eigen::Matrix4f invViewProj = (projectionMatrix * viewMatrix).inverse();
 
-    Eigen::Vector4f worldCoords = viewMatrix.inverse() * eyeCoords;
-    Eigen::Vector3f rayDir = Eigen::Vector3f(worldCoords.x(), worldCoords.y(), worldCoords.z()).normalized();
+    Eigen::Vector4f worldCoords = invViewProj * clipCoords;
+
+    if (std::abs(worldCoords.w()) > 1e-6f)
+    {
+        worldCoords /= worldCoords.w();
+    }
 
     Eigen::Vector3f rayOrigin;
+    Eigen::Vector3f rayDir;
 
     if (mode == Perspective)
     {
         rayOrigin = eye;
+        rayDir = (worldCoords.head<3>() - eye).normalized();
     }
     else
     {
-        Eigen::Vector4f clipPos(ndcX, ndcY, -1.0f, 1.0f);
-        Eigen::Vector4f worldPos = (projectionMatrix * viewMatrix).inverse() * clipPos;
-        worldPos /= worldPos.w();
-
-        rayOrigin = Eigen::Vector3f(worldPos.x(), worldPos.y(), worldPos.z());
+        rayOrigin = worldCoords.head<3>();
+        rayDir = (target - eye).normalized();
     }
 
     return Ray{ rayOrigin, rayDir };

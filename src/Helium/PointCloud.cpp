@@ -142,25 +142,14 @@ void PointCloud::UpdateLoading()
 					auto camera = Helium.GetComponent<Camera>(cameraEntity);
 					if (nullptr == camera) return;
 
-					float ndcX = (2.0f * event.xpos) / (float)Helium.GetWidth() - 1.0f;
-					float ndcY = 1.0f - (2.0f * event.ypos) / (float)Helium.GetHeight();
+					Ray ray = camera->ScreenPointToRay(
+						(float)event.xpos,
+						(float)event.ypos,
+						Helium.GetWidth(),
+						Helium.GetHeight()
+					);
 
-					Eigen::Matrix4f view = camera->GetViewMatrix();
-					Eigen::Matrix4f proj = camera->GetProjectionMatrix();
-					Eigen::Matrix4f invVP = (proj * view).inverse();
-
-					Eigen::Vector4f screenPos(ndcX, ndcY, 1.0f, 1.0f);
-					Eigen::Vector4f worldPos = invVP * screenPos;
-
-					if (std::abs(worldPos.w()) > 1e-6f)
-					{
-						worldPos /= worldPos.w();
-					}
-
-					Eigen::Vector3f rayOrigin = camera->GetEye();
-					Eigen::Vector3f rayDir = (worldPos.head<3>() - rayOrigin).normalized();
-
-					int pickedIndex = this->Pick(rayOrigin, rayDir);
+					int pickedIndex = this->Pick(ray.origin, ray.direction);
 
 					if (pickedIndex != -1)
 					{
