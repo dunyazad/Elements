@@ -28,12 +28,12 @@ HeliumCore::HeliumCore()
 
 HeliumCore::~HeliumCore()
 {
-    for (auto& pointCloud : pointClouds)
+    for (auto& kvp : pointClouds)
     {
-        if(nullptr != pointCloud)
+        if(nullptr != kvp.second)
         {
-            delete pointCloud;
-            pointCloud = nullptr;
+            delete kvp.second;
+            kvp.second = nullptr;
 		}
     }
 	pointClouds.clear();
@@ -63,17 +63,17 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
     if (type == BackendType::Vulkan)
     {
         backend = std::make_unique<VulkanBackend>();
-        Log("System", "Backend Selected: Vulkan");
+        //Log(HE_LOG_INFO, "System", "Backend Selected: Vulkan");
     }
     else
     {
         backend = std::make_unique<OpenGLBackend>();
-        Log("System", "Backend Selected: OpenGL");
+        //Log(HE_LOG_INFO, "System", "Backend Selected: OpenGL");
     }
 
     if (!backend->Initialize(hwnd))
     {
-        Log("System", "Failed to initialize backend.");
+        Log(HE_LOG_ERROR, "System", "Failed to initialize backend.");
         return false;
     }
 
@@ -94,6 +94,14 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
 void HeliumCore::Update(float dt)
 {
     if (!isInitialized) return;
+
+    for (auto& [ID, pointCloud] : pointClouds)
+    {
+        if (nullptr != pointCloud)
+        {
+            pointCloud->UpdateLoading();
+        }
+    }
 
     VisualDebugging::DispatchCommands();
 
@@ -160,19 +168,6 @@ void HeliumCore::Render()
 
 void HeliumCore::Resize(int width, int height)
 {
-    //if (m_hWnd)
-    //{
-    //    RECT rect;
-    //    if (GetClientRect(m_hWnd, &rect))
-    //    {
-    //        width = rect.right - rect.left;
-    //        height = rect.bottom - rect.top;
-    //    }
-    //}
-
-    //this->width = width;
-    //this->height = height;
-
     auto entites = registry.view<Camera>();
     for (auto& entity : entites)
     {
@@ -183,8 +178,6 @@ void HeliumCore::Resize(int width, int height)
     if (backend) backend->Resize(width, height);
 
     if (eventSystem) eventSystem->Trigger<WindowResizeEvent>(width, height);
-
-    Log("System", "Resized to %d x %d", width, height);
 }
 
 void HeliumCore::Shutdown()
@@ -258,7 +251,6 @@ Entity HeliumCore::CreateEntity(const std::string& name)
     Entity entity = registry.create();
     nameEntityMapping[name] = entity;
     entityNameMapping[entity] = name;
-    Log("Entity", "Created Entity: %s", name.c_str());
     return entity;
 }
 
@@ -294,22 +286,28 @@ void HeliumCore::RemoveEntity(Entity entity)
     }
 }
 
-void HeliumCore::Log(const char* key, const char* fmt, ...)
+void HeliumCore::Log(HeliumLogLevel level, const char* key, const char* fmt, ...)
 {
     char buffer[4096] = { 0 };
     va_list args;
     va_start(args, fmt);
     _vsnprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
     va_end(args);
-    He_LogInternal(HE_LOG_INFO, key, buffer);
+    He_LogInternal(level, key, buffer);
 }
 
-bool HeliumCore::LoadPointCloudsFromPLY(const std::string& filename)
+bool HeliumCore::LoadPointCloudsFromPLY(const std::string& filename, int ID)
 {
 	PointCloud* pointCloud = new PointCloud();
     if (pointCloud->LoadFromPLY(filename))
     {
-        pointClouds.push_back(pointCloud);
+        if (pointClouds.find(ID) != pointClouds.end())
+        {
+            delete pointClouds[ID];
+            pointClouds[ID] = nullptr;
+        }
+
+        pointClouds[ID] = pointCloud;
         return true;
     }
     else
@@ -317,4 +315,26 @@ bool HeliumCore::LoadPointCloudsFromPLY(const std::string& filename)
         delete pointCloud;
         return false;
 	}
+}
+
+bool HeliumCore::SelectPointCloud(int ID)
+{
+	auto it = pointClouds.find(ID);
+    if (it != pointClouds.end())
+    {
+        selectedPointCloud = it->second;
+        return true;
+    }
+
+    return false;
+}
+
+PointCloud* HeliumCore::GetPointCloud(int ID)
+{
+    auto it = pointClouds.find(ID);
+    if (it != pointClouds.end())
+    {
+        return it->second;
+    }
+    return nullptr;
 }

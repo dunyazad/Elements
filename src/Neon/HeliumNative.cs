@@ -33,5 +33,11 @@ internal static class HeliumNative
 
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern bool He_LoadPointCloudsFromPLY([MarshalAs(UnmanagedType.LPStr)] string filename);
+    public static extern bool He_LoadPointCloudsFromPLY([MarshalAs(UnmanagedType.LPStr)] string filename, int ID);
+
+    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void He_PointCloudSelect(int ID);
+
+    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
+    public static extern bool He_PointCloudSetVisible(int ID, bool isVisible);
 }

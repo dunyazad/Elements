@@ -15,7 +15,7 @@ InputSystem::InputSystem(HeliumCore* core)
 
 void InputSystem::Initialize()
 {
-    core->Log("System", "InputSystem Initialized");
+    //core->Log(HE_LOG_INFO, "System", "InputSystem Initialized");
 }
 
 void InputSystem::Update(float dt)

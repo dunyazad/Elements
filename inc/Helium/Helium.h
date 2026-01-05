@@ -26,6 +26,9 @@ extern "C"
 
     HELIUM_API void He_ProcessMouseWheel(float xoffset, float yoffset);
 
-    HELIUM_API bool He_LoadPointCloudsFromPLY(const char* filename);
-}
+    HELIUM_API bool He_LoadPointCloudsFromPLY(const char* filename, int ID);
 
+    HELIUM_API bool He_PointCloudSelect(int ID);
+
+    HELIUM_API bool He_PointCloudSetVisible(int ID, bool isVisible);
+}

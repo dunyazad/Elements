@@ -34,7 +34,7 @@ bool OpenGLBackend::Initialize(HWND hwnd)
     }
 
     const char* version = (const char*)glGetString(GL_VERSION);
-    He_Log(HE_LOG_INFO, "", "OpenGL Initialized: %s", version);
+    //He_Log(HE_LOG_INFO, "", "OpenGL Initialized: %s", version);
 
     glClearColor(0.3f, 0.5f, 0.7f, 1.0f); // OpenGL 기본 배경색
 
@@ -49,16 +49,14 @@ void OpenGLBackend::Resize(int width, int height)
 	this->height = height;
 
     glViewport(0, 0, width, height);
-
-	He_Log(HE_LOG_INFO, "", "Resized OpenGL viewport to %d x %d", width, height);
 }
 
 void OpenGLBackend::Update(float dt)
 {
-    std::stringstream ss;
-	ss << "Delta Time: " << dt << " seconds";
+ //   std::stringstream ss;
+	//ss << "Delta Time: " << dt << " seconds";
 
-    He_Log(HE_LOG_INFO, "dt", "%s", ss.str().c_str());
+ //   He_Log(HE_LOG_INFO, "dt", "%s", ss.str().c_str());
 }
 
 void OpenGLBackend::Render()

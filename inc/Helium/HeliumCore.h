@@ -151,9 +151,11 @@ public:
 
 	inline HWND GetHWND() const { return hWnd; }
 
-    void Log(const char* key, const char* fmt, ...);
+    void Log(HeliumLogLevel level, const char* key, const char* fmt, ...);
 
-	bool LoadPointCloudsFromPLY(const std::string& filename);
+	bool LoadPointCloudsFromPLY(const std::string& filename, int ID);
+	bool SelectPointCloud(int ID);
+	PointCloud* GetPointCloud(int ID);
 
 private:
     HeliumCore();
@@ -188,7 +190,8 @@ private:
 
     std::unordered_map<std::string, Scene*> scenes;
 
-	std::vector<PointCloud*> pointClouds;
+	std::unordered_map<int, PointCloud*> pointClouds;
+	PointCloud* selectedPointCloud = nullptr;
 };
 
 #define Helium HeliumCore::GetStaticInstance()

@@ -2,7 +2,9 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -13,11 +15,34 @@ using static HeliumNative;
 
 namespace Neon
 {
-    public class SceneNode
+    public class SceneNode : INotifyPropertyChanged
     {
         public int ID { get; set; }
-        public string Name { get; set; }
-        public string FullPath { get; set; }
+        public required string Name { get; set; } = string.Empty;
+        public required string FullPath { get; set; } = string.Empty;
+
+        // 기본값을 true로 설정하여 생성 시 체크된 상태로 만듦
+        private bool _isVisible = true;
+
+        public bool IsVisible
+        {
+            get => _isVisible;
+            set
+            {
+                if (_isVisible != value)
+                {
+                    _isVisible = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        protected void OnPropertyChanged([CallerMemberName] string? name = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        }
     }
 
     public partial class MainWindow : Window
@@ -52,7 +77,7 @@ namespace Neon
 
             _logDelegate = OnHeliumLog;
             HeliumNative.He_SetLogCallback(_logDelegate);
-            NeonLogger.Log("system", "Application started");
+            //NeonLogger.Log("system", "Application started");
 
             _stopwatch.Start();
             CompositionTarget.Rendering += OnRendering;
@@ -69,7 +94,7 @@ namespace Neon
                 {
                     case Key.O:
                         {
-                            MenuOpen_Click(sender, e);
+                            Menu_File_Open_Click(sender, e);
                             e.Handled = true; // Mark event as handled so it doesn't bubble up
                             break;
                         }
@@ -236,35 +261,44 @@ namespace Neon
             }
         }
 
-        private void MenuOpen_Click(object sender, RoutedEventArgs e)
+        private void Menu_File_Open_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new Microsoft.Win32.OpenFileDialog();
             dialog.FileName = "";
             dialog.DefaultExt = ".ply";
+            dialog.Multiselect = true;
             dialog.Filter = "Point Cloud Files (*.ply)|*.ply|All files (*.*)|*.*";
 
             if (dialog.ShowDialog() == true)
             {
-                string filename = dialog.FileName;
+                string[] filenames = dialog.FileNames;
 
-                if (HeliumNative.He_LoadPointCloudsFromPLY(filename))
+                foreach (string filename in filenames)
                 {
-                    var node = new SceneNode
+                    int id = SceneItems.Count;
+                    if (HeliumNative.He_LoadPointCloudsFromPLY(filename, id))
                     {
-                        ID = SceneItems.Count,
-                        Name = System.IO.Path.GetFileName(filename),
-                        FullPath = filename
-                    };
-                    SceneItems.Add(node);
+                        var node = new SceneNode
+                        {
+                            ID = id,
+                            Name = System.IO.Path.GetFileName(filename),
+                            FullPath = filename
+                        };
+                        SceneItems.Add(node);
 
-                    NeonLogger.Log("", $"Loaded: {node.Name}");
+                        //NeonLogger.Log("", $"Loaded: {node.Name}");
+                    }
                 }
             }
         }
 
-        private void MenuExit_Click(object sender, RoutedEventArgs e)
+        private void Menu_File_Exit_Click(object sender, RoutedEventArgs e)
         {
             Close();
+        }
+
+        private void Menu_PointCloud_Clustering_Click(object sender, RoutedEventArgs e)
+        {
         }
 
         // --------------------------------------------------------------------
@@ -303,13 +337,27 @@ namespace Neon
 
         private void SceneTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
-            // e.NewValue는 선택된 데이터 객체(SceneNode)입니다.
             if (e.NewValue is SceneNode selectedNode)
             {
-                NeonLogger.Log("", $"Selected: {selectedNode.Name}");
+                //NeonLogger.Log("", $"Selected: {selectedNode.Name}");
+                HeliumNative.He_PointCloudSelect(selectedNode.ID);
+            }
+        }
 
-                // 예시: C++ 엔진에 해당 파일(객체)을 선택하라고 알림
-                // HeliumNative.SelectObject(selectedNode.FullPath); 
+        private void SceneItemCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            // sender가 CheckBox이고, DataContext가 SceneNode인지 확인
+            if (sender is CheckBox checkBox && checkBox.DataContext is SceneNode sceneNode)
+            {
+                // UI의 체크 상태 가져오기 (null일 경우 false 처리)
+                bool isVisible = checkBox.IsChecked ?? false;
+
+                // 데이터 모델 업데이트 (양방향 바인딩을 안 썼을 경우를 대비해 명시적 업데이트)
+                sceneNode.IsVisible = isVisible;
+
+                // Native 엔진에 가시성 업데이트 요청
+                // (He_SetPointCloudVisible 함수는 HeliumNative에 추가 필요)
+                HeliumNative.He_PointCloudSetVisible(sceneNode.ID, isVisible);
             }
         }
 

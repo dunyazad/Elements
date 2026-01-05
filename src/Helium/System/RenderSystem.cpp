@@ -39,6 +39,8 @@ void RenderRenderablesTemplate(
 
         for (auto& renderable : renderables)
         {
+			if (false == renderable->IsVisible()) continue;
+
             // Get Entity
             auto entity = Helium.GetEntityByComponent<T>(renderable);
             if (InvalidEntity == entity) continue;
@@ -184,8 +186,13 @@ void RenderSystem::Render()
         for (auto& entity : registry.view<Renderable>())
         {
             auto& r = registry.get<Renderable>(entity);
-            if (!r.IsUsingAlpha())
-                shadermap[r.GetActiveShader()].push_back(&r);
+            if (r.IsVisible())
+            {
+                if (!r.IsUsingAlpha())
+                {
+                    shadermap[r.GetActiveShader()].push_back(&r);
+                }
+            }
         }
 
         glEnable(GL_DEPTH_TEST);

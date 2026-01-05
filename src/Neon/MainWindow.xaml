@@ -149,14 +149,21 @@
                       VerticalAlignment="Center" 
                       HorizontalAlignment="Left">
                     <MenuItem Header="_File">
-                        <MenuItem Header="_Open" Click="MenuOpen_Click" InputGestureText="Ctrl+O"/>
-                        <MenuItem Header="_Exit" Click="MenuExit_Click" InputGestureText="Alt+F4"/>
+                        <MenuItem Header="_Open" Click="Menu_File_Open_Click" InputGestureText="Ctrl+O"/>
+                        <MenuItem Header="_Exit" Click="Menu_File_Exit_Click" InputGestureText="Alt+F4"/>
                     </MenuItem>
+
+                    <MenuItem Header="PointCloud">
+                        <MenuItem Header="Clustering" Click="Menu_PointCloud_Clustering_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Reset Layout"/>
+                    </MenuItem>
+
                     <MenuItem Header="_View">
                         <MenuItem Header="Toggle _Log" Click="LogToggle_Click"/>
                         <Separator/>
                         <MenuItem Header="Reset Layout"/>
-                    </MenuItem>
+                    </MenuItem>a
                     <MenuItem Header="_Help">
                         <MenuItem Header="_About"/>
                     </MenuItem>
@@ -186,15 +193,15 @@
                         </Border>
 
                         <TreeView x:Name="SceneTree"
-                                  Grid.Row="1"
-                                  Background="Transparent"
-                                  BorderThickness="0"
-                                  Foreground="#DDD"
-                                  Padding="5"
-                                  ItemsSource="{Binding SceneItems}"
-                                  SelectedItemChanged="SceneTree_SelectedItemChanged">
+          Grid.Row="1"
+          Background="Transparent"
+          BorderThickness="0"
+          Foreground="#DDD"
+          Padding="5"
+          ItemsSource="{Binding SceneItems}"
+          SelectedItemChanged="SceneTree_SelectedItemChanged">
 
-                        <TreeView.Resources>
+                            <TreeView.Resources>
                                 <Style TargetType="{x:Type TreeViewItem}">
                                     <Setter Property="Foreground" Value="#DDD"/>
                                     <Setter Property="FontSize" Value="13"/>
@@ -211,6 +218,10 @@
                             <TreeView.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal">
+                                        <CheckBox IsChecked="{Binding IsVisible}" 
+                          VerticalAlignment="Center" 
+                          Margin="0,0,5,0"
+                          Click="SceneItemCheckBox_Click"/>
                                         <TextBlock Text="C" FontFamily="Wingdings" Foreground="#4CAF50" Margin="0,0,5,0"/>
                                         <TextBlock Text="{Binding Name}"/>
                                     </StackPanel>

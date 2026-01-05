@@ -9,6 +9,7 @@
 #include <Helium/Backend/VulkanBackend.h>
 
 #include <Helium/HeliumCore.h>
+#include <Helium/PointCloud.h>
 
 bool He_Initialize(HWND hwnd, int backendType)
 {
@@ -52,7 +53,23 @@ void He_ProcessMouseWheel(float xoffset, float yoffset)
 	}
 }
 
-bool He_LoadPointCloudsFromPLY(const char* filename)
+bool He_LoadPointCloudsFromPLY(const char* filename, int ID)
 {
-	return Helium.LoadPointCloudsFromPLY(filename);
+	return Helium.LoadPointCloudsFromPLY(filename, ID);
+}
+
+bool He_PointCloudSelect(int ID)
+{
+	return Helium.SelectPointCloud(ID);
+}
+
+bool He_PointCloudSetVisible(int ID, bool isVisible)
+{
+	auto pointCloud = Helium.GetPointCloud(ID);
+	if (pointCloud)
+	{
+		pointCloud->SetVisible(isVisible);
+		return true;
+	}
+	return false;
 }

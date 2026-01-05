@@ -20,7 +20,7 @@ Shader::Shader(const std::string& name, const std::string& vertexSrc, const std:
     glGetProgramiv(rendererID, GL_LINK_STATUS, &success);
     if (!success) {
         glGetProgramInfoLog(rendererID, 512, NULL, infoLog);
-        Helium.Log("Shader", "Link Error (%s): %s", name.c_str(), infoLog);
+        Helium.Log(HE_LOG_ERROR, "Shader", "Link Error (%s): %s", name.c_str(), infoLog);
     }
 
     glDeleteShader(vs);
@@ -48,7 +48,7 @@ unsigned int Shader::CompileShader(unsigned int type, const std::string& source)
         char* message = (char*)alloca(length * sizeof(char));
         glGetShaderInfoLog(id, length, &length, message);
 
-        Helium.Log("Shader", "Compile Error (%s): %s",
+        Helium.Log(HE_LOG_ERROR, "Shader", "Compile Error (%s): %s",
             (type == GL_VERTEX_SHADER ? "Vertex" : "Fragment"), message);
 
         glDeleteShader(id);
