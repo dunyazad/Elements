@@ -19,6 +19,8 @@
 
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
 
+extern void OnPointCloudCreated(int id, const std::string& fileName, const std::string& name);
+
 HeliumCore::HeliumCore()
 {
 }
@@ -293,21 +295,24 @@ void HeliumCore::Log(HeliumLogLevel level, const char* key, const char* fmt, ...
     He_LogInternal(level, key, buffer);
 }
 
-bool HeliumCore::LoadPointCloudsFromPLY(const std::string& filename, int ID)
+int HeliumCore::LoadPointCloudFromPLY(const std::string& fileName, const std::string& name)
 {
-	PointCloud* pointCloud = new PointCloud();
-    if (pointCloud->LoadFromPLY(filename))
+    if(pointClouds.find(fileName) != pointClouds.end())
     {
-        if (pointClouds.find(ID) != pointClouds.end())
-        {
-            delete pointClouds[ID];
-            pointClouds[ID] = nullptr;
-        }
+		auto pointCloud = pointClouds[fileName];
+		selectedPointCloud = pointCloud;
+		return pointCloud->GetID();
+	}
 
-        pointClouds[ID] = pointCloud;
+	PointCloud* pointCloud = new PointCloud();
+    if (pointCloud->LoadFromPLY(fileName, name))
+    {
+        pointClouds[fileName] = pointCloud;
 
         selectedPointCloud = pointCloud;
-        return true;
+
+		OnPointCloudCreated(pointCloud->GetID(), pointCloud->GetFileName(), pointCloud->GetName());
+        return pointCloud->GetID();
     }
     else
     {
@@ -318,11 +323,13 @@ bool HeliumCore::LoadPointCloudsFromPLY(const std::string& filename, int ID)
 
 bool HeliumCore::SelectPointCloud(int ID)
 {
-	auto it = pointClouds.find(ID);
-    if (it != pointClouds.end())
+    for (auto& kvp : pointClouds)
     {
-        selectedPointCloud = it->second;
-        return true;
+        if(kvp.second->GetID() == ID)
+        {
+            selectedPointCloud = kvp.second;
+            return true;
+		}
     }
 
     return false;
@@ -330,11 +337,14 @@ bool HeliumCore::SelectPointCloud(int ID)
 
 PointCloud* HeliumCore::GetPointCloud(int ID)
 {
-    auto it = pointClouds.find(ID);
-    if (it != pointClouds.end())
+    for (auto& kvp : pointClouds)
     {
-        return it->second;
+        if (kvp.second->GetID() == ID)
+        {
+            return kvp.second;
+        }
     }
+
     return nullptr;
 }
 

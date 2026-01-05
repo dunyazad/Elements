@@ -10,17 +10,21 @@
 #include <cmath>
 #include <iostream>
 
+int PointCloud::nextID = -1;
+
 PointCloud::PointCloud()
 {
+	id = ++nextID;
 }
 
 PointCloud::~PointCloud()
 {
 }
 
-bool PointCloud::LoadFromPLY(const std::string& fileName)
+bool PointCloud::LoadFromPLY(const std::string& fileName, const std::string& name)
 {
 	this->fileName = fileName;
+	this->name = name;
 
 	if (isLoading) return false; // Already loading
 

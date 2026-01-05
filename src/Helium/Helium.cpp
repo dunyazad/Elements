@@ -53,9 +53,9 @@ void He_ProcessMouseWheel(float xoffset, float yoffset)
 	}
 }
 
-bool He_LoadPointCloudsFromPLY(const char* filename, int ID)
+int He_LoadPointCloudFromPLY(const char* filename, const char* name)
 {
-	return Helium.LoadPointCloudsFromPLY(filename, ID);
+	return Helium.LoadPointCloudFromPLY(filename, name);
 }
 
 bool He_PointCloudSelect(int ID)
@@ -72,4 +72,19 @@ bool He_PointCloudSetVisible(int ID, bool isVisible)
 		return true;
 	}
 	return false;
+}
+
+static PointCloudCreatedCallback g_PointCloudCreatedCallback = nullptr;
+
+void He_SetPointCloudCreatedCallback(PointCloudCreatedCallback callback)
+{
+	g_PointCloudCreatedCallback = callback;
+}
+
+void OnPointCloudCreated(int id, const std::string& fileName, const std::string& name)
+{
+	if (g_PointCloudCreatedCallback)
+	{
+		g_PointCloudCreatedCallback(id, fileName.c_str(), name.c_str());
+	}
 }

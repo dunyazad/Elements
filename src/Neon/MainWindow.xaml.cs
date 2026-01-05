@@ -15,42 +15,14 @@ using static HeliumNative;
 
 namespace Neon
 {
-    public class SceneNode : INotifyPropertyChanged
-    {
-        public int ID { get; set; }
-        public required string Name { get; set; } = string.Empty;
-        public required string FullPath { get; set; } = string.Empty;
-
-        // 기본값을 true로 설정하여 생성 시 체크된 상태로 만듦
-        private bool _isVisible = true;
-
-        public bool IsVisible
-        {
-            get => _isVisible;
-            set
-            {
-                if (_isVisible != value)
-                {
-                    _isVisible = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
-
-        public event PropertyChangedEventHandler? PropertyChanged;
-
-        protected void OnPropertyChanged([CallerMemberName] string? name = null)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-        }
-    }
-
     public partial class MainWindow : Window
     {
         public ObservableCollection<SceneNode> SceneItems { get; set; }
 
         private HeliumLogDelegate _logDelegate;
         private bool _autoScroll = true;
+
+        private HeliumNative.PointCloudCreatedDelegate _pointCloudCreatedDelegate;
 
         private readonly Stopwatch _stopwatch = new();
         private long _lastTicks = 0;
@@ -82,9 +54,14 @@ namespace Neon
             _stopwatch.Start();
             CompositionTarget.Rendering += OnRendering;
 
+            _pointCloudCreatedDelegate = Treeview_OnPointCloudCreated;
+            // 2. 네이티브에 등록
+            HeliumNative.He_SetPointCloudCreatedCallback(_pointCloudCreatedDelegate);
+
             this.WindowState = WindowState.Maximized;
         }
 
+        #region System Message Processing
         private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             // Check for Ctrl key combination
@@ -174,7 +151,194 @@ namespace Neon
                 HeliumNative.He_Render();
             }
             catch { }
+        } 
+        #endregion
+
+        #region TitleBar
+        private void Min_Click(object sender, RoutedEventArgs e)
+        {
+            this.WindowState = WindowState.Minimized;
         }
+
+        private void Max_Click(object sender, RoutedEventArgs e)
+        {
+            if (this.WindowState == WindowState.Maximized)
+            {
+                this.WindowState = WindowState.Normal;
+                MaxBtn.Content = "1";
+            }
+            else
+            {
+                this.WindowState = WindowState.Maximized;
+                MaxBtn.Content = "2";
+            }
+        }
+
+        private void Close_Click(object sender, RoutedEventArgs e)
+        {
+            this.Close();
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            CompositionTarget.Rendering -= OnRendering;
+            ComponentDispatcher.ThreadFilterMessage -= ComponentDispatcher_ThreadFilterMessage;
+            base.OnClosed(e);
+        }
+        #endregion
+
+        #region MenuBar
+        private void Menu_File_Open_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog();
+            dialog.FileName = "";
+            dialog.DefaultExt = ".ply";
+            dialog.Multiselect = true;
+            dialog.Filter = "Point Cloud Files (*.ply)|*.ply|All files (*.*)|*.*";
+
+            if (dialog.ShowDialog() == true)
+            {
+                string[] filenames = dialog.FileNames;
+
+                foreach (string filename in filenames)
+                {
+                    HeliumNative.He_LoadPointCloudFromPLY(filename, System.IO.Path.GetFileName(filename));
+                }
+            }
+        }
+
+        private void Menu_File_Exit_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
+
+        private void Menu_PointCloud_Clustering_Click(object sender, RoutedEventArgs e)
+        {
+        }
+        #endregion
+
+        #region TreeView
+        public class SceneNode : INotifyPropertyChanged
+        {
+            public int ID { get; set; }
+            public required string Name { get; set; } = string.Empty;
+            public required string FullPath { get; set; } = string.Empty;
+
+            // 기본값을 true로 설정하여 생성 시 체크된 상태로 만듦
+            private bool _isVisible = true;
+
+            public bool IsVisible
+            {
+                get => _isVisible;
+                set
+                {
+                    if (_isVisible != value)
+                    {
+                        _isVisible = value;
+                        OnPropertyChanged();
+                    }
+                }
+            }
+
+            private bool _isSelected;
+            public bool IsSelected
+            {
+                get => _isSelected;
+                set
+                {
+                    if (_isSelected != value)
+                    {
+                        _isSelected = value;
+                        OnPropertyChanged();
+                    }
+                }
+            }
+
+            public event PropertyChangedEventHandler? PropertyChanged;
+
+            protected void OnPropertyChanged([CallerMemberName] string? name = null)
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+            }
+        }
+
+        private void Treeview_OnPointCloudCreated(int id, string fineName, string name)
+        {
+            // 네이티브 스레드에서 호출될 수 있으므로 Dispatcher 사용
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                var node = new SceneNode
+                {
+                    ID = id,
+                    Name = name,
+                    FullPath = fineName
+                };
+
+                // 중복 방지 (선택 사항)
+                bool exists = false;
+                foreach (var item in SceneItems)
+                {
+                    if (item.ID == id)
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+
+                if (!exists)
+                {
+                    SceneItems.Add(node);
+                    //NeonLogger.Log("System", $"PointCloud Added via Callback: {name} (ID: {id})");
+                }
+                node.IsSelected = true;
+            });
+        }
+
+        private void SceneTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        {
+            if (e.NewValue is SceneNode selectedNode)
+            {
+                //NeonLogger.Log("", $"Selected: {selectedNode.Name}");
+                HeliumNative.He_PointCloudSelect(selectedNode.ID);
+            }
+        }
+
+        private void SceneItemCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            // sender가 CheckBox이고, DataContext가 SceneNode인지 확인
+            if (sender is CheckBox checkBox && checkBox.DataContext is SceneNode sceneNode)
+            {
+                // UI의 체크 상태 가져오기 (null일 경우 false 처리)
+                bool isVisible = checkBox.IsChecked ?? false;
+
+                // 데이터 모델 업데이트 (양방향 바인딩을 안 썼을 경우를 대비해 명시적 업데이트)
+                sceneNode.IsVisible = isVisible;
+
+                // Native 엔진에 가시성 업데이트 요청
+                // (He_SetPointCloudVisible 함수는 HeliumNative에 추가 필요)
+                HeliumNative.He_PointCloudSetVisible(sceneNode.ID, isVisible);
+            }
+        } 
+        #endregion
+
+        #region Logging
+        private sealed class LogItem
+        {
+            public string Text { get; }
+            public Brush Foreground { get; }
+
+            public LogItem(string text, Brush foreground)
+            {
+                Text = text;
+                Foreground = foreground;
+            }
+
+            public override string ToString()
+            {
+                return Text;
+            }
+        }
+
 
         private void OnHeliumLog(NeonLogger.LogLevel level, string? key, string value)
         {
@@ -260,122 +424,6 @@ namespace Neon
                 MainLogRow.Height = new GridLength(MinLogHeight);
             }
         }
-
-        private void Menu_File_Open_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new Microsoft.Win32.OpenFileDialog();
-            dialog.FileName = "";
-            dialog.DefaultExt = ".ply";
-            dialog.Multiselect = true;
-            dialog.Filter = "Point Cloud Files (*.ply)|*.ply|All files (*.*)|*.*";
-
-            if (dialog.ShowDialog() == true)
-            {
-                string[] filenames = dialog.FileNames;
-
-                foreach (string filename in filenames)
-                {
-                    int id = SceneItems.Count;
-                    if (HeliumNative.He_LoadPointCloudsFromPLY(filename, id))
-                    {
-                        var node = new SceneNode
-                        {
-                            ID = id,
-                            Name = System.IO.Path.GetFileName(filename),
-                            FullPath = filename
-                        };
-                        SceneItems.Add(node);
-
-                        //NeonLogger.Log("", $"Loaded: {node.Name}");
-                    }
-                }
-            }
-        }
-
-        private void Menu_File_Exit_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
-        }
-
-        private void Menu_PointCloud_Clustering_Click(object sender, RoutedEventArgs e)
-        {
-        }
-
-        // --------------------------------------------------------------------
-        // Window TitleBar 버튼 핸들러
-        // --------------------------------------------------------------------
-        private void Min_Click(object sender, RoutedEventArgs e)
-        {
-            this.WindowState = WindowState.Minimized;
-        }
-
-        private void Max_Click(object sender, RoutedEventArgs e)
-        {
-            if (this.WindowState == WindowState.Maximized)
-            {
-                this.WindowState = WindowState.Normal;
-                MaxBtn.Content = "1";
-            }
-            else
-            {
-                this.WindowState = WindowState.Maximized;
-                MaxBtn.Content = "2";
-            }
-        }
-
-        private void Close_Click(object sender, RoutedEventArgs e)
-        {
-            this.Close();
-        }
-
-        protected override void OnClosed(EventArgs e)
-        {
-            CompositionTarget.Rendering -= OnRendering;
-            ComponentDispatcher.ThreadFilterMessage -= ComponentDispatcher_ThreadFilterMessage;
-            base.OnClosed(e);
-        }
-
-        private void SceneTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
-        {
-            if (e.NewValue is SceneNode selectedNode)
-            {
-                //NeonLogger.Log("", $"Selected: {selectedNode.Name}");
-                HeliumNative.He_PointCloudSelect(selectedNode.ID);
-            }
-        }
-
-        private void SceneItemCheckBox_Click(object sender, RoutedEventArgs e)
-        {
-            // sender가 CheckBox이고, DataContext가 SceneNode인지 확인
-            if (sender is CheckBox checkBox && checkBox.DataContext is SceneNode sceneNode)
-            {
-                // UI의 체크 상태 가져오기 (null일 경우 false 처리)
-                bool isVisible = checkBox.IsChecked ?? false;
-
-                // 데이터 모델 업데이트 (양방향 바인딩을 안 썼을 경우를 대비해 명시적 업데이트)
-                sceneNode.IsVisible = isVisible;
-
-                // Native 엔진에 가시성 업데이트 요청
-                // (He_SetPointCloudVisible 함수는 HeliumNative에 추가 필요)
-                HeliumNative.He_PointCloudSetVisible(sceneNode.ID, isVisible);
-            }
-        }
-
-        private sealed class LogItem
-        {
-            public string Text { get; }
-            public Brush Foreground { get; }
-
-            public LogItem(string text, Brush foreground)
-            {
-                Text = text;
-                Foreground = foreground;
-            }
-
-            public override string ToString()
-            {
-                return Text;
-            }
-        }
+        #endregion
     }
 }

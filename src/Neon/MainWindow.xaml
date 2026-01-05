@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Neon.Controls"
+        xmlns:main="clr-namespace:Neon"
         Title="Neon"
         Width="1200"
         Height="800"
@@ -201,6 +202,33 @@
           Padding="5"
           ItemsSource="{Binding SceneItems}"
           SelectedItemChanged="SceneTree_SelectedItemChanged">
+                            <TreeView.ItemContainerStyle>
+                                <Style TargetType="TreeViewItem">
+                                    <Setter Property="Foreground" Value="#E1E1E1" />
+                                    <Setter Property="FontSize" Value="13" />
+                                    <Setter Property="Margin" Value="0,1,0,1"/>
+
+                                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+
+                                    <Style.Resources>
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#3E3E42"/>
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
+
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#3E3E42"/>
+                                        <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White"/>
+                                    </Style.Resources>
+
+                                    <Style.Triggers>
+                                        <MultiTrigger>
+                                            <MultiTrigger.Conditions>
+                                                <Condition Property="IsMouseOver" Value="True"/>
+                                                <Condition Property="IsSelected" Value="False"/>
+                                            </MultiTrigger.Conditions>
+                                            <Setter Property="Background" Value="#2D2D30"/>
+                                        </MultiTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TreeView.ItemContainerStyle>
 
                             <TreeView.Resources>
                                 <Style TargetType="{x:Type TreeViewItem}">
@@ -217,16 +245,22 @@
                             </TreeView.Resources>
 
                             <TreeView.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal">
+                                <HierarchicalDataTemplate DataType="{x:Type main:MainWindow+SceneNode}">
+                                    <StackPanel Orientation="Horizontal" Margin="2">
                                         <CheckBox IsChecked="{Binding IsVisible}" 
+                          Click="SceneItemCheckBox_Click"
                           VerticalAlignment="Center" 
-                          Margin="0,0,5,0"
-                          Click="SceneItemCheckBox_Click"/>
-                                        <TextBlock Text="C" FontFamily="Wingdings" Foreground="#4CAF50" Margin="0,0,5,0"/>
-                                        <TextBlock Text="{Binding Name}"/>
+                          Margin="0,0,6,0"/>
+
+                                        <TextBlock Text="☁" 
+                           Foreground="#4CAF50" 
+                           Margin="0,0,4,0" 
+                           VerticalAlignment="Center"/>
+
+                                        <TextBlock Text="{Binding Name}" 
+                           VerticalAlignment="Center"/>
                                     </StackPanel>
-                                </DataTemplate>
+                                </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
                         </TreeView>
                     </Grid>
