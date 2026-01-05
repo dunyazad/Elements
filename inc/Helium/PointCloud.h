@@ -15,6 +15,7 @@ using Entity = entt::entity;
 
 struct ProcessedInstanceData
 {
+	std::vector<Eigen::Vector3f> positions;
 	std::vector<Eigen::Vector3f> normals;
 	std::vector<Eigen::Vector4f> colors;
 	std::vector<Eigen::Matrix4f> transforms;
@@ -27,16 +28,25 @@ public:
 	PointCloud();
 	~PointCloud();
 
-	bool LoadFromPLY(const std::string& filename);
+	bool LoadFromPLY(const std::string& fileName);
 
 	void UpdateLoading();
 
 	bool SetVisible(bool isVisible);
 
+	int Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const;
+
+	inline const std::string& GetFileName() const { return fileName; }
+
 protected:
+	std::vector<Eigen::Vector3f> positions;
+	std::vector<Eigen::Vector3f> normals;
+	std::vector<Eigen::Vector4f> colors;
+
 	Entity entity = InvalidEntity;
 	std::string entityName;
 	Renderable* renderable = nullptr;
-	bool m_isLoading = false;
-	std::future<ProcessedInstanceData> m_loadingFuture;
+	bool isLoading = false;
+	std::future<ProcessedInstanceData> loadingFuture;
+	std::string fileName;
 };

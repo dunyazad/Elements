@@ -109,8 +109,10 @@ public:
     }
 
     template<typename T, typename... Args>
-    T* CreateComponent(Entity entity, Args&&... args) {
-        if (registry.all_of<T>(entity)) {
+    T* CreateComponent(Entity entity, Args&&... args)
+    {
+        if (registry.all_of<T>(entity))
+        {
             return &registry.get<T>(entity);
         }
         return &(registry.emplace<T>(entity, std::forward<Args>(args)...));
@@ -129,8 +131,10 @@ public:
     }
 
     template<typename T, typename... Args>
-    EventCallback<T>& CreateEventCallback(Entity entity, Args&&... args) {
-        if (registry.all_of<EventCallback<T>>(entity)) {
+    EventCallback<T>& CreateEventCallback(Entity entity, Args&&... args)
+    {
+        if (registry.all_of<EventCallback<T>>(entity))
+        {
             return registry.get<EventCallback<T>>(entity);
         }
         return registry.emplace<EventCallback<T>>(entity, entity, std::forward<Args>(args)...);
@@ -156,6 +160,9 @@ public:
 	bool LoadPointCloudsFromPLY(const std::string& filename, int ID);
 	bool SelectPointCloud(int ID);
 	PointCloud* GetPointCloud(int ID);
+    PointCloud* GetSelectedPointCloud();
+
+    int Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const;
 
 private:
     HeliumCore();

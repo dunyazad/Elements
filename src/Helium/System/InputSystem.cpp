@@ -22,6 +22,21 @@ void InputSystem::Update(float dt)
 {
     auto& dispatcher = Helium.GetDispatcher();
 
+    int currentMods = 0;
+
+    if (GetAsyncKeyState(VK_SHIFT) & 0x8000)   currentMods |= static_cast<int>(KeyModifiers::Shift);
+    if (GetAsyncKeyState(VK_CONTROL) & 0x8000) currentMods |= static_cast<int>(KeyModifiers::Control);
+    if (GetAsyncKeyState(VK_MENU) & 0x8000)    currentMods |= static_cast<int>(KeyModifiers::Alt);
+
+    if (GetAsyncKeyState(VK_LSHIFT) & 0x8000)  currentMods |= static_cast<int>(KeyModifiers::LeftShift);
+    if (GetAsyncKeyState(VK_RSHIFT) & 0x8000)  currentMods |= static_cast<int>(KeyModifiers::RightShift);
+
+    if (GetAsyncKeyState(VK_LCONTROL) & 0x8000) currentMods |= static_cast<int>(KeyModifiers::LeftControl);
+    if (GetAsyncKeyState(VK_RCONTROL) & 0x8000) currentMods |= static_cast<int>(KeyModifiers::RightControl);
+
+    if (GetAsyncKeyState(VK_LMENU) & 0x8000)    currentMods |= static_cast<int>(KeyModifiers::LeftAlt);
+    if (GetAsyncKeyState(VK_RMENU) & 0x8000)    currentMods |= static_cast<int>(KeyModifiers::RightAlt);
+
     memcpy(prevKeyStates, keyStates, sizeof(keyStates));
 
     for (int i = 0; i < 256; ++i)
@@ -32,9 +47,8 @@ void InputSystem::Update(float dt)
         if (keyStates[i] != prevKeyStates[i])
         {
             int action = isDown ? 1 : 0; // 1: Press, 0: Release
-            int mods = 0; // (필요하면 GetKeyState(VK_CONTROL) 등으로 채움)
 
-            dispatcher.enqueue<KeyEvent>({ i, action, mods });
+            dispatcher.enqueue<KeyEvent>({ i, action, currentMods });
         }
     }
 
@@ -51,7 +65,7 @@ void InputSystem::Update(float dt)
         if (mouseStates[i] != prevMouseStates[i])
         {
             int action = isDown ? 1 : 0;
-            dispatcher.enqueue<MouseButtonEvent>({ i, action, 0, mousePos.x(), mousePos.y() });
+            dispatcher.enqueue<MouseButtonEvent>({ i, action, currentMods, mousePos.x(), mousePos.y() });
         }
     }
 

@@ -4,6 +4,7 @@
 #include <Helium/HeliumCore.h>
 #include <Helium/GeometryBuilder.h>
 #include <Helium/Serialization.hpp>
+#include <Helium/Components/CameraManipulator.h>
 
 #include <limits>
 #include <cmath>
@@ -17,19 +18,21 @@ PointCloud::~PointCloud()
 {
 }
 
-bool PointCloud::LoadFromPLY(const std::string& filename)
+bool PointCloud::LoadFromPLY(const std::string& fileName)
 {
+	this->fileName = fileName;
+
 	if (isLoading) return false; // Already loading
 
 	isLoading = true;
 
 	// Launch async task for IO and CPU heavy math
-	loadingFuture = std::async(std::launch::async, [filename]() -> ProcessedInstanceData {
+	loadingFuture = std::async(std::launch::async, [this]() -> ProcessedInstanceData {	
 		ProcessedInstanceData data;
 		PLYFormat ply;
 
 		// IO Operation
-		ply.Deserialize(filename);
+		ply.Deserialize(this->fileName);
 		ply.SwapAxisYZ();
 
 		data.pointCount = ply.GetPoints().size();
@@ -40,14 +43,12 @@ bool PointCloud::LoadFromPLY(const std::string& filename)
 		data.colors.reserve(data.pointCount);
 		data.transforms.reserve(data.pointCount);
 
-		// CPU Heavy Math Loop
 		for (size_t i = 0; i < data.pointCount; i++)
 		{
 			const Eigen::Vector3f& p = ply.GetPoints()[i];
 			Eigen::Vector3f n = (i < ply.GetNormals().size()) ? ply.GetNormals()[i] : Eigen::Vector3f::Zero();
 			Eigen::Vector4f c = (i < ply.GetColors().size()) ? ply.GetColors()[i] : Eigen::Vector4f::Ones();
 
-			// 피킹 알고리즘을 위해 원본 위치 저장
 			data.positions.push_back(p);
 			data.normals.push_back(n);
 			data.colors.push_back(c);
@@ -114,8 +115,6 @@ void PointCloud::UpdateLoading()
 
 				if (0 == event.action)
 				{
-					He_Log(HE_LOG_DEBUG, "PointCloud", "Key Released: %d", event.keyCode);
-
 					if (192 == event.keyCode)
 					{
 						renderable->NextDrawingMode();
@@ -137,7 +136,7 @@ void PointCloud::UpdateLoading()
 				if (false == renderable->IsVisible()) return;
 				if (this != Helium.GetSelectedPointCloud()) return;
 
-				if (0 == event.action && 0 == event.button) // Left Mouse Button Released
+				if (0 == event.action && 0 == event.button)
 				{
 					auto cameraEntity = Helium.GetEntityByName("MainCamera");
 					auto camera = Helium.GetComponent<Camera>(cameraEntity);
@@ -167,7 +166,14 @@ void PointCloud::UpdateLoading()
 					{
 						std::cout << "Picked Instance Index: " << pickedIndex << std::endl;
 
-						renderable->SetInstanceColor(pickedIndex, { 1.0f, 0.0f, 0.0f, 1.0f });
+						//renderable->SetInstanceColor(pickedIndex, { 1.0f, 0.0f, 0.0f, 1.0f });
+						auto position = this->positions[pickedIndex];
+
+						auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
+						if (cameraManipulator)
+						{
+							cameraManipulator->SetCenter(position);
+						}
 					}
 				}
 				});

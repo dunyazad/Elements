@@ -2,9 +2,117 @@
 #include <Helium/Components/CameraManipulator.h>
 #include <Helium/Components/Camera.h>
 #include <Helium/HeliumCore.h>
+#include <Helium/PointCloud.h>
 #include <cmath>
 
+#define NOMINMAX
 #include <Windows.h>
+#undef min
+#undef max
+
+void CameraManipulatorBase::LoadSettings()
+{
+	std::ifstream ifs("CameraManipulatorSettings.json");
+	if (ifs.is_open())
+	{
+		ifs >> settings;
+		ifs.close();
+	}
+}
+
+void CameraManipulatorBase::SaveSettings()
+{
+	std::ofstream ofs("CameraManipulatorSettings.json");
+	if (ofs.is_open())
+	{
+		ofs << settings.dump(4);
+		ofs.close();
+	}
+}
+
+json CameraManipulatorBase::GetSetting(const std::string& key, const std::string& subKey) const
+{
+	if (settings.contains(key))
+	{
+		return settings[key][subKey];
+	}
+	return nullptr;
+}
+
+void CameraManipulatorBase::StoreSetting(const std::string& key, const std::string& subKey)
+{
+	if (!camera) return;
+
+	Eigen::Vector3f eye = camera->GetEye();
+	Eigen::Vector3f target = camera->GetTarget();
+	Eigen::Vector3f up = camera->GetUp();
+	int projectionMode = static_cast<int>(camera->GetProjectionMode());
+
+	json data;
+	data["eye"] = { eye.x(), eye.y(), eye.z() };
+	data["target"] = { target.x(), target.y(), target.z() };
+	data["up"] = { up.x(), up.y(), up.z() };
+	data["projectionMode"] = projectionMode;
+
+	if (camera->GetProjectionMode() == Camera::Perspective)
+	{
+		data["fov"] = camera->GetPerspectiveSettings().GetFovy();
+	}
+	else
+	{
+		auto& ortho = camera->GetOrthogonalSettings();
+		data["ortho"] = { ortho.GetLeft(), ortho.GetRight(), ortho.GetBottom(), ortho.GetTop() };
+	}
+
+	settings[key][subKey] = data;
+
+	SaveSettings();
+}
+
+void CameraManipulatorBase::RestoreSetting(const std::string& key, const std::string& subKey)
+{
+	auto setting = GetSetting(key, subKey);
+	if (false == setting.is_null())
+	{
+		if (!camera) return;
+
+		Eigen::Vector3f eye, target, up;
+		eye.x() = setting["eye"][0];
+		eye.y() = setting["eye"][1];
+		eye.z() = setting["eye"][2];
+
+		target.x() = setting["target"][0];
+		target.y() = setting["target"][1];
+		target.z() = setting["target"][2];
+
+		up.x() = setting["up"][0];
+		up.y() = setting["up"][1];
+		up.z() = setting["up"][2];
+
+		auto projectionMode = static_cast<Camera::ProjectionMode>(setting["projectionMode"].get<int>());
+
+		camera->SetEye(eye);
+		camera->SetTarget(target);
+		camera->SetUp(up);
+		camera->SetProjectionMode(projectionMode);
+
+		if (projectionMode == Camera::Perspective && setting.contains("fov"))
+		{
+			camera->GetPerspectiveSettings().SetFovy(setting["fov"].get<float>());
+		}
+		else if (projectionMode == Camera::Orthogonal && setting.contains("ortho"))
+		{
+			auto& ortho = camera->GetOrthogonalSettings();
+			ortho.SetLeft(setting["ortho"][0]);
+			ortho.SetRight(setting["ortho"][1]);
+			ortho.SetBottom(setting["ortho"][2]);
+			ortho.SetTop(setting["ortho"][3]);
+		}
+
+		camera->SetDirty(true);
+		SyncRadius();
+	}
+}
 
 Eigen::Vector3f CameraManipulatorTrackball::UnProject(const Eigen::Vector3f& winCoords, const Eigen::Matrix4f& view, const Eigen::Matrix4f& proj, const Eigen::Vector4f& viewport)
 {
@@ -26,7 +134,16 @@ Eigen::Vector3f CameraManipulatorTrackball::UnProject(const Eigen::Vector3f& win
 	return Eigen::Vector3f(obj[0], obj[1], obj[2]);
 }
 
-CameraManipulatorBase::CameraManipulatorBase() {}
+CameraManipulatorBase::CameraManipulatorBase()
+{
+	LoadSettings();
+}
+
+CameraManipulatorBase::~CameraManipulatorBase()
+{
+	SaveSettings();
+}
+
 CameraManipulatorOrbit::CameraManipulatorOrbit() {}
 CameraManipulatorOrbit::~CameraManipulatorOrbit() {}
 
@@ -139,16 +256,20 @@ void CameraManipulatorTrackball::OnMouseWheel(const MouseWheelEvent& event)
 		if (isShiftPressed)
 		{
 			auto& settings = camera->GetPerspectiveSettings();
-			float fovyDeg = settings.GetFovy() * RAD2DEG;
+			float fovyDeg = settings.GetFovy();
 
-			if (event.yoffset < 0) fovyDeg += 1.0f;
-			else if (event.yoffset > 0) fovyDeg -= 1.0f;
+			//if (event.yoffset < 0) fovyDeg += 1.0f;
+			//else if (event.yoffset > 0) fovyDeg -= 1.0f;
+
+			fovyDeg += (float)event.yoffset;
 
 			if (fovyDeg < 1.0f) fovyDeg = 1.0f;
 			if (fovyDeg > 179.0f) fovyDeg = 179.0f;
 
-			settings.SetFovy(fovyDeg * DEG2RAD);
+			settings.SetFovy(fovyDeg);
 			camera->SetDirty(true);
+
+			InfoLog("FOV", "Camera FOV: %.2f\n", fovyDeg);
 		}
 		else
 		{
@@ -208,30 +329,40 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 	{
 		eye += viewDir * moveStep;
 		target += viewDir * moveStep;
+
+		camera->SetEye(eye);
+		camera->SetTarget(target);
 	}
 	else if ((key == 'S' || key == 's') && event.action != 0)
 	{
 		eye -= viewDir * moveStep;
 		target -= viewDir * moveStep;
+
+		camera->SetEye(eye);
+		camera->SetTarget(target);
 	}
 	else if ((key == 'A' || key == 'a') && event.action != 0)
 	{
 		eye -= right * moveStep;
 		target -= right * moveStep;
+
+		camera->SetEye(eye);
+		camera->SetTarget(target);
 	}
 	else if ((key == 'D' || key == 'd') && event.action != 0)
 	{
 		eye += right * moveStep;
 		target += right * moveStep;
+
+		camera->SetEye(eye);
+		camera->SetTarget(target);
 	}
 	else if ((key == 'R' || key == 'r') && event.action == 1)
 	{
 		Reset();
-		return;
 	}
 	else if ((key == 'P' || key == 'p') && event.action == 1)
 	{
-		// Perspective <-> Orthogonal 전환
 		if (camera->GetProjectionMode() == Camera::Perspective)
 		{
 			float dist = (target - eye).norm();
@@ -241,8 +372,11 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 			if (height == 0) height = 1;
 			float aspect = (float)width / (float)height;
 
-			float fovy = camera->GetPerspectiveSettings().GetFovy();
-			float h = 2.0f * dist * std::tan(fovy * 0.5f);
+			float fovyDeg = camera->GetPerspectiveSettings().GetFovy();
+
+			// 높이(h) = 2 * 거리 * tan(FOV / 2)
+			float h = 2.0f * dist * std::tan((fovyDeg * DEG2RAD) * 0.5f);
+
 			float w = h * aspect;
 
 			auto& ortho = camera->GetOrthogonalSettings();
@@ -250,6 +384,10 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 			ortho.SetBottom(-h * 0.5f);
 			ortho.SetRight(w * 0.5f);
 			ortho.SetLeft(-w * 0.5f);
+
+			float zRange = std::max(1000.0f, dist * 10.0f);
+			ortho.SetZNear(-zRange);
+			ortho.SetZFar(zRange);
 
 			camera->SetProjectionMode(Camera::Orthogonal);
 		}
@@ -259,9 +397,62 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 		}
 		return;
 	}
+	else if((VK_F9 == key) && (event.action == 0))
+	{
+		auto key = Helium.GetSelectedPointCloud()->GetFileName();
+		auto subKey = "F9";
 
-	camera->SetEye(eye);
-	camera->SetTarget(target);
+		if (event.IsCtrlPressed())
+		{
+			StoreSetting(key, subKey);
+		}
+		else
+		{
+			RestoreSetting(key, subKey);
+		}
+	}
+	else if ((VK_F10 == key) && (event.action == 0))
+	{
+		auto key = Helium.GetSelectedPointCloud()->GetFileName();
+		auto subKey = "F10";
+
+		if (event.IsCtrlPressed())
+		{
+			StoreSetting(key, subKey);
+		}
+		else
+		{
+			RestoreSetting(key, subKey);
+		}
+	}
+	else if ((VK_F11 == key) && (event.action == 0))
+	{
+		auto key = Helium.GetSelectedPointCloud()->GetFileName();
+		auto subKey = "F11";
+
+		if (event.IsCtrlPressed())
+		{
+			StoreSetting(key, subKey);
+		}
+		else
+		{
+			RestoreSetting(key, subKey);
+		}
+	}
+	else if ((VK_F12 == key) && (event.action == 0))
+	{
+		auto key = Helium.GetSelectedPointCloud()->GetFileName();
+		auto subKey = "F12";
+
+		if (event.IsCtrlPressed())
+		{
+			StoreSetting(key, subKey);
+		}
+		else
+		{
+			RestoreSetting(key, subKey);
+		}
+	}
 }
 
 void CameraManipulatorTrackball::PushCameraHistory()
@@ -319,6 +510,7 @@ void CameraManipulatorTrackball::Reset()
 	camera->SetTarget(target);
 	camera->SetUp(up);
 	camera->SetProjectionMode(Camera::Perspective);
+	camera->GetPerspectiveSettings().SetFovy(45.0f);
 
 	Eigen::Vector3f viewDir = (camera->GetEye() - camera->GetTarget()).normalized();
 	orbitRot = Eigen::Quaternionf::FromTwoVectors(Eigen::Vector3f(0, 0, 1), viewDir);
@@ -358,14 +550,9 @@ void CameraManipulatorTrackball::SetCenter(const Eigen::Vector3f& center)
 	camera->SetEye(newEye);
 	camera->SetTarget(center);
 
-	// Up 벡터 재계산 (Eigen)
 	Eigen::Vector3f viewDir = (newEye - center).normalized();
 	Eigen::Vector3f right = camera->GetUp().cross(viewDir).normalized();
-	Eigen::Vector3f newUp = viewDir.cross(right).normalized(); // cross 순서 주의 (Right x ViewDir = Up)
-
-	// 위 공식이 헷갈린다면, Gram-Schmidt 직교화와 유사하게:
-	// newUp = (right x (newEye - center)).normalized()
-	newUp = right.cross((newEye - center).normalized()).normalized();
+	Eigen::Vector3f newUp = viewDir.cross(right).normalized(); // cross 순서 (Right x ViewDir = Up)
 
 	camera->SetUp(newUp);
 	camera->SetDirty(true);
@@ -379,10 +566,8 @@ void CameraManipulatorTrackball::SetCenterFromScreenPoint(float x, float y, floa
 	Eigen::Matrix4f proj = camera->GetProjectionMatrix();
 	Eigen::Vector4f viewport(0.0f, 0.0f, (float)screenWidth, (float)screenHeight);
 
-	// Y축 뒤집기 (화면 좌표계 -> GL 좌표계)
 	Eigen::Vector3f winCoords(x, (float)screenHeight - y - 1.0f, depth);
 
-	// 직접 구현한 UnProject 사용
 	Eigen::Vector3f worldPos = UnProject(winCoords, view, proj, viewport);
 
 	camera->SetTarget(worldPos);

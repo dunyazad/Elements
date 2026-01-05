@@ -93,8 +93,8 @@ public:
 
     Ray ScreenPointToRay(float mouseX, float mouseY, int screenWidth, int screenHeight);
 
-    void SetProjectionMode(ProjectionMode mode);
     inline ProjectionMode GetProjectionMode() const { return mode; }
+    void SetProjectionMode(ProjectionMode mode);
 
     inline bool IsDirty() const { return dirty; }
     inline void SetDirty(bool isDirty) { dirty = isDirty; }

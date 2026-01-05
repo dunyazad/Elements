@@ -8,13 +8,16 @@
 
 #include <Helium/HeliumEvents.h>
 
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
 class Camera;
 
 class CameraManipulatorBase
 {
 public:
 	CameraManipulatorBase();
-	virtual ~CameraManipulatorBase() = default;
+	virtual ~CameraManipulatorBase();
 
 	virtual void PushCameraHistory() = 0;
 	virtual void PopCameraHistory() = 0;
@@ -27,8 +30,16 @@ public:
 	inline Camera* GetCamera() const { return camera; }
 	inline void SetCamera(Camera* camera) { this->camera = camera; }
 
+	void LoadSettings();
+	void SaveSettings();
+	json GetSetting(const std::string& key, const std::string& subKey) const;
+	void StoreSetting(const std::string& key, const std::string& subKey);
+	void RestoreSetting(const std::string& key, const std::string& subKey);
+
 protected:
 	Camera* camera = nullptr;
+
+	json settings;
 };
 
 class CameraManipulatorOrbit : public CameraManipulatorBase

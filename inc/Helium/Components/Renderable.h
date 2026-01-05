@@ -101,6 +101,10 @@ public:
     void AddInstanceColor(const Eigen::Vector4f& color);
     void AddInstanceNormal(const Eigen::Vector3f& normal);
 
+	void SetInstanceTransform(unsigned int index, const Eigen::Matrix4f& transform);
+	void SetInstanceColor(unsigned int index, const Eigen::Vector4f& color);
+	void SetInstanceNormal(unsigned int index, const Eigen::Vector3f& normal);
+
     inline void IncreaseNumberOfInstances() { numberOfInstances++; if (!instancingEnabled) EnableInstancing(); }
     inline void SetNumberOfInstances(unsigned int n) { numberOfInstances = n; }
     inline unsigned int GetNumberOfInstances() const { return numberOfInstances; }
