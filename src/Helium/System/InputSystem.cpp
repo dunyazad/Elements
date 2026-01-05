@@ -2,6 +2,7 @@
 #include <Helium/Systems/InputSystem.h>
 #include <Helium/HeliumCore.h>
 #include <Helium/HeliumEvents.h>
+#include <Helium/HeliumLog.h>
 
 #include <windowsx.h> // GET_X_LPARAM, GET_Y_LPARAM 매크로 사용
 
@@ -47,6 +48,8 @@ void InputSystem::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
         {
             keyStates[key] = true;
 
+            DebugLog("", "KeyDown : %d", key);
+
             dispatcher.enqueue<KeyEvent>({ key, 1, currentMods });
         }
         break;
@@ -59,6 +62,8 @@ void InputSystem::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
         if (key < 256)
         {
             keyStates[key] = false;
+
+            DebugLog("", "KeyUp : %d", key);
 
             dispatcher.enqueue<KeyEvent>({ key, 0, currentMods });
         }

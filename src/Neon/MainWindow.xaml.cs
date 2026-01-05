@@ -109,34 +109,20 @@ namespace Neon
 
         private void ComponentDispatcher_ThreadFilterMessage(ref MSG msg, ref bool handled)
         {
-            bool isKeyboard = (msg.message >= WM_KEYDOWN && msg.message <= WM_SYSKEYUP);
-            bool isMouse = (msg.message >= WM_MOUSEMOVE && msg.message <= WM_MOUSEHWHEEL);
+            bool isKeyboard = (msg.message >= 0x0100 && msg.message <= 0x0105);
+            bool isMouse = (msg.message >= 0x0200 && msg.message <= 0x020E);
 
             if (isKeyboard || isMouse)
             {
                 if (HeliumHostControl == null || HeliumHostControl.Handle == IntPtr.Zero)
+                    return;
+
+                if (!IsMouseOverHeliumHost())
                 {
                     return;
                 }
 
                 IntPtr heliumHwnd = HeliumHostControl.Handle;
-
-                if (isKeyboard)
-                {
-                    if (!HeliumHostControl.IsKeyboardFocusWithin)
-                    {
-                        return;
-                    }
-                }
-
-                if (isMouse)
-                {
-                    if (!IsMouseOverHeliumHost())
-                    {
-                        return;
-                    }
-                }
-
                 IntPtr finalLParam = msg.lParam;
 
                 if (isMouse)
@@ -145,23 +131,23 @@ namespace Neon
                     NativeMethods.GetCursorPos(out cursorPos);
                     NativeMethods.ScreenToClient(heliumHwnd, ref cursorPos);
 
-                    int x = cursorPos.X;
-                    int y = cursorPos.Y;
-
-                    finalLParam = (IntPtr)((y << 16) | (x & 0xFFFF));
+                    // C++의 GET_X_LPARAM 매크로 대응을 위한 좌표 패킹
+                    finalLParam = (IntPtr)((cursorPos.Y << 16) | (cursorPos.X & 0xFFFF));
                 }
 
+                // 5. 엔진 전송
                 HeliumNative.He_ProcessMessage((uint)msg.message, msg.wParam, finalLParam);
             }
         }
 
         private bool IsMouseOverHeliumHost()
         {
-            if (HeliumHostControl == null || !HeliumHostControl.IsLoaded)
-                return false;
+            if (HeliumHostControl == null || !HeliumHostControl.IsLoaded) return false;
 
+            // WPF 좌표계 기준 마우스 위치
             System.Windows.Point pos = Mouse.GetPosition(HeliumHostControl);
-            
+
+            // 컨트롤 영역 안에 있는지 확인
             return (pos.X >= 0 && pos.X < HeliumHostControl.ActualWidth &&
                     pos.Y >= 0 && pos.Y < HeliumHostControl.ActualHeight);
         }
