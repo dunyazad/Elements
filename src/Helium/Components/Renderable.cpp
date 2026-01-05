@@ -201,3 +201,18 @@ void Renderable::AddInstanceNormal(const Eigen::Vector3f& normal)
 {
     instanceNormals.AddData(normal);
 }
+
+void Renderable::SetInstanceTransform(unsigned int index, const Eigen::Matrix4f& transform)
+{
+	instanceTransforms.SetData(index, transform);
+}
+
+void Renderable::SetInstanceColor(unsigned int index, const Eigen::Vector4f& color)
+{
+	instanceColors.SetData(index, color);
+}
+
+void Renderable::SetInstanceNormal(unsigned int index, const Eigen::Vector3f& normal)
+{
+	instanceNormals.SetData(index, normal);
+}

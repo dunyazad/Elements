@@ -4,6 +4,8 @@
 #include <Helium/HeliumCore.h>
 #include <cmath>
 
+#include <Windows.h>
+
 Eigen::Vector3f CameraManipulatorTrackball::UnProject(const Eigen::Vector3f& winCoords, const Eigen::Matrix4f& view, const Eigen::Matrix4f& proj, const Eigen::Vector4f& viewport)
 {
 	// 1. Map to NDC (-1 ~ 1)
@@ -130,7 +132,7 @@ void CameraManipulatorTrackball::OnMouseWheel(const MouseWheelEvent& event)
 {
 	if (nullptr == camera) return;
 
-	bool isShiftPressed = (0 != pressedKeys.count(GLFW_KEY_LEFT_SHIFT) || 0 != pressedKeys.count(GLFW_KEY_RIGHT_SHIFT));
+	bool isShiftPressed = (0 != pressedKeys.count(VK_SHIFT) || (0 != pressedKeys.count(VK_LSHIFT) || 0 != pressedKeys.count(VK_RSHIFT)));
 
 	if (camera->GetProjectionMode() == Camera::Perspective)
 	{
@@ -202,32 +204,32 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 
 	float moveStep = 0.2f;
 
-	if (key == GLFW_KEY_W && event.action != 0)
+	if ((key == 'W' || key == 'w') && event.action != 0)
 	{
 		eye += viewDir * moveStep;
 		target += viewDir * moveStep;
 	}
-	else if (key == GLFW_KEY_S && event.action != 0)
+	else if ((key == 'S' || key == 's') && event.action != 0)
 	{
 		eye -= viewDir * moveStep;
 		target -= viewDir * moveStep;
 	}
-	else if (key == GLFW_KEY_A && event.action != 0)
+	else if ((key == 'A' || key == 'a') && event.action != 0)
 	{
 		eye -= right * moveStep;
 		target -= right * moveStep;
 	}
-	else if (key == GLFW_KEY_D && event.action != 0)
+	else if ((key == 'D' || key == 'd') && event.action != 0)
 	{
 		eye += right * moveStep;
 		target += right * moveStep;
 	}
-	else if (key == GLFW_KEY_R && event.action == 1)
+	else if ((key == 'R' || key == 'r') && event.action == 1)
 	{
 		Reset();
 		return;
 	}
-	else if (key == GLFW_KEY_P && event.action == 1)
+	else if ((key == 'P' || key == 'p') && event.action == 1)
 	{
 		// Perspective <-> Orthogonal ÀüÈ¯
 		if (camera->GetProjectionMode() == Camera::Perspective)

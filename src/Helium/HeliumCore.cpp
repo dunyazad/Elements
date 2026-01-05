@@ -13,11 +13,8 @@
 #include <Helium/Systems/ImmediateModeRenderSystem.h>
 
 #include <Helium/Components/Components.h>
-
 #include <Helium/GeometryBuilder.h>
-
 #include <Helium/VisualDebugging.h>
-
 #include <Helium/PointCloud.h>
 
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
@@ -308,6 +305,8 @@ bool HeliumCore::LoadPointCloudsFromPLY(const std::string& filename, int ID)
         }
 
         pointClouds[ID] = pointCloud;
+
+        selectedPointCloud = pointCloud;
         return true;
     }
     else
@@ -337,4 +336,22 @@ PointCloud* HeliumCore::GetPointCloud(int ID)
         return it->second;
     }
     return nullptr;
+}
+
+PointCloud* HeliumCore::GetSelectedPointCloud()
+{
+    return selectedPointCloud;
+}
+
+int HeliumCore::Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const
+{
+	int pickedIndex = -1;
+
+	auto pointCloud = selectedPointCloud;
+    if (nullptr != pointCloud)
+    {
+        pickedIndex = pointCloud->Pick(rayOrigin, rayDirection);
+    }
+
+    return pickedIndex;
 }
