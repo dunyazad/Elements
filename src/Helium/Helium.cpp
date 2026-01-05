@@ -44,6 +44,11 @@ void He_CreateConsole()
 	freopen_s(&fp, "CONOUT$", "w", stderr);
 }
 
+HELIUM_API void He_ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
+{
+	Helium.ProcessMessage(message, wParam, lParam);
+}
+
 void He_ProcessMouseWheel(float xoffset, float yoffset)
 {
 	auto inputSystem = Helium.GetInputSystem();
@@ -65,15 +70,10 @@ bool He_PointCloudSelect(int ID)
 
 bool He_PointCloudSetVisible(int ID, bool isVisible)
 {
-	ErrorLog("", "PointCloud ID %d visibility set to %s.", ID, isVisible ? "true" : "false");
-
 	auto pointCloud = Helium.GetPointCloud(ID);
 	if (pointCloud)
 	{
-		DebugLog("", "PointCloud ID %d visibility set to %s.", ID, isVisible ? "true" : "false");
-
 		pointCloud->SetVisible(isVisible);
-
 		return true;
 	}
 	return false;
@@ -97,4 +97,24 @@ void OnPointCloudCreated(int id, const std::string& fileName, const std::string&
 void He_PointCloudClone(int ID)
 {
 	Helium.ClonePointCloud(ID);
+}
+
+void He_PointCloudDelete(int ID)
+{
+	Helium.DeletePointCloud(ID);
+}
+
+static PointCloudDeletedCallback g_PointCloudDeletedCallback = nullptr;
+
+void He_SetPointCloudDeletedCallback(PointCloudDeletedCallback callback)
+{
+	g_PointCloudDeletedCallback = callback;
+}
+
+void OnPointCloudDeleted(int id)
+{
+	if (g_PointCloudDeletedCallback)
+	{
+		g_PointCloudDeletedCallback(id);
+	}
 }

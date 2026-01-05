@@ -9,7 +9,21 @@ namespace Neon.Controls
     public sealed class HeliumHost : HwndHost
     {
         private IntPtr _hwnd = IntPtr.Zero;
-        private const int WM_MOUSEWHEEL = 0x020A;  // Vertical
+
+        // 윈도우 메시지 상수 정의
+        private const int WM_KEYDOWN = 0x0100;
+        private const int WM_KEYUP = 0x0101;
+        private const int WM_SYSKEYDOWN = 0x0104;
+        private const int WM_SYSKEYUP = 0x0105;
+
+        private const int WM_MOUSEMOVE = 0x0200;
+        private const int WM_LBUTTONDOWN = 0x0201;
+        private const int WM_LBUTTONUP = 0x0202;
+        private const int WM_RBUTTONDOWN = 0x0204;
+        private const int WM_RBUTTONUP = 0x0205;
+        private const int WM_MBUTTONDOWN = 0x0207;
+        private const int WM_MBUTTONUP = 0x0208;
+        private const int WM_MOUSEWHEEL = 0x020A; // Vertical
         private const int WM_MOUSEHWHEEL = 0x020E; // Horizontal
 
         public HeliumHost()
@@ -17,10 +31,16 @@ namespace Neon.Controls
             this.Focusable = true;
         }
 
+        // 마우스 클릭 시 포커스를 가져와야 키보드 입력을 받을 수 있음
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
         {
             base.OnMouseLeftButtonDown(e);
+            this.Focus();
+        }
 
+        protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)
+        {
+            base.OnMouseRightButtonDown(e);
             this.Focus();
         }
 
@@ -64,7 +84,7 @@ namespace Neon.Controls
 
             if (_hwnd != IntPtr.Zero)
             {
-                // Get DPI scale factor
+                // DPI Scale 계산
                 double dpiScaleX = 1.0;
                 double dpiScaleY = 1.0;
 
@@ -75,7 +95,6 @@ namespace Neon.Controls
                     dpiScaleY = source.CompositionTarget.TransformToDevice.M22;
                 }
 
-                // Convert logical size to physical pixels
                 int width = (int)(sizeInfo.NewSize.Width * dpiScaleX);
                 int height = (int)(sizeInfo.NewSize.Height * dpiScaleY);
 
@@ -85,53 +104,7 @@ namespace Neon.Controls
 
         protected override IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            switch (msg)
-            {
-                case WM_MOUSEWHEEL:
-                    {
-                        // Vertical Wheel
-                        // Extract high order word for delta
-                        int rawDelta = (short)((wParam.ToInt64() >> 16) & 0xFFFF);
-                        float delta = rawDelta / 120.0f;
-
-                        // Pass to Engine (x=0, y=delta)
-                        HeliumNative.He_ProcessMouseWheel(0.0f, delta);
-
-                        handled = true;
-                        return IntPtr.Zero;
-                    }
-
-                case WM_MOUSEHWHEEL:
-                    {
-                        // Horizontal Wheel
-                        int rawDelta = (short)((wParam.ToInt64() >> 16) & 0xFFFF);
-                        float delta = rawDelta / 120.0f;
-
-                        // Pass to Engine (x=delta, y=0)
-                        // Note: Depending on your camera/scroll logic, you might want to invert this (-delta)
-                        HeliumNative.He_ProcessMouseWheel(-delta, 0.0f);
-
-                        handled = true;
-                        return IntPtr.Zero;
-                    }
-            }
-
             return base.WndProc(hwnd, msg, wParam, lParam, ref handled);
-        }
-
-        // 세로 휠(Vertical)은 기존처럼 OnMouseWheel에서 처리하거나
-        // 통일성을 위해 여기서 WM_MOUSEWHEEL (0x020A)을 함께 처리해도 됩니다.
-        protected override void OnMouseWheel(MouseWheelEventArgs e)
-        {
-            // 세로 휠 처리
-            base.OnMouseWheel(e);
-
-            if (!e.Handled)
-            {
-                float delta = e.Delta / 120.0f;
-                HeliumNative.He_ProcessMouseWheel(0.0f, delta);
-                e.Handled = true;
-            }
         }
     }
 }

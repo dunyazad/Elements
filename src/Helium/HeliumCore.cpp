@@ -19,8 +19,6 @@
 
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
 
-extern void OnPointCloudCreated(int id, const std::string& fileName, const std::string& name);
-
 HeliumCore::HeliumCore()
 {
 }
@@ -222,6 +220,11 @@ void HeliumCore::Shutdown()
     isInitialized = false;
 }
 
+void HeliumCore::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (inputSystem) inputSystem->ProcessMessage(message, wParam, lParam);
+}
+
 Shader* HeliumCore::CreateShader(const std::string& name, const std::string& vsCode, const std::string& fsCode)
 {
     Shader* shader = new Shader(name, vsCode, fsCode);
@@ -344,6 +347,24 @@ void HeliumCore::ClonePointCloud(int ID)
         pointClouds[clone->GetID()] = clone;
         selectedPointCloud = clone;
     }
+}
+
+void HeliumCore::DeletePointCloud(int ID)
+{
+    if (pointClouds.find(ID) != pointClouds.end())
+    {
+        PointCloud* pointCloud = pointClouds[ID];
+        if (nullptr != pointCloud)
+        {
+            delete pointCloud;
+            pointCloud = nullptr;
+        }
+        pointClouds.erase(ID);
+        if (selectedPointCloud && selectedPointCloud->GetID() == ID)
+        {
+            selectedPointCloud = nullptr;
+        }
+	}
 }
 
 //int HeliumCore::Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const

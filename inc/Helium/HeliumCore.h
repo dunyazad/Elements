@@ -65,6 +65,8 @@ public:
     void Resize(int width, int height);
     void Shutdown();
 
+    void ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam);
+
     inline int GetWidth() const { if (backend) return backend->GetWidth(); else return 0; }
     inline int GetHeight() const { if (backend) return backend->GetHeight(); else return 0; }
 
@@ -162,6 +164,7 @@ public:
 	PointCloud* GetPointCloud(int ID);
     PointCloud* GetSelectedPointCloud();
     void ClonePointCloud(int ID);
+    void DeletePointCloud(int ID);
 
     //int Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const;
 

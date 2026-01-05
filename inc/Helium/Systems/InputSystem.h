@@ -15,15 +15,17 @@ public:
     void Initialize() override;
     void Update(float dt) override;
 
-    bool IsKeyDown(int key);        // 누르고 있는 동안 true
-    bool IsKeyPressed(int key);     // 누른 순간 한 번만 true
-    bool IsKeyReleased(int key);    // 뗀 순간 한 번만 true
+    bool IsKeyDown(int key);
+    bool IsKeyPressed(int key);
+    bool IsKeyReleased(int key);
 
     bool IsMouseButtonDown(int button); // 0: Left, 1: Right, 2: Middle
     Eigen::Vector2f GetMousePosition() const;
 
 	void OnMouseWheel(float xoffset, float yoffset);
 
+    void ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam);
+    
 private:
     bool keyStates[256];
     bool prevKeyStates[256];

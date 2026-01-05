@@ -22,6 +22,8 @@ extern "C"
 
     HELIUM_API void He_CreateConsole();
 
+    HELIUM_API void He_ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam);
+
     HELIUM_API void He_SetLogCallback(HeliumLogCallback cb);
 
     HELIUM_API void He_ProcessMouseWheel(float xoffset, float yoffset);
@@ -36,4 +38,9 @@ extern "C"
     HELIUM_API void He_SetPointCloudCreatedCallback(PointCloudCreatedCallback callback);
 
     HELIUM_API void He_PointCloudClone(int ID);
+
+    HELIUM_API void He_PointCloudDelete(int ID);
+
+    typedef void(*PointCloudDeletedCallback)(int ID);
+    HELIUM_API void He_SetPointCloudDeletedCallback(PointCloudDeletedCallback callback);
 }

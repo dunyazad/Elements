@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows;
@@ -17,12 +18,28 @@ namespace Neon
 {
     public partial class MainWindow : Window
     {
+        private const int WM_KEYDOWN = 0x0100;
+        private const int WM_KEYUP = 0x0101;
+        private const int WM_SYSKEYDOWN = 0x0104;
+        private const int WM_SYSKEYUP = 0x0105;
+
+        private const int WM_MOUSEMOVE = 0x0200;
+        private const int WM_LBUTTONDOWN = 0x0201;
+        private const int WM_LBUTTONUP = 0x0202;
+        private const int WM_RBUTTONDOWN = 0x0204;
+        private const int WM_RBUTTONUP = 0x0205;
+        private const int WM_MBUTTONDOWN = 0x0207;
+        private const int WM_MBUTTONUP = 0x0208;
+        private const int WM_MOUSEWHEEL = 0x020A; // Vertical
+        private const int WM_MOUSEHWHEEL = 0x020E; // Horizontal
+
         public ObservableCollection<SceneNode> SceneItems { get; set; }
 
         private HeliumLogDelegate _logDelegate;
         private bool _autoScroll = true;
 
         private HeliumNative.PointCloudCreatedDelegate _pointCloudCreatedDelegate;
+        private HeliumNative.PointCloudDeletedDelegate _pointCloudDeletedDelegate;
 
         private readonly Stopwatch _stopwatch = new();
         private long _lastTicks = 0;
@@ -31,9 +48,6 @@ namespace Neon
 
         private double _lastLogHeight = 224.0;
         private const double MinLogHeight = 30.0;
-
-        private const int WM_MOUSEWHEEL = 0x020A;  // Vertical
-        private const int WM_MOUSEHWHEEL = 0x020E; // Horizontal
                 
         public MainWindow()
         {
@@ -56,6 +70,9 @@ namespace Neon
 
             _pointCloudCreatedDelegate = Treeview_OnPointCloudCreated;
             HeliumNative.He_SetPointCloudCreatedCallback(_pointCloudCreatedDelegate);
+
+            _pointCloudDeletedDelegate = TreeView_OnPointCloudDeleted;
+            HeliumNative.He_SetPointCloudDeletedCallback(_pointCloudDeletedDelegate);
 
             //this.WindowState = WindowState.Maximized;
         }
@@ -92,48 +109,61 @@ namespace Neon
 
         private void ComponentDispatcher_ThreadFilterMessage(ref MSG msg, ref bool handled)
         {
-            // 1. 휠 메시지인지 확인
-            if (msg.message == WM_MOUSEWHEEL || msg.message == WM_MOUSEHWHEEL)
+            bool isKeyboard = (msg.message >= WM_KEYDOWN && msg.message <= WM_SYSKEYUP);
+            bool isMouse = (msg.message >= WM_MOUSEMOVE && msg.message <= WM_MOUSEHWHEEL);
+
+            if (isKeyboard || isMouse)
             {
-                // 2. 마우스가 HeliumHost(3D 뷰포트) 위에 있는지 확인
-                // (다른 UI를 스크롤할 때는 엔진으로 이벤트를 보내지 않기 위함)
-                if (IsMouseOverHeliumHost())
+                if (HeliumHostControl == null || HeliumHostControl.Handle == IntPtr.Zero)
                 {
-                    if (msg.message == WM_MOUSEWHEEL) // 수직
-                    {
-                        int rawDelta = (short)((msg.wParam.ToInt64() >> 16) & 0xFFFF);
-                        float delta = rawDelta / 120.0f;
+                    return;
+                }
 
-                        HeliumNative.He_ProcessMouseWheel(0.0f, delta);
-                        handled = true; // 이벤트 전파 막기 (선택사항)
-                    }
-                    else // 수평 (WM_MOUSEHWHEEL)
-                    {
-                        int rawDelta = (short)((msg.wParam.ToInt64() >> 16) & 0xFFFF);
-                        float delta = rawDelta / 120.0f;
+                IntPtr heliumHwnd = HeliumHostControl.Handle;
 
-                        HeliumNative.He_ProcessMouseWheel(-delta, 0.0f);
-                        handled = true;
+                if (isKeyboard)
+                {
+                    if (!HeliumHostControl.IsKeyboardFocusWithin)
+                    {
+                        return;
                     }
                 }
+
+                if (isMouse)
+                {
+                    if (!IsMouseOverHeliumHost())
+                    {
+                        return;
+                    }
+                }
+
+                IntPtr finalLParam = msg.lParam;
+
+                if (isMouse)
+                {
+                    NativeMethods.POINT cursorPos;
+                    NativeMethods.GetCursorPos(out cursorPos);
+                    NativeMethods.ScreenToClient(heliumHwnd, ref cursorPos);
+
+                    int x = cursorPos.X;
+                    int y = cursorPos.Y;
+
+                    finalLParam = (IntPtr)((y << 16) | (x & 0xFFFF));
+                }
+
+                HeliumNative.He_ProcessMessage((uint)msg.message, msg.wParam, finalLParam);
             }
         }
 
         private bool IsMouseOverHeliumHost()
         {
-            // HeliumHostControl은 XAML에서 지정한 x:Name입니다.
-            if (HeliumHostControl == null) return false;
+            if (HeliumHostControl == null || !HeliumHostControl.IsLoaded)
+                return false;
 
-            // 현재 마우스 위치 가져오기 (스크린 좌표 -> 클라이언트 좌표 변환 필요 없음, HitTest 사용)
-            Point mousePt = Mouse.GetPosition(HeliumHostControl);
-
-            // 마우스가 컨트롤 영역(0 ~ ActualWidth/Height) 안에 있는지 검사
-            if (mousePt.X >= 0 && mousePt.X < HeliumHostControl.ActualWidth &&
-                mousePt.Y >= 0 && mousePt.Y < HeliumHostControl.ActualHeight)
-            {
-                return true;
-            }
-            return false;
+            System.Windows.Point pos = Mouse.GetPosition(HeliumHostControl);
+            
+            return (pos.X >= 0 && pos.X < HeliumHostControl.ActualWidth &&
+                    pos.Y >= 0 && pos.Y < HeliumHostControl.ActualHeight);
         }
 
         private void OnRendering(object? sender, EventArgs e)
@@ -271,14 +301,14 @@ namespace Neon
 
         SceneNode selectedSceneNode = null!;
 
-        private void Treeview_OnPointCloudCreated(int id, string fineName, string name)
+        private void Treeview_OnPointCloudCreated(int ID, string fineName, string name)
         {
             // 네이티브 스레드에서 호출될 수 있으므로 Dispatcher 사용
             Application.Current.Dispatcher.Invoke(() =>
             {
                 var node = new SceneNode
                 {
-                    ID = id,
+                    ID = ID,
                     Name = name,
                     FullPath = fineName
                 };
@@ -287,7 +317,7 @@ namespace Neon
                 bool exists = false;
                 foreach (var item in SceneItems)
                 {
-                    if (item.ID == id)
+                    if (item.ID == ID)
                     {
                         exists = true;
                         break;
@@ -300,6 +330,27 @@ namespace Neon
                     //NeonLogger.Log("System", $"PointCloud Added via Callback: {name} (ID: {id})");
                 }
                 node.IsSelected = true;
+            });
+        }
+
+        private void TreeView_OnPointCloudDeleted(int ID)
+        {
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                SceneNode? nodeToRemove = null;
+                foreach (var item in SceneItems)
+                {
+                    if (item.ID == ID)
+                    {
+                        nodeToRemove = item;
+                        break;
+                    }
+                }
+                if (nodeToRemove != null)
+                {
+                    SceneItems.Remove(nodeToRemove);
+                    //NeonLogger.Log("System", $"PointCloud Removed via Callback: {nodeToRemove.Name} (ID: {ID})");
+                }
             });
         }
 
@@ -323,9 +374,37 @@ namespace Neon
                 sceneNode.IsVisible = isVisible;
                 HeliumNative.He_PointCloudSetVisible(sceneNode.ID, isVisible);
 
-                NeonLogger.Log("", $"PointCloud Visibility Changed: {sceneNode.Name} (ID: {sceneNode.ID}) to {(isVisible ? "Visible" : "Hidden")}");
+                //NeonLogger.Log("", $"PointCloud Visibility Changed: {sceneNode.Name} (ID: {sceneNode.ID}) to {(isVisible ? "Visible" : "Hidden")}");
             }
-        } 
+        }
+
+        private void SceneItemDelete_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.DataContext is SceneNode sceneNode)
+            {
+                var result = MessageBox.Show(
+                    $"Do you want to delete '{sceneNode.Name}'?",
+                    "Delete Point Cloud",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning
+                );
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    HeliumNative.He_PointCloudDelete(sceneNode.ID);
+                    SceneItems.Remove(sceneNode);
+
+                    if (selectedSceneNode == sceneNode)
+                    {
+                        selectedSceneNode = null!;
+                    }
+                    //NeonLogger.Log(NeonLogger.LogLevel.Info, "System", $"Deleted PointCloud: {sceneNode.Name}");
+                }
+
+                // 3. 삭제 버튼 클릭 이벤트가 트리뷰 아이템 선택 이벤트로 전파되지 않도록 막음
+                e.Handled = true;
+            }
+        }
         #endregion
 
         #region Logging

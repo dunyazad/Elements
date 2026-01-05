@@ -399,7 +399,10 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 	}
 	else if((VK_F9 == key) && (event.action == 0))
 	{
-		auto key = Helium.GetSelectedPointCloud()->GetFileName();
+		auto selectedPointCloud = Helium.GetSelectedPointCloud();
+		if (nullptr == selectedPointCloud) return;
+
+		auto key = selectedPointCloud->GetFileName();
 		auto subKey = "F9";
 
 		if (event.IsCtrlPressed())
@@ -413,7 +416,10 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 	}
 	else if ((VK_F10 == key) && (event.action == 0))
 	{
-		auto key = Helium.GetSelectedPointCloud()->GetFileName();
+		auto selectedPointCloud = Helium.GetSelectedPointCloud();
+		if (nullptr == selectedPointCloud) return;
+
+		auto key = selectedPointCloud->GetFileName();
 		auto subKey = "F10";
 
 		if (event.IsCtrlPressed())
@@ -427,7 +433,10 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 	}
 	else if ((VK_F11 == key) && (event.action == 0))
 	{
-		auto key = Helium.GetSelectedPointCloud()->GetFileName();
+		auto selectedPointCloud = Helium.GetSelectedPointCloud();
+		if (nullptr == selectedPointCloud) return;
+
+		auto key = selectedPointCloud->GetFileName();
 		auto subKey = "F11";
 
 		if (event.IsCtrlPressed())
@@ -441,7 +450,10 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 	}
 	else if ((VK_F12 == key) && (event.action == 0))
 	{
-		auto key = Helium.GetSelectedPointCloud()->GetFileName();
+		auto selectedPointCloud = Helium.GetSelectedPointCloud();
+		if (nullptr == selectedPointCloud) return;
+
+		auto key = selectedPointCloud->GetFileName();
 		auto subKey = "F12";
 
 		if (event.IsCtrlPressed())

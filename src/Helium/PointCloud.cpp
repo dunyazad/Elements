@@ -4,13 +4,17 @@
 #include <Helium/HeliumCore.h>
 #include <Helium/GeometryBuilder.h>
 #include <Helium/Serialization.hpp>
+#include <Helium/VisualDebugging.h>
 #include <Helium/Components/CameraManipulator.h>
 
 #include <limits>
 #include <cmath>
 #include <iostream>
 
+using VD = VisualDebugging;
+
 extern void OnPointCloudCreated(int id, const std::string& fileName, const std::string& name);
+extern void OnPointCloudDeleted(int ID);
 
 int PointCloud::nextID = -1;
 
@@ -21,6 +25,9 @@ PointCloud::PointCloud()
 
 PointCloud::~PointCloud()
 {
+	Helium.RemoveEntity(entity);
+
+	OnPointCloudDeleted(GetID());
 }
 
 bool PointCloud::LoadFromPLY(const std::string& fileName, const std::string& name)
@@ -144,6 +151,8 @@ void PointCloud::UpdateLoading()
 
 				if (0 == event.action && 0 == event.button)
 				{
+					VD::Clear("Selected Point");
+
 					auto cameraEntity = Helium.GetEntityByName("MainCamera");
 					auto camera = Helium.GetComponent<Camera>(cameraEntity);
 					if (nullptr == camera) return;
@@ -159,15 +168,19 @@ void PointCloud::UpdateLoading()
 
 					if (pickedIndex != -1)
 					{
-						std::cout << "Picked Instance Index: " << pickedIndex << std::endl;
-
-						//renderable->SetInstanceColor(pickedIndex, { 1.0f, 0.0f, 0.0f, 1.0f });
 						auto position = this->positions[pickedIndex];
+						auto normal = this->normals[pickedIndex];
 
-						auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
-						if (cameraManipulator)
+						VD::Clear("Selected Point");
+						VD::AddSphere("Selected Point", position, normal, 0.051f, {1.0f, 0.0f, 0.0f, 1.0f});
+
+						if (event.IsCtrlPressed())
 						{
-							cameraManipulator->SetCenter(position);
+							auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
+							if (cameraManipulator)
+							{
+								cameraManipulator->SetCenter(position);
+							}
 						}
 					}
 				}
@@ -248,19 +261,37 @@ PointCloud* PointCloud::Clone()
 
 		if (0 == event.action && 0 == event.button)
 		{
+			VD::Clear("Selected Point");
+
 			auto cameraEntity = Helium.GetEntityByName("MainCamera");
 			auto camera = Helium.GetComponent<Camera>(cameraEntity);
 			if (nullptr == camera) return;
 
-			Ray ray = camera->ScreenPointToRay((float)event.xpos, (float)event.ypos, Helium.GetWidth(), Helium.GetHeight());
+			Ray ray = camera->ScreenPointToRay(
+				(float)event.xpos,
+				(float)event.ypos,
+				Helium.GetWidth(),
+				Helium.GetHeight()
+			);
+
 			int pickedIndex = newPC->Pick(ray.origin, ray.direction);
 
 			if (pickedIndex != -1)
 			{
-				std::cout << "Picked Clone Instance Index: " << pickedIndex << std::endl;
 				auto position = newPC->positions[pickedIndex];
-				auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
-				if (cameraManipulator) cameraManipulator->SetCenter(position);
+				auto normal = newPC->normals[pickedIndex];
+
+				VD::Clear("Selected Point");
+				VD::AddSphere("Selected Point", position, normal, 0.051f, { 1.0f, 0.0f, 0.0f, 1.0f });
+
+				if (event.IsCtrlPressed())
+				{
+					auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
+					if (cameraManipulator)
+					{
+						cameraManipulator->SetCenter(position);
+					}
+				}
 			}
 		}
 		});
