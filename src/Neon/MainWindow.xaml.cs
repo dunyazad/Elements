@@ -55,10 +55,9 @@ namespace Neon
             CompositionTarget.Rendering += OnRendering;
 
             _pointCloudCreatedDelegate = Treeview_OnPointCloudCreated;
-            // 2. 네이티브에 등록
             HeliumNative.He_SetPointCloudCreatedCallback(_pointCloudCreatedDelegate);
 
-            this.WindowState = WindowState.Maximized;
+            //this.WindowState = WindowState.Maximized;
         }
 
         #region System Message Processing
@@ -212,6 +211,14 @@ namespace Neon
             Close();
         }
 
+        private void Menu_PointCloud_Clone_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                HeliumNative.He_PointCloudClone(selectedSceneNode.ID);
+            }
+        }
+
         private void Menu_PointCloud_Clustering_Click(object sender, RoutedEventArgs e)
         {
         }
@@ -262,6 +269,8 @@ namespace Neon
             }
         }
 
+        SceneNode selectedSceneNode = null!;
+
         private void Treeview_OnPointCloudCreated(int id, string fineName, string name)
         {
             // 네이티브 스레드에서 호출될 수 있으므로 Dispatcher 사용
@@ -296,27 +305,25 @@ namespace Neon
 
         private void SceneTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
-            if (e.NewValue is SceneNode selectedNode)
+            if (e.NewValue is SceneNode sceneNode)
             {
-                //NeonLogger.Log("", $"Selected: {selectedNode.Name}");
-                HeliumNative.He_PointCloudSelect(selectedNode.ID);
+                //NeonLogger.Log("", $"Selected: {sceneNode.Name}");
+                HeliumNative.He_PointCloudSelect(sceneNode.ID);
+
+                selectedSceneNode = sceneNode;
             }
         }
 
         private void SceneItemCheckBox_Click(object sender, RoutedEventArgs e)
         {
-            // sender가 CheckBox이고, DataContext가 SceneNode인지 확인
             if (sender is CheckBox checkBox && checkBox.DataContext is SceneNode sceneNode)
             {
                 // UI의 체크 상태 가져오기 (null일 경우 false 처리)
                 bool isVisible = checkBox.IsChecked ?? false;
-
-                // 데이터 모델 업데이트 (양방향 바인딩을 안 썼을 경우를 대비해 명시적 업데이트)
                 sceneNode.IsVisible = isVisible;
-
-                // Native 엔진에 가시성 업데이트 요청
-                // (He_SetPointCloudVisible 함수는 HeliumNative에 추가 필요)
                 HeliumNative.He_PointCloudSetVisible(sceneNode.ID, isVisible);
+
+                NeonLogger.Log("", $"PointCloud Visibility Changed: {sceneNode.Name} (ID: {sceneNode.ID}) to {(isVisible ? "Visible" : "Hidden")}");
             }
         } 
         #endregion

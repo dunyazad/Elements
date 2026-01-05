@@ -28,17 +28,27 @@ public:
 	PointCloud();
 	~PointCloud();
 
-	bool LoadFromPLY(const std::string& fileName);
+	bool LoadFromPLY(const std::string& fileName, const std::string& name);
 
 	void UpdateLoading();
+
+	PointCloud* Clone();
 
 	bool SetVisible(bool isVisible);
 
 	int Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const;
 
+	inline int GetID() const { return id; }
+	inline const std::string& GetName() const { return name; }
 	inline const std::string& GetFileName() const { return fileName; }
 
 protected:
+	static int nextID;
+
+	int id = -1;
+	std::string name;
+	std::string fileName;
+
 	std::vector<Eigen::Vector3f> positions;
 	std::vector<Eigen::Vector3f> normals;
 	std::vector<Eigen::Vector4f> colors;
@@ -48,5 +58,4 @@ protected:
 	Renderable* renderable = nullptr;
 	bool isLoading = false;
 	std::future<ProcessedInstanceData> loadingFuture;
-	std::string fileName;
 };

@@ -155,6 +155,7 @@
                     </MenuItem>
 
                     <MenuItem Header="PointCloud">
+                        <MenuItem Header="Clone" Click="Menu_PointCloud_Clone_Click"/>
                         <MenuItem Header="Clustering" Click="Menu_PointCloud_Clustering_Click"/>
                         <Separator/>
                         <MenuItem Header="Reset Layout"/>

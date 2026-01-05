@@ -157,12 +157,13 @@ public:
 
     void Log(HeliumLogLevel level, const char* key, const char* fmt, ...);
 
-	bool LoadPointCloudsFromPLY(const std::string& filename, int ID);
+	int LoadPointCloudFromPLY(const std::string& filename, const std::string& name);
 	bool SelectPointCloud(int ID);
 	PointCloud* GetPointCloud(int ID);
     PointCloud* GetSelectedPointCloud();
+    void ClonePointCloud(int ID);
 
-    int Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const;
+    //int Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const;
 
 private:
     HeliumCore();

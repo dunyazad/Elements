@@ -65,10 +65,15 @@ bool He_PointCloudSelect(int ID)
 
 bool He_PointCloudSetVisible(int ID, bool isVisible)
 {
+	ErrorLog("", "PointCloud ID %d visibility set to %s.", ID, isVisible ? "true" : "false");
+
 	auto pointCloud = Helium.GetPointCloud(ID);
 	if (pointCloud)
 	{
+		DebugLog("", "PointCloud ID %d visibility set to %s.", ID, isVisible ? "true" : "false");
+
 		pointCloud->SetVisible(isVisible);
+
 		return true;
 	}
 	return false;
@@ -87,4 +92,9 @@ void OnPointCloudCreated(int id, const std::string& fileName, const std::string&
 	{
 		g_PointCloudCreatedCallback(id, fileName.c_str(), name.c_str());
 	}
+}
+
+void He_PointCloudClone(int ID)
+{
+	Helium.ClonePointCloud(ID);
 }

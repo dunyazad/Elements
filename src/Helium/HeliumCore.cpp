@@ -297,21 +297,11 @@ void HeliumCore::Log(HeliumLogLevel level, const char* key, const char* fmt, ...
 
 int HeliumCore::LoadPointCloudFromPLY(const std::string& fileName, const std::string& name)
 {
-    if(pointClouds.find(fileName) != pointClouds.end())
-    {
-		auto pointCloud = pointClouds[fileName];
-		selectedPointCloud = pointCloud;
-		return pointCloud->GetID();
-	}
-
 	PointCloud* pointCloud = new PointCloud();
     if (pointCloud->LoadFromPLY(fileName, name))
     {
-        pointClouds[fileName] = pointCloud;
-
+        pointClouds[pointCloud->GetID()] = pointCloud;
         selectedPointCloud = pointCloud;
-
-		OnPointCloudCreated(pointCloud->GetID(), pointCloud->GetFileName(), pointCloud->GetName());
         return pointCloud->GetID();
     }
     else
@@ -323,34 +313,37 @@ int HeliumCore::LoadPointCloudFromPLY(const std::string& fileName, const std::st
 
 bool HeliumCore::SelectPointCloud(int ID)
 {
-    for (auto& kvp : pointClouds)
+    if (pointClouds.find(ID) != pointClouds.end())
     {
-        if(kvp.second->GetID() == ID)
-        {
-            selectedPointCloud = kvp.second;
-            return true;
-		}
+        selectedPointCloud = pointClouds[ID];
+        return true;
     }
-
     return false;
 }
 
 PointCloud* HeliumCore::GetPointCloud(int ID)
 {
-    for (auto& kvp : pointClouds)
+    if (pointClouds.find(ID) != pointClouds.end())
     {
-        if (kvp.second->GetID() == ID)
-        {
-            return kvp.second;
-        }
+        return pointClouds[ID];
     }
-
     return nullptr;
 }
 
 PointCloud* HeliumCore::GetSelectedPointCloud()
 {
     return selectedPointCloud;
+}
+
+void HeliumCore::ClonePointCloud(int ID)
+{
+    PointCloud* original = GetPointCloud(ID);
+    if (original)
+    {
+        auto clone = original->Clone();
+        pointClouds[clone->GetID()] = clone;
+        selectedPointCloud = clone;
+    }
 }
 
 //int HeliumCore::Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const

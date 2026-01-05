@@ -46,4 +46,7 @@ internal static class HeliumNative
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void He_SetPointCloudCreatedCallback(PointCloudCreatedDelegate callback);
+
+    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void He_PointCloudClone(int ID);
 }

@@ -10,6 +10,8 @@
 #include <cmath>
 #include <iostream>
 
+extern void OnPointCloudCreated(int id, const std::string& fileName, const std::string& name);
+
 int PointCloud::nextID = -1;
 
 PointCloud::PointCloud()
@@ -195,8 +197,130 @@ void PointCloud::UpdateLoading()
 			this->colors = std::move(data.colors);
 
 			isLoading = false;
+
+			OnPointCloudCreated(this->id, this->fileName, this->name);
 		}
 	}
+}
+
+PointCloud* PointCloud::Clone()
+{
+	if (isLoading)
+	{
+		std::cout << "[PointCloud] Cannot clone while loading." << std::endl;
+		return nullptr;
+	}
+
+	PointCloud* newPC = new PointCloud();
+
+	newPC->name = this->name + "_Clone";
+	newPC->fileName = this->fileName;
+
+	newPC->positions.resize(this->positions.size());
+	newPC->normals.resize(this->normals.size());
+	newPC->colors.resize(this->colors.size());
+	memcpy(newPC->positions.data(), this->positions.data(), sizeof(Eigen::Vector3f) * this->positions.size());
+	memcpy(newPC->normals.data(), this->normals.data(), sizeof(Eigen::Vector3f) * this->normals.size());
+	memcpy(newPC->colors.data(), this->colors.data(), sizeof(Eigen::Vector4f) * this->colors.size());
+
+	newPC->entityName = this->entityName + "_Clone";
+	newPC->entity = Helium.CreateEntity(newPC->entityName);
+
+	Helium.CreateEventCallback<KeyEvent>(newPC->entity, [newPC](Entity entity, const KeyEvent& event) {
+		auto renderable = Helium.GetComponent<Renderable>(entity);
+		if (nullptr == renderable) return;
+		if (false == renderable->IsVisible()) return;
+		if (newPC != Helium.GetSelectedPointCloud()) return;
+
+		if (0 == event.action)
+		{
+			if (192 == event.keyCode) renderable->NextDrawingMode();
+			else if ('1' == event.keyCode) renderable->SetActiveShaderIndex(0);
+			else if ('2' == event.keyCode) renderable->SetActiveShaderIndex(1);
+		}
+		});
+
+	Helium.CreateEventCallback<MouseButtonEvent>(newPC->entity, [newPC](Entity entity, const MouseButtonEvent& event) {
+		auto renderable = Helium.GetComponent<Renderable>(entity);
+		if (nullptr == renderable) return;
+		if (false == renderable->IsVisible()) return;
+		if (newPC != Helium.GetSelectedPointCloud()) return;
+
+		if (0 == event.action && 0 == event.button)
+		{
+			auto cameraEntity = Helium.GetEntityByName("MainCamera");
+			auto camera = Helium.GetComponent<Camera>(cameraEntity);
+			if (nullptr == camera) return;
+
+			Ray ray = camera->ScreenPointToRay((float)event.xpos, (float)event.ypos, Helium.GetWidth(), Helium.GetHeight());
+			int pickedIndex = newPC->Pick(ray.origin, ray.direction);
+
+			if (pickedIndex != -1)
+			{
+				std::cout << "Picked Clone Instance Index: " << pickedIndex << std::endl;
+				auto position = newPC->positions[pickedIndex];
+				auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
+				if (cameraManipulator) cameraManipulator->SetCenter(position);
+			}
+		}
+		});
+
+	newPC->renderable = Helium.CreateComponent<Renderable>(newPC->entity);
+	newPC->renderable->Initialize(Renderable::GeometryMode::Triangles);
+
+	newPC->renderable->AddShader(Helium.CreateShader("Instancing", File("../../res/Shaders/Instancing.vs"), File("../../res/Shaders/Instancing.fs")));
+	newPC->renderable->AddShader(Helium.CreateShader("InstancingWithoutNormal", File("../../res/Shaders/InstancingWithoutNormal.vs"), File("../../res/Shaders/InstancingWithoutNormal.fs")));
+	newPC->renderable->SetActiveShaderIndex(1);
+
+	GeometryBuilder::BuildSphere(newPC->renderable, { 0.0f, 0.0f, 0.0f }, 0.5f, 6, 6, { 1.0f, 1.0f, 1.0f, 1.0f });
+
+	for (size_t i = 0; i < newPC->positions.size(); i++)
+	{
+		const Eigen::Vector3f& p = newPC->positions[i];
+		const Eigen::Vector3f& n = newPC->normals[i];
+		const Eigen::Vector4f& c = newPC->colors[i];
+
+		Eigen::Affine3f tm = Eigen::Affine3f::Identity();
+		Eigen::Matrix3f rot = Eigen::Matrix3f::Identity();
+
+		if (n.norm() > 0.0001f)
+		{
+			Eigen::Vector3f up(0.0f, 0.0f, 1.0f);
+			Eigen::Vector3f normalDir = n.normalized();
+			Eigen::Vector3f axis = up.cross(normalDir);
+			float dot = up.dot(normalDir);
+
+			if (dot > 1.0f) dot = 1.0f; else if (dot < -1.0f) dot = -1.0f;
+			float angle = std::acos(dot);
+
+			if (axis.norm() > 0.0001f)
+			{
+				axis.normalize();
+				rot = Eigen::AngleAxisf(angle, axis).toRotationMatrix();
+			}
+			else if (dot < -0.9f)
+			{
+				rot = Eigen::AngleAxisf(3.1415926f, Eigen::Vector3f::UnitX()).toRotationMatrix();
+			}
+		}
+
+		tm.translate(p);
+		tm.rotate(rot);
+		tm.scale(0.1f); // Scale
+
+		newPC->renderable->AddInstanceNormal(n);
+		newPC->renderable->AddInstanceColor(c);
+		newPC->renderable->AddInstanceTransform(tm.matrix());
+		newPC->renderable->IncreaseNumberOfInstances();
+	}
+
+	newPC->renderable->EnableInstancing();
+
+	newPC->isLoading = false;
+
+	OnPointCloudCreated(newPC->id, newPC->fileName, newPC->name);
+
+	return newPC;
 }
 
 bool PointCloud::SetVisible(bool isVisible)
