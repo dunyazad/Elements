@@ -58,27 +58,6 @@ void He_ProcessMouseWheel(float xoffset, float yoffset)
 	}
 }
 
-int He_LoadPointCloudFromPLY(const char* filename, const char* name)
-{
-	return Helium.LoadPointCloudFromPLY(filename, name);
-}
-
-bool He_PointCloudSelect(int ID)
-{
-	return Helium.SelectPointCloud(ID);
-}
-
-bool He_PointCloudSetVisible(int ID, bool isVisible)
-{
-	auto pointCloud = Helium.GetPointCloud(ID);
-	if (pointCloud)
-	{
-		pointCloud->SetVisible(isVisible);
-		return true;
-	}
-	return false;
-}
-
 static PointCloudCreatedCallback g_PointCloudCreatedCallback = nullptr;
 
 void He_SetPointCloudCreatedCallback(PointCloudCreatedCallback callback)
@@ -94,16 +73,6 @@ void OnPointCloudCreated(int id, const std::string& fileName, const std::string&
 	}
 }
 
-void He_PointCloudClone(int ID)
-{
-	Helium.ClonePointCloud(ID);
-}
-
-void He_PointCloudDelete(int ID)
-{
-	Helium.DeletePointCloud(ID);
-}
-
 static PointCloudDeletedCallback g_PointCloudDeletedCallback = nullptr;
 
 void He_SetPointCloudDeletedCallback(PointCloudDeletedCallback callback)
@@ -117,4 +86,9 @@ void OnPointCloudDeleted(int id)
 	{
 		g_PointCloudDeletedCallback(id);
 	}
+}
+
+bool He_ExecuteCommand(const char* command)
+{
+	return Helium.ExecuteCommand(command);
 }

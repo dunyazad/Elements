@@ -155,6 +155,7 @@
                     </MenuItem>
 
                     <MenuItem Header="PointCloud">
+                        <MenuItem Header="Build Sparse Grid" Click="Menu_PointCloud_BuildSparseGrid_Click"/>
                         <MenuItem Header="Clone" Click="Menu_PointCloud_Clone_Click"/>
                         <MenuItem Header="Clustering" Click="Menu_PointCloud_Clustering_Click"/>
                         <Separator/>

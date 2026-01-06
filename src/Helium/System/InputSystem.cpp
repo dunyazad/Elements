@@ -47,9 +47,6 @@ void InputSystem::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
         if (key < 256)
         {
             keyStates[key] = true;
-
-            DebugLog("", "KeyDown : %d", key);
-
             dispatcher.enqueue<KeyEvent>({ key, 1, currentMods });
         }
         break;
@@ -62,9 +59,6 @@ void InputSystem::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
         if (key < 256)
         {
             keyStates[key] = false;
-
-            DebugLog("", "KeyUp : %d", key);
-
             dispatcher.enqueue<KeyEvent>({ key, 0, currentMods });
         }
         break;

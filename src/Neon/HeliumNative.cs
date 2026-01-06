@@ -34,24 +34,11 @@ internal static class HeliumNative
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void He_ProcessMouseWheel(float xoffset, float yoffset);
 
-
-    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern int He_LoadPointCloudFromPLY([MarshalAs(UnmanagedType.LPStr)] string fileName, [MarshalAs(UnmanagedType.LPStr)] string name);
-
-    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern void He_PointCloudSelect(int ID);
-
-    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern bool He_PointCloudSetVisible(int ID, bool isVisible);
-
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void PointCloudCreatedDelegate(int ID, [MarshalAs(UnmanagedType.LPStr)] string fileName, [MarshalAs(UnmanagedType.LPStr)] string name);
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void He_SetPointCloudCreatedCallback(PointCloudCreatedDelegate callback);
-
-    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern void He_PointCloudClone(int ID);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void PointCloudDeletedDelegate(int ID);
@@ -60,5 +47,5 @@ internal static class HeliumNative
     public static extern void He_SetPointCloudDeletedCallback(PointCloudDeletedDelegate callback);
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
-    public static extern void He_PointCloudDelete(int ID);
+    public static extern void He_ExecuteCommand([MarshalAs(UnmanagedType.LPStr)] string command);
 }

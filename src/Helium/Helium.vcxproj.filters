@@ -37,6 +37,12 @@
     <Filter Include="리소스 파일\Shader">
       <UniqueIdentifier>{ce543324-e4a5-4dd6-8869-9bdf51d757e8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="소스 파일\SpatialPartitionings">
+      <UniqueIdentifier>{7167c2cb-9cf7-4248-bd83-031a46a69b0f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\Helium\SpatialPartitionings">
+      <UniqueIdentifier>{9de884cd-18a6-4682-a04d-8a61daa23253}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -141,6 +147,21 @@
     <ClInclude Include="..\..\inc\Helium\PointCloud.h">
       <Filter>헤더 파일\Helium</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\SpatialPartitionings\SparseGrid.h">
+      <Filter>헤더 파일\Helium\SpatialPartitionings</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\SpatialPartitionings\SpartialPartitionings.h">
+      <Filter>헤더 파일\Helium\SpatialPartitionings</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\SpatialPartitionings\SparseDataBlock.h">
+      <Filter>헤더 파일\Helium\SpatialPartitionings</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\SpatialPartitionings\ISpartialPartitioning.h">
+      <Filter>헤더 파일\Helium\SpatialPartitionings</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\SpatialPartitionings\Morton3D.hpp">
+      <Filter>헤더 파일\Helium\SpatialPartitionings</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -220,6 +241,12 @@
     </ClCompile>
     <ClCompile Include="PointCloud.cpp">
       <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="SpatialPartitionings\SparseGrid.cpp">
+      <Filter>소스 파일\SpatialPartitionings</Filter>
+    </ClCompile>
+    <ClCompile Include="SpatialPartitionings\SparseDataBlock.cpp">
+      <Filter>소스 파일\SpatialPartitionings</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

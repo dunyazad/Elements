@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -215,10 +216,13 @@ namespace Neon
             {
                 string[] filenames = dialog.FileNames;
 
-                foreach (string filename in filenames)
-                {
-                    HeliumNative.He_LoadPointCloudFromPLY(filename, System.IO.Path.GetFileName(filename));
-                }
+                var commandData = new {
+                    command = "LoadPointCloudFromPLY",
+                    fileNames = filenames
+                };
+
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ExecuteCommand(command);
             }
         }
 
@@ -227,11 +231,33 @@ namespace Neon
             Close();
         }
 
+        private void Menu_PointCloud_BuildSparseGrid_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                var commandData = new
+                {
+                    command = "BuildSparseGrid",
+                    pointCloudID = selectedSceneNode.ID
+                };
+
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+
+                HeliumNative.He_ExecuteCommand(command);
+            }
+        }
+
         private void Menu_PointCloud_Clone_Click(object sender, RoutedEventArgs e)
         {
             if (selectedSceneNode != null)
             {
-                HeliumNative.He_PointCloudClone(selectedSceneNode.ID);
+                var commandData = new
+                {
+                    command = "ClonePointCloud",
+                    pointCloudID = selectedSceneNode.ID
+                };
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ExecuteCommand(command);
             }
         }
 
@@ -344,8 +370,14 @@ namespace Neon
         {
             if (e.NewValue is SceneNode sceneNode)
             {
-                //NeonLogger.Log("", $"Selected: {sceneNode.Name}");
-                HeliumNative.He_PointCloudSelect(sceneNode.ID);
+                var commandData = new
+                {
+                    command = "SelectPointCloud",
+                    pointCloudID = sceneNode.ID
+                };
+
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ExecuteCommand(command);
 
                 selectedSceneNode = sceneNode;
             }
@@ -358,7 +390,15 @@ namespace Neon
                 // UI의 체크 상태 가져오기 (null일 경우 false 처리)
                 bool isVisible = checkBox.IsChecked ?? false;
                 sceneNode.IsVisible = isVisible;
-                HeliumNative.He_PointCloudSetVisible(sceneNode.ID, isVisible);
+
+                var commandData = new
+                {
+                    command = "SetPointCloudVisibility",
+                    pointCloudID = sceneNode.ID,
+                    isVisible = isVisible
+                };
+                var command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ExecuteCommand(command);
 
                 //NeonLogger.Log("", $"PointCloud Visibility Changed: {sceneNode.Name} (ID: {sceneNode.ID}) to {(isVisible ? "Visible" : "Hidden")}");
             }
@@ -377,17 +417,21 @@ namespace Neon
 
                 if (result == MessageBoxResult.Yes)
                 {
-                    HeliumNative.He_PointCloudDelete(sceneNode.ID);
+                    var commandData = new
+                    {
+                        command = "DeletePointCloud",
+                        pointCloudID = sceneNode.ID
+                    };
+                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                    HeliumNative.He_ExecuteCommand(command);
+
                     SceneItems.Remove(sceneNode);
 
                     if (selectedSceneNode == sceneNode)
                     {
                         selectedSceneNode = null!;
                     }
-                    //NeonLogger.Log(NeonLogger.LogLevel.Info, "System", $"Deleted PointCloud: {sceneNode.Name}");
                 }
-
-                // 3. 삭제 버튼 클릭 이벤트가 트리뷰 아이템 선택 이벤트로 전파되지 않도록 막음
                 e.Handled = true;
             }
         }

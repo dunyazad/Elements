@@ -463,7 +463,7 @@ void HeliumCore::InitializeScene()
             Eigen::Vector4f(0.5f, 0.5f, 0.5f, 1.0f)
         );
 
-        Helium.CreateComponent<Transform>(entity)->SetLocalPosition(Eigen::Vector3f(0.0f, -2.0f, 0.0f));
+        Helium.CreateComponent<Transform>(entity)->SetLocalPosition(Eigen::Vector3f(0.0f, 0.0f, 0.0f));
         renderable->AddShader(CreateShader("Line", File("../../res/Shaders/Line.vs"), File("../../res/Shaders/Line.fs")));
     }
 

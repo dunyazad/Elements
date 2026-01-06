@@ -163,10 +163,13 @@ public:
 	bool SelectPointCloud(int ID);
 	PointCloud* GetPointCloud(int ID);
     PointCloud* GetSelectedPointCloud();
+    void SetPointCloudVisibility(int ID, bool visible);
     void ClonePointCloud(int ID);
     void DeletePointCloud(int ID);
 
     //int Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const;
+
+    bool ExecuteCommand(const char* command);
 
 private:
     HeliumCore();

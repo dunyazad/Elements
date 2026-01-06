@@ -65,6 +65,7 @@ bool PointCloud::LoadFromPLY(const std::string& fileName, const std::string& nam
 			data.positions.push_back(p);
 			data.normals.push_back(n);
 			data.colors.push_back(c);
+			data.aabb.Expand(p);
 
 			Eigen::Affine3f tm = Eigen::Affine3f::Identity();
 			Eigen::Matrix3f rot = Eigen::Matrix3f::Identity();
@@ -208,6 +209,7 @@ void PointCloud::UpdateLoading()
 			this->positions = std::move(data.positions);
 			this->normals = std::move(data.normals);
 			this->colors = std::move(data.colors);
+			this->aabb = data.aabb;
 
 			isLoading = false;
 
@@ -229,12 +231,12 @@ PointCloud* PointCloud::Clone()
 	newPC->name = this->name + "_Clone";
 	newPC->fileName = this->fileName;
 
-	newPC->positions.resize(this->positions.size());
-	newPC->normals.resize(this->normals.size());
-	newPC->colors.resize(this->colors.size());
-	memcpy(newPC->positions.data(), this->positions.data(), sizeof(Eigen::Vector3f) * this->positions.size());
-	memcpy(newPC->normals.data(), this->normals.data(), sizeof(Eigen::Vector3f) * this->normals.size());
-	memcpy(newPC->colors.data(), this->colors.data(), sizeof(Eigen::Vector4f) * this->colors.size());
+	newPC->positions = this->positions;
+	newPC->normals = this->normals;
+	newPC->colors = this->colors;
+	newPC->pointFlags = this->pointFlags;
+	newPC->clusterIds = this->clusterIds;
+	newPC->aabb = this->aabb;
 
 	newPC->entityName = this->entityName + "_Clone";
 	newPC->entity = Helium.CreateEntity(newPC->entityName);

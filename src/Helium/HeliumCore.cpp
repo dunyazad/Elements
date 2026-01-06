@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include <glad/glad.h>
+#include <nlohmann/json.hpp>
 
 #include <Helium/HeliumCore.h>
 #include <Helium/Backend/OpenGLBackend.h>
@@ -16,6 +17,8 @@
 #include <Helium/GeometryBuilder.h>
 #include <Helium/VisualDebugging.h>
 #include <Helium/PointCloud.h>
+
+#include <Helium/SpatialPartitionings/SpartialPartitionings.h>
 
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
 
@@ -338,6 +341,15 @@ PointCloud* HeliumCore::GetSelectedPointCloud()
     return selectedPointCloud;
 }
 
+void HeliumCore::SetPointCloudVisibility(int ID, bool visible)
+{
+    auto pointCloud = GetPointCloud(ID);
+    if (pointCloud)
+    {
+        pointCloud->SetVisible(visible);
+    }
+}
+
 void HeliumCore::ClonePointCloud(int ID)
 {
     PointCloud* original = GetPointCloud(ID);
@@ -367,15 +379,97 @@ void HeliumCore::DeletePointCloud(int ID)
 	}
 }
 
-//int HeliumCore::Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const
-//{
-//	int pickedIndex = -1;
-//
-//	auto pointCloud = selectedPointCloud;
-//    if (nullptr != pointCloud)
-//    {
-//        pickedIndex = pointCloud->Pick(rayOrigin, rayDirection);
-//    }
-//
-//    return pickedIndex;
-//}
+bool HeliumCore::ExecuteCommand(const char* command)
+{
+    if (command == nullptr)
+    {
+        ErrorLog("", "ExecuteCommand: Command string is null");
+        return false;
+    }
+
+    //InfoLog("", "ExecuteCommand: %s", command);
+
+    try
+    {
+        auto j = nlohmann::json::parse(command);
+
+        if (j.contains("command"))
+        {
+            std::string cmd = j["command"];
+
+            if (cmd == "LoadPointCloudFromPLY")
+            {
+                if (j.contains("fileNames") && j["fileNames"].is_array())
+                {
+                    for (const auto& fileName : j["fileNames"])
+                    {
+                        std::string path = fileName.get<std::string>();
+						std::filesystem::path fsPath(path);
+						auto name = fsPath.filename();
+                        LoadPointCloudFromPLY(path, name.string());
+                    }
+                }
+            }
+            else if(cmd == "SelectPointCloud")
+            {
+                if (j.contains("pointCloudID"))
+                {
+                    int pointCloudID = j["pointCloudID"];
+                    SelectPointCloud(pointCloudID);
+                }
+            }
+            else if(cmd == "SetPointCloudVisibility")
+            {
+                if (j.contains("pointCloudID") && j.contains("isVisible"))
+                {
+                    int pointCloudID = j["pointCloudID"];
+                    bool isVisible = j["isVisible"];
+                    SetPointCloudVisibility(pointCloudID, isVisible);
+                }
+            }
+            else if(cmd == "ClonePointCloud")
+            {
+                if (j.contains("pointCloudID"))
+                {
+                    int pointCloudID = j["pointCloudID"];
+                    ClonePointCloud(pointCloudID);
+                }
+            }
+            else if(cmd == "DeletePointCloud")
+            {
+                if (j.contains("pointCloudID"))
+                {
+                    int pointCloudID = j["pointCloudID"];
+                    DeletePointCloud(pointCloudID);
+                }
+			}
+            else if (cmd == "BuildSparseGrid")
+            {
+                if (j.contains("pointCloudID"))
+                {
+                    int pointCloudID = j["pointCloudID"];
+                    auto pointCloud = GetPointCloud(pointCloudID);
+                    if (pointCloud)
+                    {
+                        float voxelSize = j.value("voxelSize", 0.1f);
+                        SparseGrid sparseGrid;
+                        sparseGrid.Build(pointCloud, voxelSize);
+                        sparseGrid.Visualize();
+                    }
+                }
+            }
+        }
+    }
+    catch (const nlohmann::json::parse_error& e)
+    {
+        ErrorLog("", "ExecuteCommand: JSON Parse Error - %s", e.what());
+        return false;
+    }
+    catch (const std::exception& e)
+    {
+        ErrorLog("", "ExecuteCommand: Error - %s", e.what());
+        return false;
+    }
+
+    return true;
+}

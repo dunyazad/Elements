@@ -28,19 +28,11 @@ extern "C"
 
     HELIUM_API void He_ProcessMouseWheel(float xoffset, float yoffset);
 
-    HELIUM_API int He_LoadPointCloudFromPLY(const char* fileName, const char* name);
-
-    HELIUM_API bool He_PointCloudSelect(int ID);
-
-    HELIUM_API bool He_PointCloudSetVisible(int ID, bool isVisible);
-
     typedef void(*PointCloudCreatedCallback)(int ID, const char* fileName, const char* name);
     HELIUM_API void He_SetPointCloudCreatedCallback(PointCloudCreatedCallback callback);
 
-    HELIUM_API void He_PointCloudClone(int ID);
-
-    HELIUM_API void He_PointCloudDelete(int ID);
-
     typedef void(*PointCloudDeletedCallback)(int ID);
     HELIUM_API void He_SetPointCloudDeletedCallback(PointCloudDeletedCallback callback);
+
+	HELIUM_API bool He_ExecuteCommand(const char* command);
 }
