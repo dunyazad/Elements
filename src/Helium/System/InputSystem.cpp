@@ -18,13 +18,10 @@ InputSystem::InputSystem(HeliumCore* core)
 
 void InputSystem::Initialize()
 {
-    //core->Log(HE_LOG_INFO, "System", "InputSystem Initialized");
 }
 
 void InputSystem::Update(float dt)
 {
-    // 이전 프레임의 상태를 현재 상태로 갱신 (Edge Detection용)
-    // 이 코드는 메시지 처리와 게임 로직 사이에 적절히 위치해야 정확한 Press/Release 감지가 가능
     memcpy(prevKeyStates, keyStates, sizeof(keyStates));
     memcpy(prevMouseStates, mouseStates, sizeof(mouseStates));
 }

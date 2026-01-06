@@ -153,6 +153,12 @@ public:
         }
     }
 
+    template<typename T>
+    void EnqueueEvent(const T& event)
+    {
+        dispatcher.enqueue<T>(event);
+    }
+
     Shader* CreateShader(const std::string& name, const std::string& vsCode, const std::string& fsCode);
     Shader* CreateShader(const std::string& name, const File& vsFile, const File& fsFile);
     Shader* GetShader(const std::string& name);

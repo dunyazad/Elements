@@ -169,19 +169,14 @@ void PointCloud::UpdateLoading()
 
 					if (pickedIndex != -1)
 					{
-						auto position = this->positions[pickedIndex];
-						auto normal = this->normals[pickedIndex];
+						json j;
+						j["PointPicked"];
+						j["PointPicked"]["PointCloudID"] = GetID();
+						j["PointPicked"]["PickedIndex"] = pickedIndex;
+						j["PointPicked"]["IsCtrlPressed"] = event.IsCtrlPressed();
 
-						VD::AddSphere("Selected Point", position, normal, 0.052f, {1.0f, 0.0f, 0.0f, 1.0f});
-
-						if (event.IsCtrlPressed())
-						{
-							auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
-							if (cameraManipulator)
-							{
-								cameraManipulator->SetCenter(position);
-							}
-						}
+						CustomEvent customEvent(j.dump());
+						Helium.EnqueueEvent<CustomEvent>(customEvent);
 					}
 				}
 				});
@@ -290,20 +285,14 @@ PointCloud* PointCloud::Clone()
 
 			if (pickedIndex != -1)
 			{
-				auto position = newPC->positions[pickedIndex];
-				auto normal = newPC->normals[pickedIndex];
+				json j;
+				j["PointPicked"];
+				j["PointPicked"]["PointCloudID"] = newPC->GetID();
+				j["PointPicked"]["PickedIndex"] = pickedIndex;
+				j["PointPicked"]["IsCtrlPressed"] = event.IsCtrlPressed();
 
-				VD::Clear("Selected Point");
-				VD::AddSphere("Selected Point", position, normal, 0.055f, { 1.0f, 0.0f, 0.0f, 1.0f });
-
-				if (event.IsCtrlPressed())
-				{
-					auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
-					if (cameraManipulator)
-					{
-						cameraManipulator->SetCenter(position);
-					}
-				}
+				CustomEvent customEvent(j.dump());
+				Helium.EnqueueEvent<CustomEvent>(customEvent);
 			}
 		}
 		});

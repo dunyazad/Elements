@@ -114,3 +114,9 @@ struct WindowResizeEvent
     int Height;
     WindowResizeEvent(int w, int h) : Width(w), Height(h) {}
 };
+
+struct CustomEvent
+{
+	std::string jsonString;
+	CustomEvent(const std::string& jsonString) : jsonString(jsonString) {}
+};
