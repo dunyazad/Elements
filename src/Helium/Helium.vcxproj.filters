@@ -43,6 +43,12 @@
     <Filter Include="헤더 파일\Helium\SpatialPartitionings">
       <UniqueIdentifier>{9de884cd-18a6-4682-a04d-8a61daa23253}</UniqueIdentifier>
     </Filter>
+    <Filter Include="헤더 파일\Helium\PointCloudProcessing">
+      <UniqueIdentifier>{d336db79-3d51-496f-a8e4-20df951bed22}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\PointCloudProcessing">
+      <UniqueIdentifier>{1bb7c669-d535-492e-b6cb-b3787786ce2e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">

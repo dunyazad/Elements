@@ -156,14 +156,22 @@
 
                     <MenuItem Header="PointCloud">
                         <MenuItem Header="Build Sparse Grid" Click="Menu_PointCloud_BuildSparseGrid_Click"/>
+                        <MenuItem Header="Build Sparse DataBlocks" Click="Menu_PointCloud_BuildSparseDataBlocks_Click"/>
+                        <Separator/>
                         <MenuItem Header="Clone" Click="Menu_PointCloud_Clone_Click"/>
                         <MenuItem Header="Clustering" Click="Menu_PointCloud_Clustering_Click"/>
                         <Separator/>
                         <MenuItem Header="Reset Layout"/>
                     </MenuItem>
 
+                    <MenuItem Header="VD">
+                        <MenuItem Header="Clear All" Click="Menu_VD_ClearAll_Click"/>
+                    </MenuItem>
+
                     <MenuItem Header="_View">
-                        <MenuItem Header="Toggle _Log" Click="LogToggle_Click"/>
+                        <MenuItem Header="Toggle Grid" Click="Menu_View_ToggleGrid_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Toggle Log" Click="Menu_View_ToggleLog_Click"/>
                         <Separator/>
                         <MenuItem Header="Reset Layout"/>
                     </MenuItem>
@@ -338,14 +346,16 @@
                         </Grid.ColumnDefinitions>
 
                         <ToggleButton x:Name="LogToggle"
-                                      Grid.Column="0"
-                                      Content="Log"
-                                      IsChecked="True"
-                                      Click="LogToggle_Click"
-                                      Background="Transparent"
-                                      Foreground="#AAA"
-                                      BorderThickness="0"
-                                      HorizontalAlignment="Stretch"/>
+              Grid.Column="0"
+              Content="Log"
+              IsChecked="True"
+              Checked="LogToggle_Checked"    
+              Unchecked="LogToggle_Unchecked"
+              Click="LogToggle_Click" 
+              Background="Transparent"
+              Foreground="#AAA"
+              BorderThickness="0"
+              HorizontalAlignment="Stretch"/>
                     </Grid>
                 </Border>
 

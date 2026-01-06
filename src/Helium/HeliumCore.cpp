@@ -20,6 +20,8 @@
 
 #include <Helium/SpatialPartitionings/SpartialPartitionings.h>
 
+using VD = VisualDebugging;
+
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
 
 HeliumCore::HeliumCore()
@@ -458,6 +460,34 @@ bool HeliumCore::ExecuteCommand(const char* command)
                     }
                 }
             }
+            else if (cmd == "BuildSparseDataBlocks")
+            {
+                if (j.contains("pointCloudID"))
+                {
+                    int pointCloudID = j["pointCloudID"];
+                    auto pointCloud = GetPointCloud(pointCloudID);
+                    if (pointCloud)
+                    {
+                        float voxelSize = j.value("voxelSize", 0.1f);
+                        SparseDataBlock sparseDataBlock;
+                        sparseDataBlock.Build(pointCloud);
+                        sparseDataBlock.Visualize();
+                    }
+                }
+            }
+            else if (cmd == "ToggleGrid")
+            {
+				auto entity = GetEntityByName("Grid");
+				auto renderable = registry.try_get<Renderable>(entity);
+                if (renderable)
+                {
+					renderable->SetVisible(!renderable->IsVisible());
+                }
+            }
+            else if (cmd == "ClearAllVisualDebugging")
+            {
+                VD::ClearAll();
+			}
         }
     }
     catch (const nlohmann::json::parse_error& e)

@@ -247,6 +247,20 @@ namespace Neon
             }
         }
 
+        private void Menu_PointCloud_BuildSparseDataBlocks_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                var commandData = new
+                {
+                    command = "BuildSparseDataBlocks",
+                    pointCloudID = selectedSceneNode.ID
+                };
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ExecuteCommand(command);
+            }
+        }
+
         private void Menu_PointCloud_Clone_Click(object sender, RoutedEventArgs e)
         {
             if (selectedSceneNode != null)
@@ -263,6 +277,29 @@ namespace Neon
 
         private void Menu_PointCloud_Clustering_Click(object sender, RoutedEventArgs e)
         {
+        }
+
+        private void Menu_VD_ClearAll_Click(object sender, RoutedEventArgs e)
+        {
+            var commandData = new
+            {
+                command = "ClearAllVisualDebugging"
+            };
+            string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+            HeliumNative.He_ExecuteCommand(command);
+        }
+        private void Menu_View_ToggleGrid_Click(object sender, RoutedEventArgs e)
+        {
+            var commandData = new
+            {
+                command = "ToggleGrid"
+            };
+            string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+            HeliumNative.He_ExecuteCommand(command);
+        }
+        private void Menu_View_ToggleLog_Click(object sender, RoutedEventArgs e)
+        {
+            LogToggle.IsChecked = !LogToggle.IsChecked;
         }
         #endregion
 
@@ -523,16 +560,28 @@ namespace Neon
             }
         }
 
+        private void LogToggle_Checked(object sender, RoutedEventArgs e)
+        {
+            MainLogRow.Height = new GridLength(_lastLogHeight);
+        }
+
+        private void LogToggle_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (MainLogRow.Height.Value > MinLogHeight)
+            {
+                _lastLogHeight = MainLogRow.Height.Value;
+            }
+            MainLogRow.Height = new GridLength(MinLogHeight);
+        }
+
         private void LogToggle_Click(object sender, RoutedEventArgs e)
         {
             if (LogToggle.IsChecked == true)
             {
-                // 펼치기
                 MainLogRow.Height = new GridLength(_lastLogHeight);
             }
             else
             {
-                // 접기 (현재 높이 저장)
                 if (MainLogRow.Height.Value > MinLogHeight)
                 {
                     _lastLogHeight = MainLogRow.Height.Value;
