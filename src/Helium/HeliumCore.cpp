@@ -197,6 +197,26 @@ void HeliumCore::Shutdown()
         callback();
     }
 
+    for (auto& kvp : sparseGrids)
+    {
+        if (nullptr != kvp.second)
+        {
+            delete kvp.second;
+            kvp.second = nullptr;
+        }
+    }
+	sparseGrids.clear();
+
+    for (auto& kvp : sparseDataBlocks)
+    {
+        if (nullptr != kvp.second)
+        {
+            delete kvp.second;
+            kvp.second = nullptr;
+        }
+    }
+	sparseDataBlocks.clear();
+
     if (inputSystem)
     {
         inputSystem->Shutdown();

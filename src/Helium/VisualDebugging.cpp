@@ -590,8 +590,6 @@ void VisualDebugging::Clear(const std::string& tag)
     std::lock_guard<std::mutex> lock(commandMutex);
     commandQueue.emplace_back([=]()
         {
-			ErrorLog("", "VisualDebugging::Clear called for tag: %s\n", tag.c_str());
-
             if (false == initialized) Initialize();
             if (debuggingRenderables.find(tag) != debuggingRenderables.end())
             {

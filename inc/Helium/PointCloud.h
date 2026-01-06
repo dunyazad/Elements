@@ -1,6 +1,7 @@
 #pragma once
 
 #include <future>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -35,6 +36,9 @@ public:
 
 	void UpdateLoading();
 
+	using OnPLYLoadedCallback = std::function<void(PointCloud*)>;
+	void SetOnPLYLoadedCallback(const OnPLYLoadedCallback& callback) { onPLYLoadedCallback = callback; }
+
 	PointCloud* Clone();
 
 	bool SetVisible(bool isVisible);
@@ -65,6 +69,12 @@ public:
 	inline const std::vector<uint64_t>& GetPointFlags() const { return pointFlags; }
 	inline const std::vector<int>& GetClusterIDs() const { return clusterIDs; }
 
+	inline void SetPositions(const std::vector<Eigen::Vector3f>& positions) { this->positions = positions; }
+	inline void SetNormals(const std::vector<Eigen::Vector3f>& normals) { this->normals = normals; }
+	inline void SetColors(const std::vector<Eigen::Vector4f>& colors) { this->colors = colors; }
+	inline void SetPointFlags(const std::vector<uint64_t>& pointFlags) { this->pointFlags = pointFlags; }
+	inline void SetClusterIDs(const std::vector<int>& clusterIDs) { this->clusterIDs = clusterIDs; }
+
 	inline const AABB& GetAABB() const { return aabb; }
 
 	const std::vector<std::pair<int, int>>& GetSortedClusters() const { return sortedClusters; }
@@ -90,6 +100,7 @@ protected:
 	Renderable* renderable = nullptr;
 	bool isLoading = false;
 	std::future<ProcessedInstanceData> loadingFuture;
+	OnPLYLoadedCallback onPLYLoadedCallback = nullptr;
 
 	std::vector<std::pair<int, int>> sortedClusters;
 };

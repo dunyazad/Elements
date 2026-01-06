@@ -27,7 +27,7 @@ void SparseGrid::Build(const PointCloud* pc, float cellSize)
 {
 	if (pc->Size() == 0)
 	{
-		aerr("PointCloud is empty. Cannot build SparseGrid.\n");
+		ErrorLog("", "PointCloud is empty. Cannot build SparseGrid.\n");
 		return;
 	}
 

@@ -215,6 +215,13 @@ void PointCloud::UpdateLoading()
 			isLoading = false;
 
 			OnPointCloudCreated(this->id, this->fileName, this->name);
+
+			if (onPLYLoadedCallback)
+			{
+				onPLYLoadedCallback(this);
+			}
+
+			OnPointCloudCreated(this->id, this->fileName, this->name);
 		}
 	}
 }

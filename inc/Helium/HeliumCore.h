@@ -16,6 +16,8 @@
 
 class Scene;
 class PointCloud;
+class SparseGrid;
+class SparseDataBlock;
 
 using Entity = entt::entity;
 #define InvalidEntity ((Entity)UINT32_MAX)
@@ -208,6 +210,9 @@ private:
 
 	std::unordered_map<int, PointCloud*> pointClouds;
 	PointCloud* selectedPointCloud = nullptr;
+
+	std::unordered_map<int, SparseGrid*> sparseGrids;
+	std::unordered_map<int, SparseDataBlock*> sparseDataBlocks;
 };
 
 #define Helium HeliumCore::GetStaticInstance()

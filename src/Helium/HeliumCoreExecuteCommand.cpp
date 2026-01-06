@@ -33,6 +33,17 @@ extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message)
 int HeliumCore::LoadPointCloudFromPLY(const std::string& fileName, const std::string& name)
 {
 	PointCloud* pointCloud = new PointCloud();
+    pointCloud->SetOnPLYLoadedCallback([this](PointCloud* pc)
+    {
+        auto sparseGrid = new SparseGrid();
+        sparseGrid->Build(pc, 0.3f);
+        sparseGrids[pc->GetID()] = sparseGrid;
+
+        auto sparseDataBlock = new SparseDataBlock();
+        sparseDataBlock->Build(pc);
+        sparseDataBlocks[pc->GetID()] = sparseDataBlock;
+	});
+
     if (pointCloud->LoadFromPLY(fileName, name))
     {
         pointClouds[pointCloud->GetID()] = pointCloud;
@@ -94,6 +105,33 @@ void HeliumCore::DeletePointCloud(int ID)
 {
     if (pointClouds.find(ID) != pointClouds.end())
     {
+        {
+            auto it = sparseGrids.find(ID);
+            if (it != sparseGrids.end())
+            {
+                SparseGrid* sparseGrid = it->second;
+                if (sparseGrid)
+                {
+                    delete sparseGrid;
+                    sparseGrid = nullptr;
+                }
+                sparseGrids.erase(it);
+            }
+        }
+        {
+            auto it = sparseDataBlocks.find(ID);
+            if (it != sparseDataBlocks.end())
+            {
+                SparseDataBlock* sparseDataBlock = it->second;
+                if (sparseDataBlock)
+                {
+                    delete sparseDataBlock;
+                    sparseDataBlock = nullptr;
+                }
+                sparseDataBlocks.erase(it);
+            }
+        }
+
         PointCloud* pointCloud = pointClouds[ID];
         if (nullptr != pointCloud)
         {
@@ -112,61 +150,78 @@ void HeliumCore::PerformClustering(int ID, float searchRadius, float angleThresh
 {
     TS(Clustering_Parallel);
 
-	AtomicDisjointSet ads;
-	auto currentPointCloud = GetPointCloud(ID);
+    auto currentPointCloud = GetPointCloud(ID);
     if (nullptr == currentPointCloud)
     {
-		ErrorLog("", "PointCloud with ID %d not found.", ID);
+        ErrorLog("", "PointCloud with ID %d not found.", ID);
+        return;
     }
 
-    auto spatialPartitioning = SparseGrid();
-    spatialPartitioning.Build(currentPointCloud, 0.3f);
+    const float voxelSize = 0.3f;
 
-	ads.Initialize(currentPointCloud->Size());
+    SparseGrid* sparseGrid = nullptr;
+	auto it = sparseGrids.find(ID);
+	if (it != sparseGrids.end())
+	{
+		sparseGrid = it->second;
+	}
+    if (sparseGrid == nullptr)
+    {
+		sparseGrid = new SparseGrid();
+		sparseGrid->Build(currentPointCloud, voxelSize);
+        sparseGrids[ID] = sparseGrid;
+    }
 
-    float searchRadiusSq = searchRadius * searchRadius;
-    float strictAngleThreshold = 0.9f;
-    float planeDistThreshold = 0.1f * 0.2f;
+    TS(InitializeADS);
+    AtomicDisjointSet ads;
+    size_t numberOfPoints = currentPointCloud->Size();
+    ads.Initialize(numberOfPoints);
+    TE(InitializeADS);
+
+    const float searchRadiusSq = searchRadius * searchRadius;
+    const float strictAngleThreshold = angleThreshold;
+    const float planeDistThreshold = voxelSize * 0.2f; // 0.3 * 0.2 = 0.06f
 
     struct CellData { uint64_t key; int headIdx; };
     std::vector<CellData> flatCells;
-    flatCells.reserve(spatialPartitioning.voxelPointListHead.size());
+    flatCells.reserve(sparseGrid->voxelPointListHead.size());
 
-    for (const auto& pair : spatialPartitioning.voxelPointListHead)
+    for (const auto& pair : sparseGrid->voxelPointListHead)
     {
         flatCells.push_back({ pair.first, pair.second });
     }
 
     const uint64_t mask = 0x1FFFFF;
 
-    auto& flags = currentPointCloud->GetPointFlags();
+    const auto& positions = currentPointCloud->GetPositions();
+    const auto& normals = currentPointCloud->GetNormals();
+
+    const Eigen::Vector3f* pPos = positions.data();
+    const Eigen::Vector3f* pNor = normals.data();
 
     std::for_each(std::execution::par, flatCells.begin(), flatCells.end(), [&](const CellData& cell)
         {
             uint64_t key = cell.key;
             int headIdx = cell.headIdx;
-
-            int gz = (int)(key & mask);
-            int gy = (int)((key >> 21) & mask);
             int gx = (int)(key >> 42);
+            int gy = (int)((key >> 21) & mask);
+            int gz = (int)(key & mask);
 
-            for (int i = headIdx; i != -1; i = spatialPartitioning.nextPoint[i])
+            for (int i = headIdx; i != -1; i = sparseGrid->nextPoint[i])
             {
-                const Eigen::Vector3f& pA = currentPointCloud->GetPosition(i);
-                const Eigen::Vector3f& nA = currentPointCloud->GetNormal(i);
+                const Eigen::Vector3f& pA = pPos[i];
+                const Eigen::Vector3f& nA = pNor[i];
 
-                for (int j = spatialPartitioning.nextPoint[i]; j != -1; j = spatialPartitioning.nextPoint[j])
+                for (int j = sparseGrid->nextPoint[i]; j != -1; j = sparseGrid->nextPoint[j])
                 {
-                    const Eigen::Vector3f& pB = currentPointCloud->GetPosition(j);
-
+                    const Eigen::Vector3f& pB = pPos[j];
                     if ((pA - pB).squaredNorm() > searchRadiusSq) continue;
 
-                    //const Eigen::Vector3f& nB = currentPointCloud->GetNormal(j);
+                    const Eigen::Vector3f& nB = pNor[j];
+                    if (nA.dot(nB) < strictAngleThreshold) continue;
 
-                    //if (nA.dot(nB) < strictAngleThreshold) continue;
-
-                    //float planeDist = std::abs(nA.dot(pB - pA));
-                    //if (planeDist > planeDistThreshold) continue;
+                    float planeDist = std::abs(nA.dot(pB - pA));
+                    if (planeDist > planeDistThreshold) continue;
 
                     ads.Union(i, j);
                 }
@@ -179,25 +234,23 @@ void HeliumCore::PerformClustering(int ID, float searchRadius, float angleThresh
                         {
                             if (dx == 0 && dy == 0 && dz == 0) continue;
 
-                            uint64_t neighborKey = spatialPartitioning.GetKey(gx + dx, gy + dy, gz + dz);
+                            uint64_t neighborKey = sparseGrid->GetKey(gx + dx, gy + dy, gz + dz);
                             if (neighborKey < key) continue;
 
-                            auto it = spatialPartitioning.voxelPointListHead.find(neighborKey);
-                            if (it == spatialPartitioning.voxelPointListHead.end()) continue;
+                            auto it = sparseGrid->voxelPointListHead.find(neighborKey);
+                            if (it == sparseGrid->voxelPointListHead.end()) continue;
 
                             int neighborHead = it->second;
-                            for (int j = neighborHead; j != -1; j = spatialPartitioning.nextPoint[j])
+                            for (int j = neighborHead; j != -1; j = sparseGrid->nextPoint[j])
                             {
-                                const Eigen::Vector3f& pB = currentPointCloud->GetPosition(j);
-
+                                const Eigen::Vector3f& pB = pPos[j];
                                 if ((pA - pB).squaredNorm() > searchRadiusSq) continue;
 
-                                //const Eigen::Vector3f& nB = currentPointCloud->GetNormal(j);
+                                const Eigen::Vector3f& nB = pNor[j];
+                                if (nA.dot(nB) < strictAngleThreshold) continue;
 
-                                //if (nA.dot(nB) < strictAngleThreshold) continue;
-
-                                //float planeDist = std::abs(nA.dot(pB - pA));
-                                //if (planeDist > planeDistThreshold) continue;
+                                float planeDist = std::abs(nA.dot(pB - pA));
+                                if (planeDist > planeDistThreshold) continue;
 
                                 ads.Union(i, j);
                             }
@@ -207,59 +260,50 @@ void HeliumCore::PerformClustering(int ID, float searchRadius, float angleThresh
             }
         });
 
-    std::map<int, int> rootToClusterID;
-    int currentClusterCount = 0;
-	size_t numberOfPoints = currentPointCloud->Size();
+    std::unordered_map<int, int> rootSizeMap;
 
     for (size_t i = 0; i < numberOfPoints; ++i)
     {
         int root = ads.Find((int)i);
-        if (rootToClusterID.find(root) == rootToClusterID.end())
-        {
-            rootToClusterID[root] = currentClusterCount++;
-        }
-        currentPointCloud->SetClusterID(i, rootToClusterID[root]);
+        rootSizeMap[root]++;
     }
 
+    currentPointCloud->GetSortedClusters().clear();
+    currentPointCloud->GetSortedClusters().reserve(rootSizeMap.size());
+    for (auto const& [root, size] : rootSizeMap)
     {
-        std::unordered_map<int, int> rootSizeMap;
-        for (size_t i = 0; i < numberOfPoints; ++i)
-        {
-            int root = ads.Find((int)i);
-            rootSizeMap[root]++;
-        }
-
-        currentPointCloud->GetSortedClusters().clear();
-        currentPointCloud->GetSortedClusters().reserve(rootSizeMap.size());
-        for (auto const& [root, size] : rootSizeMap)
-        {
-            currentPointCloud->GetSortedClusters().emplace_back(root, size);
-        }
-
-        std::sort(currentPointCloud->GetSortedClusters().begin(), currentPointCloud->GetSortedClusters().end(),
-            [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
-                return a.second > b.second;
-            });
-
-        std::unordered_map<int, int> rootToSortedId;
-        int currentClusterCount = 0;
-        for (const auto& pair : currentPointCloud->GetSortedClusters())
-        {
-            rootToSortedId[pair.first] = currentClusterCount++;
-        }
-
-        for (size_t i = 0; i < numberOfPoints; ++i)
-        {
-            int root = ads.Find((int)i);
-            currentPointCloud->SetClusterID(i, rootToSortedId[root]);
-        }
-
-        if (currentPointCloud->GetSortedClusters().size() > 0) alog(" - Biggest(ID 0): %d points\n", currentPointCloud->GetSortedClusters()[0].second);
-        if (currentPointCloud->GetSortedClusters().size() > 1) alog(" - 2nd(ID 1): %d points\n", currentPointCloud->GetSortedClusters()[1].second);
-        if (currentPointCloud->GetSortedClusters().size() > 2) alog(" - 3rd(ID 2): %d points\n", currentPointCloud->GetSortedClusters()[2].second);
+        currentPointCloud->GetSortedClusters().emplace_back(root, size);
     }
 
-    // Visualize Clustering Result using VD::AddSphere
+    std::sort(currentPointCloud->GetSortedClusters().begin(), currentPointCloud->GetSortedClusters().end(),
+        [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+            return a.second > b.second;
+        });
+
+    std::unordered_map<int, int> rootToSortedId;
+    rootToSortedId.reserve(rootSizeMap.size());
+
+    int currentClusterCount = 0;
+    for (const auto& pair : currentPointCloud->GetSortedClusters())
+    {
+        rootToSortedId[pair.first] = currentClusterCount++;
+    }
+
+    std::vector<int> clusterIDs(numberOfPoints);
+    for (size_t i = 0; i < numberOfPoints; ++i)
+    {
+        int root = ads.Find((int)i);
+        clusterIDs[i] = rootToSortedId[root];
+    }
+    currentPointCloud->SetClusterIDs(clusterIDs);
+
+    TE(Clustering_Parallel);
+
+    InfoLog("", "Clustering Done. Found %d clusters.\n", currentClusterCount);
+    if (currentPointCloud->GetSortedClusters().size() > 0) InfoLog("", " - Biggest(ID 0): %d points\n", currentPointCloud->GetSortedClusters()[0].second);
+    if (currentPointCloud->GetSortedClusters().size() > 1) InfoLog("", " - 2nd(ID 1): %d points\n", currentPointCloud->GetSortedClusters()[1].second);
+    if (currentPointCloud->GetSortedClusters().size() > 2) InfoLog("", " - 3rd(ID 2): %d points\n", currentPointCloud->GetSortedClusters()[2].second);
+
     {
         VD::Clear("Clustering_Parallel");
         const auto& positions = currentPointCloud->GetPositions();
@@ -269,16 +313,9 @@ void HeliumCore::PerformClustering(int ID, float searchRadius, float angleThresh
         {
             int clusterID = clusterIDs[i];
             Eigen::Vector4f color = clusterColors[clusterID % clusterColors.size()];
-            VD::AddSphere(
-                "Clustering_Parallel",
-                positions[i],
-                Eigen::Vector3f(0, 1, 0),
-                0.05f,
-                color);
+            VD::AddSphere("Clustering_Parallel", positions[i], Eigen::Vector3f(0, 1, 0), 0.05f, color);
         }
 	}
-
-    TE(Clustering_Parallel);
 }
 
 bool HeliumCore::ExecuteCommand(const char* command)
@@ -384,7 +421,7 @@ bool HeliumCore::ExecuteCommand(const char* command)
                         int pointCloudID = j["pointCloudID"];
                         if (pointCloudID == selectedPointCloud->GetID())
                         {
-							float searchRadius = j.value("searchRadius", 0.05f);
+							float searchRadius = j.value("searchRadius", 0.15f);
                             float angleThreshold = j.value("angleThreshold", 0.9f);
 
                             PerformClustering(pointCloudID, searchRadius, angleThreshold);

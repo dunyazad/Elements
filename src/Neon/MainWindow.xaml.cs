@@ -285,7 +285,7 @@ namespace Neon
                 {
                     command = "PerformClustering",
                     pointCloudID = selectedSceneNode.ID,
-                    searchRadius = 0.1001f,
+                    searchRadius = 0.15f,
                     angleThreshold = 0.9f
                 };
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
