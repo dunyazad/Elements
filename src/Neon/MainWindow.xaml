@@ -128,6 +128,7 @@
                 <RowDefinition x:Name="MainLogRow" Height="224" MinHeight="24" />
             </Grid.RowDefinitions>
 
+            <!--TitleBar-->
             <Grid Grid.Row="0" Background="#333">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -145,6 +146,7 @@
                 </StackPanel>
             </Grid>
 
+            <!--MenuBar-->
             <Grid Grid.Row="1" Background="#2D2D30">
                 <Menu Background="Transparent" 
                       VerticalAlignment="Center" 
@@ -170,6 +172,8 @@
 
                     <MenuItem Header="_View">
                         <MenuItem Header="Toggle Grid" Click="Menu_View_ToggleGrid_Click"/>
+                        <MenuItem Header="Toggle Axis Gizmo" Click="Menu_View_ToggleAxisGizmo_Click"/>
+                        <MenuItem Header="Toggle Center Gizmo" Click="Menu_View_ToggleCenterGizmo_Click"/>
                         <Separator/>
                         <MenuItem Header="Toggle Log" Click="Menu_View_ToggleLog_Click"/>
                         <Separator/>
@@ -181,6 +185,7 @@
                 </Menu>
             </Grid>
 
+            <!--HeliumControl-->
             <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="216.01" MaxWidth="400"/>
@@ -332,6 +337,7 @@
                           Background="#444"
                           ResizeBehavior="PreviousAndNext"/>
 
+            <!--LogPanel-->
             <Grid Grid.Row="4">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="30" />

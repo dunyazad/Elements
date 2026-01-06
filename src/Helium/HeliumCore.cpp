@@ -1,7 +1,12 @@
 #include "pch.h"
 
+#include <execution>
+
 #include <glad/glad.h>
 #include <nlohmann/json.hpp>
+#include <robin_hood/robin_hood.h>
+
+#include <Helium/Color.hpp>
 
 #include <Helium/HeliumCore.h>
 #include <Helium/Backend/OpenGLBackend.h>
@@ -19,6 +24,7 @@
 #include <Helium/PointCloud.h>
 
 #include <Helium/SpatialPartitionings/SpartialPartitionings.h>
+#include <Helium/PointCloudProcessing/AtomicDisjointSet.h>
 
 using VD = VisualDebugging;
 
@@ -301,205 +307,4 @@ void HeliumCore::Log(HeliumLogLevel level, const char* key, const char* fmt, ...
     _vsnprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, args);
     va_end(args);
     He_LogInternal(level, key, buffer);
-}
-
-int HeliumCore::LoadPointCloudFromPLY(const std::string& fileName, const std::string& name)
-{
-	PointCloud* pointCloud = new PointCloud();
-    if (pointCloud->LoadFromPLY(fileName, name))
-    {
-        pointClouds[pointCloud->GetID()] = pointCloud;
-        selectedPointCloud = pointCloud;
-        return pointCloud->GetID();
-    }
-    else
-    {
-        delete pointCloud;
-        return false;
-	}
-}
-
-bool HeliumCore::SelectPointCloud(int ID)
-{
-    if (pointClouds.find(ID) != pointClouds.end())
-    {
-        selectedPointCloud = pointClouds[ID];
-        return true;
-    }
-    return false;
-}
-
-PointCloud* HeliumCore::GetPointCloud(int ID)
-{
-    if (pointClouds.find(ID) != pointClouds.end())
-    {
-        return pointClouds[ID];
-    }
-    return nullptr;
-}
-
-PointCloud* HeliumCore::GetSelectedPointCloud()
-{
-    return selectedPointCloud;
-}
-
-void HeliumCore::SetPointCloudVisibility(int ID, bool visible)
-{
-    auto pointCloud = GetPointCloud(ID);
-    if (pointCloud)
-    {
-        pointCloud->SetVisible(visible);
-    }
-}
-
-void HeliumCore::ClonePointCloud(int ID)
-{
-    PointCloud* original = GetPointCloud(ID);
-    if (original)
-    {
-        auto clone = original->Clone();
-        pointClouds[clone->GetID()] = clone;
-        selectedPointCloud = clone;
-    }
-}
-
-void HeliumCore::DeletePointCloud(int ID)
-{
-    if (pointClouds.find(ID) != pointClouds.end())
-    {
-        PointCloud* pointCloud = pointClouds[ID];
-        if (nullptr != pointCloud)
-        {
-            delete pointCloud;
-            pointCloud = nullptr;
-        }
-        pointClouds.erase(ID);
-        if (selectedPointCloud && selectedPointCloud->GetID() == ID)
-        {
-            selectedPointCloud = nullptr;
-        }
-	}
-}
-
-bool HeliumCore::ExecuteCommand(const char* command)
-{
-    if (command == nullptr)
-    {
-        ErrorLog("", "ExecuteCommand: Command string is null");
-        return false;
-    }
-
-    //InfoLog("", "ExecuteCommand: %s", command);
-
-    try
-    {
-        auto j = nlohmann::json::parse(command);
-
-        if (j.contains("command"))
-        {
-            std::string cmd = j["command"];
-
-            if (cmd == "LoadPointCloudFromPLY")
-            {
-                if (j.contains("fileNames") && j["fileNames"].is_array())
-                {
-                    for (const auto& fileName : j["fileNames"])
-                    {
-                        std::string path = fileName.get<std::string>();
-						std::filesystem::path fsPath(path);
-						auto name = fsPath.filename();
-                        LoadPointCloudFromPLY(path, name.string());
-                    }
-                }
-            }
-            else if(cmd == "SelectPointCloud")
-            {
-                if (j.contains("pointCloudID"))
-                {
-                    int pointCloudID = j["pointCloudID"];
-                    SelectPointCloud(pointCloudID);
-                }
-            }
-            else if(cmd == "SetPointCloudVisibility")
-            {
-                if (j.contains("pointCloudID") && j.contains("isVisible"))
-                {
-                    int pointCloudID = j["pointCloudID"];
-                    bool isVisible = j["isVisible"];
-                    SetPointCloudVisibility(pointCloudID, isVisible);
-                }
-            }
-            else if(cmd == "ClonePointCloud")
-            {
-                if (j.contains("pointCloudID"))
-                {
-                    int pointCloudID = j["pointCloudID"];
-                    ClonePointCloud(pointCloudID);
-                }
-            }
-            else if(cmd == "DeletePointCloud")
-            {
-                if (j.contains("pointCloudID"))
-                {
-                    int pointCloudID = j["pointCloudID"];
-                    DeletePointCloud(pointCloudID);
-                }
-			}
-            else if (cmd == "BuildSparseGrid")
-            {
-                if (j.contains("pointCloudID"))
-                {
-                    int pointCloudID = j["pointCloudID"];
-                    auto pointCloud = GetPointCloud(pointCloudID);
-                    if (pointCloud)
-                    {
-                        float voxelSize = j.value("voxelSize", 0.1f);
-                        SparseGrid sparseGrid;
-                        sparseGrid.Build(pointCloud, voxelSize);
-                        sparseGrid.Visualize();
-                    }
-                }
-            }
-            else if (cmd == "BuildSparseDataBlocks")
-            {
-                if (j.contains("pointCloudID"))
-                {
-                    int pointCloudID = j["pointCloudID"];
-                    auto pointCloud = GetPointCloud(pointCloudID);
-                    if (pointCloud)
-                    {
-                        float voxelSize = j.value("voxelSize", 0.1f);
-                        SparseDataBlock sparseDataBlock;
-                        sparseDataBlock.Build(pointCloud);
-                        sparseDataBlock.Visualize();
-                    }
-                }
-            }
-            else if (cmd == "ToggleGrid")
-            {
-				auto entity = GetEntityByName("Grid");
-				auto renderable = registry.try_get<Renderable>(entity);
-                if (renderable)
-                {
-					renderable->SetVisible(!renderable->IsVisible());
-                }
-            }
-            else if (cmd == "ClearAllVisualDebugging")
-            {
-                VD::ClearAll();
-			}
-        }
-    }
-    catch (const nlohmann::json::parse_error& e)
-    {
-        ErrorLog("", "ExecuteCommand: JSON Parse Error - %s", e.what());
-        return false;
-    }
-    catch (const std::exception& e)
-    {
-        ErrorLog("", "ExecuteCommand: Error - %s", e.what());
-        return false;
-    }
-
-    return true;
 }

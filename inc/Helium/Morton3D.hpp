@@ -1,5 +1,4 @@
 #pragma once
-#include <glm/glm.hpp>
 #include <cstdint>
 #include <cmath>
 
@@ -28,11 +27,11 @@ public:
         return xx | yy | zz;
     }
 
-    static uint64_t Encode(glm::ivec3 index)
+    static uint64_t Encode(const Eigen::Vector3i& index)
     {
-        uint64_t xx = Part1By2(index.x);
-        uint64_t yy = Part1By2(index.y) << 1;
-        uint64_t zz = Part1By2(index.z) << 2;
+        uint64_t xx = Part1By2(index.x());
+        uint64_t yy = Part1By2(index.y()) << 1;
+        uint64_t zz = Part1By2(index.z()) << 2;
         return xx | yy | zz;
     }
 
@@ -52,15 +51,15 @@ public:
         z = Compact1By2(code >> 2);
     }
 
-    static glm::ivec3 KeyToIndex(uint64_t code)
+    static Eigen::Vector3i KeyToIndex(uint64_t code)
     {
         uint32_t x = Compact1By2(code);
         uint32_t y = Compact1By2(code >> 1);
         uint32_t z = Compact1By2(code >> 2);
-        return glm::ivec3(x, y, z);
+        return Eigen::Vector3i(x, y, z);
     }
 
-    static uint64_t IndexToKey(const glm::ivec3& index)
+    static uint64_t IndexToKey(const Eigen::Vector3i& index)
     {
         return Encode(index);
     }
@@ -68,21 +67,6 @@ public:
     static uint64_t IndexToKey(const Eigen::Vector3ui& index)
     {
         return Encode(index);
-    }
-
-    // Convert world position ¡æ voxel index
-    static glm::ivec3 PositionToIndex(
-        const glm::vec3& p,
-        const glm::vec3& origin,
-        float voxelSize)
-    {
-        float inv = 1.0f / voxelSize;
-
-        int ix = (int)std::floor((p.x - origin.x) * inv);
-        int iy = (int)std::floor((p.y - origin.y) * inv);
-        int iz = (int)std::floor((p.z - origin.z) * inv);
-
-        return glm::ivec3(ix, iy, iz);
     }
 
     static Eigen::Vector3ui PositionToIndex(
@@ -99,34 +83,12 @@ public:
         return Eigen::Vector3ui(ix, iy, iz);
     }
 
-    static uint64_t EncodeFromVec3(
-        const glm::vec3& p,
-        const glm::vec3& origin,
-        float voxelSize)
-    {
-        return Encode(PositionToIndex(p, origin, voxelSize));
-    }
-
-    static uint64_t EncodeFromVec3(
+    static uint64_t EncodeFromPosition(
         const Eigen::Vector3f& p,
         const Eigen::Vector3f& origin,
         float voxelSize)
     {
         return Encode(PositionToIndex(p, origin, voxelSize));
-    }
-
-    // Convert voxel index ¡æ voxel center world position
-    static glm::vec3 IndexToPosition(
-        glm::ivec3 index,
-        const glm::vec3& origin,
-        float voxelSize)
-    {
-        return origin +
-            glm::vec3(
-                (float)index.x + 0.5f,
-                (float)index.y + 0.5f,
-                (float)index.z + 0.5f
-            ) * voxelSize;
     }
 
     static Eigen::Vector3f IndexToPosition(
@@ -142,18 +104,7 @@ public:
             ) * voxelSize;
     }
 
-    static glm::vec3 DecodeToVec3(
-        uint64_t code,
-        const glm::vec3& origin,
-        float voxelSize)
-    {
-        uint32_t ix, iy, iz;
-        Decode(code, ix, iy, iz);
-
-        return IndexToPosition({ ix, iy, iz }, origin, voxelSize);
-    }
-
-    static Eigen::Vector3f DecodeToVec3(
+    static Eigen::Vector3f DecodeToPosition(
         uint64_t code,
         const Eigen::Vector3f& origin,
         float voxelSize)

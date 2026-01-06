@@ -66,7 +66,7 @@ void SparseDataBlock::Build(const PointCloud* pc)
 	auto points = pc->GetPositions();
 	auto normals = pc->GetNormals();
 	auto colors = pc->GetColors();
-	auto clusterIds = pc->GetClusterIds();
+	auto clusterIDs = pc->GetClusterIDs();
 	
 	{
 		TS(Pass1_Alloc);
@@ -165,7 +165,7 @@ void SparseDataBlock::Build(const PointCloud* pc)
 			auto p = points[i];
 			Eigen::Vector3f n = (normals.empty()) ? Eigen::Vector3f(0.0f, 1.0f, 0.0f) : normals[i];
 			Eigen::Vector3f c = (colors.empty()) ? Eigen::Vector3f(1.0f, 1.0f, 1.0f) : colors[i].head<3>();
-			int cid = (clusterIds.empty()) ? -1 : clusterIds[i];
+			int cid = (clusterIDs.empty()) ? -1 : clusterIDs[i];
 
 			if (c.x() > 1.0f) c /= 255.0f;
 

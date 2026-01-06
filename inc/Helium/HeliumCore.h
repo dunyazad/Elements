@@ -167,6 +167,8 @@ public:
     void ClonePointCloud(int ID);
     void DeletePointCloud(int ID);
 
+	void PerformClustering(int ID, float searchRadius, float angleThreshold);
+
     //int Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const;
 
     bool ExecuteCommand(const char* command);

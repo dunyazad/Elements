@@ -162,15 +162,18 @@ void Renderable::DrawImplementation()
     GLsizei count = (indices.Size() > 0) ? (GLsizei)indices.Size() : (GLsizei)vertices.Size();
     bool useIndices = (indices.Size() > 0);
 
-    if (instancingEnabled && numberOfInstances > 0)
+    if (instancingEnabled)
     {
-        if (useIndices)
+        if (numberOfInstances > 0)
         {
-            glDrawElementsInstanced(geometryMode, count, GL_UNSIGNED_INT, 0, numberOfInstances);
-        }
-        else
-        {
-            glDrawArraysInstanced(geometryMode, 0, count, numberOfInstances);
+            if (useIndices)
+            {
+                glDrawElementsInstanced(geometryMode, count, GL_UNSIGNED_INT, 0, numberOfInstances);
+            }
+            else
+            {
+                glDrawArraysInstanced(geometryMode, 0, count, numberOfInstances);
+            }
         }
     }
     else

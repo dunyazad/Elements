@@ -17,6 +17,17 @@ public:
 	inline void SetEnable(bool enable) { enabled = enable; }
 	inline void ToggleEnable() { enabled = !enabled; }
 
+	inline bool IsAxisGizmoEnabled() const { return axisGizmoEnabled; }
+	inline void SetAxisGizmoEnabled(bool enable) { axisGizmoEnabled = enable; }
+	inline void ToggleAxisGizmo() { axisGizmoEnabled = !axisGizmoEnabled; }
+
+	inline bool IsCenterGizmoEnabled() const { return centerGizmoEnabled; }
+	inline void SetCenterGizmoEnabled(bool enable) { centerGizmoEnabled = enable; }
+	inline void ToggleCenterGizmo() { centerGizmoEnabled = !centerGizmoEnabled; }
+
 private:
 	bool enabled = true;
+
+	bool axisGizmoEnabled = true;
+	bool centerGizmoEnabled = true;
 };

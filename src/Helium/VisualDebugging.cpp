@@ -322,7 +322,7 @@ void VisualDebugging::AddGeometryInstance(
             tm = Translate(center) * rot * Scale(scale);
             renderable->AddInstanceTransform(tm);
 
-            renderable->IncreaseNumberOfInstances();
+            renderable->EnableInstancing();
         });
 }
 
@@ -590,6 +590,8 @@ void VisualDebugging::Clear(const std::string& tag)
     std::lock_guard<std::mutex> lock(commandMutex);
     commandQueue.emplace_back([=]()
         {
+			ErrorLog("", "VisualDebugging::Clear called for tag: %s\n", tag.c_str());
+
             if (false == initialized) Initialize();
             if (debuggingRenderables.find(tag) != debuggingRenderables.end())
             {
@@ -605,7 +607,7 @@ void VisualDebugging::Clear(const std::string& tag)
 void VisualDebugging::ClearAll()
 {
     std::lock_guard<std::mutex> lock(commandMutex);
-    commandQueue.emplace_back([]()
+    commandQueue.emplace_back([=]()
         {
             for (auto& kvp : debuggingRenderables)
             {
@@ -660,7 +662,7 @@ void VisualDebugging::ToggleVisibility(const std::string& tag)
 void VisualDebugging::ToggleVisibilityAll()
 {
     std::lock_guard<std::mutex> lock(commandMutex);
-    commandQueue.emplace_back([]()
+    commandQueue.emplace_back([=]()
         {
             if (false == initialized) Initialize();
             for (auto& kvp : debuggingRenderables)

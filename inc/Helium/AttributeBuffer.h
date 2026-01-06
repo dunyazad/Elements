@@ -90,7 +90,7 @@ public:
     const std::vector<T>& GetCpuData() const { return data; }
     size_t Size() const { return data.size(); }
 
-    void SetUseInstancing(bool use) { useInstancing = use; dirty = true; }
+    inline void SetUseInstancing(bool use) { if (use != useInstancing) { useInstancing = use; dirty = true; } }
 
 private:
     void SetupAttributePointer()

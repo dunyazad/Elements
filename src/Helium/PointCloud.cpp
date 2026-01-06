@@ -172,7 +172,6 @@ void PointCloud::UpdateLoading()
 						auto position = this->positions[pickedIndex];
 						auto normal = this->normals[pickedIndex];
 
-						VD::Clear("Selected Point");
 						VD::AddSphere("Selected Point", position, normal, 0.051f, {1.0f, 0.0f, 0.0f, 1.0f});
 
 						if (event.IsCtrlPressed())
@@ -210,6 +209,8 @@ void PointCloud::UpdateLoading()
 			this->normals = std::move(data.normals);
 			this->colors = std::move(data.colors);
 			this->aabb = data.aabb;
+			this->pointFlags.resize(data.pointCount, 0);
+			this->clusterIDs.resize(data.pointCount, 0);
 
 			isLoading = false;
 
@@ -235,8 +236,10 @@ PointCloud* PointCloud::Clone()
 	newPC->normals = this->normals;
 	newPC->colors = this->colors;
 	newPC->pointFlags = this->pointFlags;
-	newPC->clusterIds = this->clusterIds;
+	newPC->clusterIDs = this->clusterIDs;
 	newPC->aabb = this->aabb;
+	newPC->pointFlags = this->pointFlags;
+	newPC->clusterIDs = this->clusterIDs;
 
 	newPC->entityName = this->entityName + "_Clone";
 	newPC->entity = Helium.CreateEntity(newPC->entityName);

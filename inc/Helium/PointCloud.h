@@ -51,15 +51,24 @@ public:
 	inline const Eigen::Vector3f& GetNormal(size_t index) const { return normals[index]; }
 	inline const Eigen::Vector4f& GetColor(size_t index) const { return colors[index]; }
 	inline uint64_t GetPointFlag(size_t index) const { return pointFlags[index]; }
-	inline int GetClusterId(size_t index) const { return clusterIds[index]; }
+	inline int GetClusterId(size_t index) const { return clusterIDs[index]; }
+
+	inline void SetPosition(size_t index, const Eigen::Vector3f& position) { positions[index] = position; }
+	inline void SetNormal(size_t index, const Eigen::Vector3f& normal) { normals[index] = normal; }
+	inline void SetColor(size_t index, const Eigen::Vector4f& color) { colors[index] = color; }
+	inline void SetPointFlag(size_t index, uint64_t flag) { pointFlags[index] = flag; }
+	inline void SetClusterID(size_t index, int clusterID) { clusterIDs[index] = clusterID; }
 
 	inline const std::vector<Eigen::Vector3f>& GetPositions() const { return positions; }
 	inline const std::vector<Eigen::Vector3f>& GetNormals() const { return normals; }
 	inline const std::vector<Eigen::Vector4f>& GetColors() const { return colors; }
 	inline const std::vector<uint64_t>& GetPointFlags() const { return pointFlags; }
-	inline const std::vector<int>& GetClusterIds() const { return clusterIds; }
+	inline const std::vector<int>& GetClusterIDs() const { return clusterIDs; }
 
 	inline const AABB& GetAABB() const { return aabb; }
+
+	const std::vector<std::pair<int, int>>& GetSortedClusters() const { return sortedClusters; }
+	std::vector<std::pair<int, int>>& GetSortedClusters() { return sortedClusters; }
 
 protected:
 	static int nextID;
@@ -71,8 +80,8 @@ protected:
 	std::vector<Eigen::Vector3f> positions;
 	std::vector<Eigen::Vector3f> normals;
 	std::vector<Eigen::Vector4f> colors;
-	std::vector<int> clusterIds;
 	std::vector<uint64_t> pointFlags;
+	std::vector<int> clusterIDs;
 
 	AABB aabb;
 
@@ -81,4 +90,6 @@ protected:
 	Renderable* renderable = nullptr;
 	bool isLoading = false;
 	std::future<ProcessedInstanceData> loadingFuture;
+
+	std::vector<std::pair<int, int>> sortedClusters;
 };

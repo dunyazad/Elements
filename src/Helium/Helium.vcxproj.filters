@@ -168,6 +168,9 @@
     <ClInclude Include="..\..\inc\Helium\SpatialPartitionings\Morton3D.hpp">
       <Filter>헤더 파일\Helium\SpatialPartitionings</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\AtomicDisjointSet.h">
+      <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -253,6 +256,12 @@
     </ClCompile>
     <ClCompile Include="SpatialPartitionings\SparseDataBlock.cpp">
       <Filter>소스 파일\SpatialPartitionings</Filter>
+    </ClCompile>
+    <ClCompile Include="PointCloudProcessing\AtomicDisjointSet.cpp">
+      <Filter>소스 파일\PointCloudProcessing</Filter>
+    </ClCompile>
+    <ClCompile Include="HeliumCoreExecuteCommand.cpp">
+      <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

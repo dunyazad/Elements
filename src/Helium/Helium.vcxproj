@@ -114,6 +114,7 @@
     <ClInclude Include="..\..\inc\Helium\HeliumLog.h" />
     <ClInclude Include="..\..\inc\Helium\Morton3D.hpp" />
     <ClInclude Include="..\..\inc\Helium\PointCloud.h" />
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\AtomicDisjointSet.h" />
     <ClInclude Include="..\..\inc\Helium\Serialization.hpp" />
     <ClInclude Include="..\..\inc\Helium\SpatialPartitionings\ISpartialPartitioning.h" />
     <ClInclude Include="..\..\inc\Helium\SpatialPartitionings\Morton3D.hpp" />
@@ -150,6 +151,7 @@
     <ClCompile Include="Helium.cpp" />
     <ClCompile Include="HeliumCommon.cpp" />
     <ClCompile Include="HeliumCore.cpp" />
+    <ClCompile Include="HeliumCoreExecuteCommand.cpp" />
     <ClCompile Include="HeliumCoreInitialize.cpp" />
     <ClCompile Include="HeliumLog.cpp" />
     <ClCompile Include="Monitor.cpp">
@@ -161,6 +163,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="PointCloud.cpp" />
+    <ClCompile Include="PointCloudProcessing\AtomicDisjointSet.cpp" />
     <ClCompile Include="SpatialPartitionings\SparseDataBlock.cpp" />
     <ClCompile Include="SpatialPartitionings\SparseGrid.cpp" />
     <ClCompile Include="System\EventSystem.cpp" />

@@ -75,7 +75,9 @@ namespace Neon
             _pointCloudDeletedDelegate = TreeView_OnPointCloudDeleted;
             HeliumNative.He_SetPointCloudDeletedCallback(_pointCloudDeletedDelegate);
 
-            //this.WindowState = WindowState.Maximized;
+            this.WindowState = WindowState.Maximized;
+
+            Menu_File_Open_Click(this, new RoutedEventArgs());
         }
 
         #region System Message Processing
@@ -277,6 +279,18 @@ namespace Neon
 
         private void Menu_PointCloud_Clustering_Click(object sender, RoutedEventArgs e)
         {
+            if (selectedSceneNode != null)
+            {
+                var commandData = new
+                {
+                    command = "PerformClustering",
+                    pointCloudID = selectedSceneNode.ID,
+                    searchRadius = 0.1001f,
+                    angleThreshold = 0.9f
+                };
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ExecuteCommand(command);
+            }
         }
 
         private void Menu_VD_ClearAll_Click(object sender, RoutedEventArgs e)
@@ -297,6 +311,27 @@ namespace Neon
             string command = System.Text.Json.JsonSerializer.Serialize(commandData);
             HeliumNative.He_ExecuteCommand(command);
         }
+
+        private void Menu_View_ToggleAxisGizmo_Click(object sender, RoutedEventArgs e)
+        {
+            var commandData = new
+            {
+                command = "ToggleAxisGizmo"
+            };
+            string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+            HeliumNative.He_ExecuteCommand(command);
+        }
+
+        private void Menu_View_ToggleCenterGizmo_Click(object sender, RoutedEventArgs e)
+        {
+            var commandData = new
+            {
+                command = "ToggleCenterGizmo"
+            };
+            string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+            HeliumNative.He_ExecuteCommand(command);
+        }
+
         private void Menu_View_ToggleLog_Click(object sender, RoutedEventArgs e)
         {
             LogToggle.IsChecked = !LogToggle.IsChecked;

@@ -533,6 +533,11 @@ void CameraManipulatorTrackball::SyncRadius()
 {
 	if (!camera) return;
 	this->radius = (camera->GetEye() - camera->GetTarget()).norm();
+
+	Eigen::Vector3f viewDir = (camera->GetEye() - camera->GetTarget()).normalized();
+
+	orbitRot = Eigen::Quaternionf::FromTwoVectors(Eigen::Vector3f(0, 0, 1), viewDir);
+	orbitRot.normalize();
 }
 
 void CameraManipulatorTrackball::MakeDefault()
