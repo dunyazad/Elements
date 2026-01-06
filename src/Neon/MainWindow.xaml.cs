@@ -17,7 +17,55 @@ using static HeliumNative;
 
 namespace Neon
 {
-    public partial class MainWindow : Window
+    public class NotificationItem
+    {
+        public string Text { get; set; } = string.Empty;
+    }
+
+    public class SceneNode : INotifyPropertyChanged
+    {
+        public int ID { get; set; }
+        public required string Name { get; set; } = string.Empty;
+        public required string FullPath { get; set; } = string.Empty;
+
+        // 기본값을 true로 설정하여 생성 시 체크된 상태로 만듦
+        private bool _isVisible = true;
+
+        public bool IsVisible
+        {
+            get => _isVisible;
+            set
+            {
+                if (_isVisible != value)
+                {
+                    _isVisible = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private bool _isSelected;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected != value)
+                {
+                    _isSelected = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string? name = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        }
+    }
+
+    public partial class MainWindow : Window, INotifyPropertyChanged
     {
         private const int WM_KEYDOWN = 0x0100;
         private const int WM_KEYUP = 0x0101;
@@ -42,17 +90,37 @@ namespace Neon
         private HeliumNative.PointCloudCreatedDelegate _pointCloudCreatedDelegate;
         private HeliumNative.PointCloudDeletedDelegate _pointCloudDeletedDelegate;
 
-        private readonly Stopwatch _stopwatch = new();
-        private long _lastTicks = 0;
-
         private readonly Dictionary<(NeonLogger.LogLevel level, string key), int> _keyToIndex = new();
 
         private double _lastLogHeight = 224.0;
         private const double MinLogHeight = 30.0;
-                
+
+        private SceneNode? selectedSceneNode = null; // null 허용
+
+        public ObservableCollection<NotificationItem> Notifications { get; set; }
+        = new ObservableCollection<NotificationItem>();
+
+        private readonly Stopwatch _uiStopwatch = new Stopwatch();
+        private long _lastUiTicks = 0;
+
+        private string _heliumStatusText = "Helium Engine Ready";
+        public string HeliumStatusText
+        {
+            get => _heliumStatusText;
+            set
+            {
+                if (_heliumStatusText != value)
+                {
+                    _heliumStatusText = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         public MainWindow()
         {
             InitializeComponent();
+            this.DataContext = this;
 
             SceneItems = new ObservableCollection<SceneNode>();
             this.DataContext = this;
@@ -66,18 +134,70 @@ namespace Neon
             HeliumNative.He_SetLogCallback(_logDelegate);
             //NeonLogger.Log("system", "Application started");
 
-            _stopwatch.Start();
-            CompositionTarget.Rendering += OnRendering;
-
             _pointCloudCreatedDelegate = Treeview_OnPointCloudCreated;
             HeliumNative.He_SetPointCloudCreatedCallback(_pointCloudCreatedDelegate);
 
             _pointCloudDeletedDelegate = TreeView_OnPointCloudDeleted;
             HeliumNative.He_SetPointCloudDeletedCallback(_pointCloudDeletedDelegate);
 
+            _uiStopwatch.Start();
+            CompositionTarget.Rendering += OnUpdateUI;
+
             this.WindowState = WindowState.Maximized;
 
             Menu_File_Open_Click(this, new RoutedEventArgs());
+        }
+
+        private void OnUpdateUI(object? sender, EventArgs e)
+        {
+            // 1. UI 스레드 델타 타임 및 FPS 계산
+            long currentTicks = _uiStopwatch.ElapsedTicks;
+            double dt = (double)(currentTicks - _lastUiTicks) / Stopwatch.Frequency;
+            _lastUiTicks = currentTicks;
+
+            // 0으로 나누기 방지
+            double fps = (dt > 0.0) ? (1.0 / dt) : 60.0;
+
+            // 2. 현재 선택된 클라우드 정보 가져오기
+            string selectedName = "None";
+            int pointCount = 0;
+            int clusterCount = 0;
+
+            if (selectedSceneNode != null)
+            {
+                selectedName = selectedSceneNode.Name;
+
+                // [TODO] 실제 엔진에서 포인트 개수를 가져오는 함수가 있다면 연결하세요.
+                // 예: pointCount = HeliumNative.He_GetPointCount(selectedSceneNode.ID);
+                // 현재는 예시로 ID * 1000 등을 넣거나 임시 값을 넣습니다.
+                pointCount = 1024000; // 가짜 데이터 (1M Points)
+            }
+
+            // 3. 상태 텍스트 갱신 (화면 왼쪽 위)
+            // C# 6.0 이상 문자열 보간 ($"...") 사용
+            HeliumStatusText = $"FPS: {fps:0}\n" +                    // 소수점 없이 정수로
+                               $"Points: {pointCount:N0}\n" +         // 천단위 콤마 (N0)
+                               $"Object: {selectedName}\n" +          // 선택된 객체 이름
+                               $"Clusters: {clusterCount}\n" +        // 클러스터 개수
+                               $"Mode: Edit";                         // 현재 모드 (고정값 예시)
+        }
+
+        public async void ShowNotification(string message, int durationMS = 3000)
+        {
+            // C++ 등 다른 스레드에서 호출될 경우를 대비해 Dispatcher 사용
+            await Application.Current.Dispatcher.InvokeAsync(async () =>
+            {
+                var item = new NotificationItem { Text = message };
+
+                // (1) 리스트에 추가 (화면에 즉시 표시됨)
+                Notifications.Add(item);
+
+                // (2) 지정된 시간만큼 대기 (비동기라 UI 안 멈춤)
+                await Task.Delay(durationMS);
+
+                // (3) 시간이 지나면 리스트에서 제거 (화면에서 사라짐)
+                Notifications.Remove(item);
+            });
         }
 
         #region System Message Processing
@@ -104,6 +224,11 @@ namespace Neon
                         {
                             e.Handled = true;
                             this.Close();
+                            break;
+                        }
+                    case Key.T:
+                        {
+                            ShowNotification($"Event Triggered at {DateTime.Now:ss.fff}");
                             break;
                         }
                 }
@@ -154,22 +279,6 @@ namespace Neon
             return (pos.X >= 0 && pos.X < HeliumHostControl.ActualWidth &&
                     pos.Y >= 0 && pos.Y < HeliumHostControl.ActualHeight);
         }
-
-        private void OnRendering(object? sender, EventArgs e)
-        {
-            long currentTicks = _stopwatch.ElapsedTicks;
-            float dt = (float)(currentTicks - _lastTicks) / Stopwatch.Frequency;
-            _lastTicks = currentTicks;
-
-            if (dt > 0.1f) dt = 0.1f; // 프레임 튐 방지
-
-            try
-            {
-                HeliumNative.He_Update(dt);
-                HeliumNative.He_Render();
-            }
-            catch { }
-        } 
         #endregion
 
         #region TitleBar
@@ -199,8 +308,6 @@ namespace Neon
 
         protected override void OnClosed(EventArgs e)
         {
-            CompositionTarget.Rendering -= OnRendering;
-            ComponentDispatcher.ThreadFilterMessage -= ComponentDispatcher_ThreadFilterMessage;
             base.OnClosed(e);
         }
         #endregion
@@ -218,7 +325,8 @@ namespace Neon
             {
                 string[] filenames = dialog.FileNames;
 
-                var commandData = new {
+                var commandData = new
+                {
                     command = "LoadPointCloudFromPLY",
                     fileNames = filenames
                 };
@@ -339,51 +447,12 @@ namespace Neon
         #endregion
 
         #region TreeView
-        public class SceneNode : INotifyPropertyChanged
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        protected void OnPropertyChanged([CallerMemberName] string? name = null)
         {
-            public int ID { get; set; }
-            public required string Name { get; set; } = string.Empty;
-            public required string FullPath { get; set; } = string.Empty;
-
-            // 기본값을 true로 설정하여 생성 시 체크된 상태로 만듦
-            private bool _isVisible = true;
-
-            public bool IsVisible
-            {
-                get => _isVisible;
-                set
-                {
-                    if (_isVisible != value)
-                    {
-                        _isVisible = value;
-                        OnPropertyChanged();
-                    }
-                }
-            }
-
-            private bool _isSelected;
-            public bool IsSelected
-            {
-                get => _isSelected;
-                set
-                {
-                    if (_isSelected != value)
-                    {
-                        _isSelected = value;
-                        OnPropertyChanged();
-                    }
-                }
-            }
-
-            public event PropertyChangedEventHandler? PropertyChanged;
-
-            protected void OnPropertyChanged([CallerMemberName] string? name = null)
-            {
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-            }
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
-
-        SceneNode selectedSceneNode = null!;
 
         private void Treeview_OnPointCloudCreated(int ID, string fineName, string name)
         {
@@ -511,20 +580,20 @@ namespace Neon
 
         #region Logging
         private sealed class LogItem
+    {
+        public string Text { get; }
+        public Brush Foreground { get; }
+
+        public LogItem(string text, Brush foreground)
         {
-            public string Text { get; }
-            public Brush Foreground { get; }
+            Text = text;
+            Foreground = foreground;
+        }
 
-            public LogItem(string text, Brush foreground)
-            {
-                Text = text;
-                Foreground = foreground;
-            }
-
-            public override string ToString()
-            {
-                return Text;
-            }
+        public override string ToString()
+        {
+            return Text;
+        }
         }
 
 
@@ -624,6 +693,6 @@ namespace Neon
                 MainLogRow.Height = new GridLength(MinLogHeight);
             }
         }
-        #endregion
     }
+    #endregion
 }

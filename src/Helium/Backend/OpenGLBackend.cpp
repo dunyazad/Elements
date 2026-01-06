@@ -36,7 +36,7 @@ bool OpenGLBackend::Initialize(HWND hwnd)
     const char* version = (const char*)glGetString(GL_VERSION);
     //He_Log(HE_LOG_INFO, "", "OpenGL Initialized: %s", version);
 
-    glClearColor(0.3f, 0.5f, 0.7f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
     InitializeScreenQuad();
 

@@ -35,13 +35,7 @@ int HeliumCore::LoadPointCloudFromPLY(const std::string& fileName, const std::st
 	PointCloud* pointCloud = new PointCloud();
     pointCloud->SetOnPLYLoadedCallback([this](PointCloud* pc)
     {
-        auto sparseGrid = new SparseGrid();
-        sparseGrid->Build(pc, 0.3f);
-        sparseGrids[pc->GetID()] = sparseGrid;
-
-        auto sparseDataBlock = new SparseDataBlock();
-        sparseDataBlock->Build(pc);
-        sparseDataBlocks[pc->GetID()] = sparseDataBlock;
+	    this->BuildSpatialPartitionings(pc->GetID());
 	});
 
     if (pointCloud->LoadFromPLY(fileName, name))
@@ -54,6 +48,33 @@ int HeliumCore::LoadPointCloudFromPLY(const std::string& fileName, const std::st
     {
         delete pointCloud;
         return false;
+	}
+}
+
+void HeliumCore::BuildSpatialPartitionings(int ID)
+{
+    auto pointCloud = Helium.GetPointCloud(ID);
+    if (pointCloud)
+    {
+        if(sparseGrids.find(ID) != sparseGrids.end())
+        {
+            delete sparseGrids[ID];
+            sparseGrids.erase(ID);
+		}
+
+        auto sparseGrid = new SparseGrid();
+        sparseGrid->Build(pointCloud, 0.3f);
+        sparseGrids[ID] = sparseGrid;
+
+        if (sparseDataBlocks.find(ID) != sparseDataBlocks.end())
+        {
+            delete sparseDataBlocks[ID];
+            sparseDataBlocks.erase(ID);
+        }
+
+        auto sparseDataBlock = new SparseDataBlock();
+        sparseDataBlock->Build(pointCloud);
+        sparseDataBlocks[ID] = sparseDataBlock;
 	}
 }
 
@@ -98,6 +119,8 @@ void HeliumCore::ClonePointCloud(int ID)
         auto clone = original->Clone();
         pointClouds[clone->GetID()] = clone;
         selectedPointCloud = clone;
+        
+        this->BuildSpatialPartitionings(clone->GetID());
     }
 }
 

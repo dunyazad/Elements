@@ -260,7 +260,7 @@
                             </TreeView.Resources>
 
                             <TreeView.ItemTemplate>
-                                <HierarchicalDataTemplate DataType="{x:Type main:MainWindow+SceneNode}">
+                                <HierarchicalDataTemplate DataType="{x:Type main:SceneNode}">
                                     <Grid Margin="2">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
@@ -327,7 +327,73 @@
                               Background="#444" 
                               ResizeBehavior="PreviousAndNext"/>
 
-                <local:HeliumHost x:Name="HeliumHostControl" Grid.Column="3"/>
+                <Grid Grid.Column="3">
+
+                    <local:HeliumHost x:Name="HeliumHostControl"/>
+
+                    <Popup IsOpen="True"
+       PlacementTarget="{Binding ElementName=HeliumHostControl}"
+       Placement="Relative"
+       AllowsTransparency="True"
+       StaysOpen="True"
+       IsHitTestVisible="False"
+       Width="{Binding ActualWidth, ElementName=HeliumHostControl}"
+       Height="{Binding ActualHeight, ElementName=HeliumHostControl}">
+
+                        <Grid>
+
+                            <Border VerticalAlignment="Top" 
+                HorizontalAlignment="Left" 
+                Margin="10"
+                Padding="8"
+                Background="#66000000"
+                CornerRadius="4">
+
+                                <TextBlock Text="{Binding HeliumStatusText}" 
+                       Foreground="#00FF00" 
+                       FontFamily="Consolas"
+                       FontSize="12"
+                       FontWeight="Bold">
+                                    <TextBlock.Effect>
+                                        <DropShadowEffect ShadowDepth="1" BlurRadius="2" Color="Black"/>
+                                    </TextBlock.Effect>
+                                </TextBlock>
+                            </Border>
+
+                            <ItemsControl ItemsSource="{Binding Notifications}"
+                      VerticalAlignment="Bottom"
+                      HorizontalAlignment="Right"
+                      Margin="0,0,20,20">
+
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel VerticalAlignment="Bottom"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#99000000" 
+                            CornerRadius="5" 
+                            Margin="0,5,0,0" 
+                            Padding="15,10">
+
+                                            <TextBlock Text="{Binding Text}" 
+                                   Foreground="#FFCC00" 
+                                   FontWeight="SemiBold" 
+                                   FontSize="14">
+                                                <TextBlock.Effect>
+                                                    <DropShadowEffect ShadowDepth="0" BlurRadius="2" Color="Black"/>
+                                                </TextBlock.Effect>
+                                            </TextBlock>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                        </Grid>
+                    </Popup>
+                </Grid>
             </Grid>
 
             <GridSplitter Grid.Row="3" 

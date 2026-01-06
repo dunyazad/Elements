@@ -162,7 +162,8 @@ public:
     void Log(HeliumLogLevel level, const char* key, const char* fmt, ...);
 
 	int LoadPointCloudFromPLY(const std::string& filename, const std::string& name);
-	bool SelectPointCloud(int ID);
+    void BuildSpatialPartitionings(int ID);
+    bool SelectPointCloud(int ID);
 	PointCloud* GetPointCloud(int ID);
     PointCloud* GetSelectedPointCloud();
     void SetPointCloudVisibility(int ID, bool visible);
@@ -170,8 +171,6 @@ public:
     void DeletePointCloud(int ID);
 
 	void PerformClustering(int ID, float searchRadius, float angleThreshold);
-
-    //int Pick(const Eigen::Vector3f& rayOrigin, const Eigen::Vector3f& rayDirection) const;
 
     bool ExecuteCommand(const char* command);
 
@@ -187,6 +186,8 @@ private:
     HWND hWnd = nullptr;
 
     std::unique_ptr<IGraphicsBackend> backend = nullptr;
+
+	Eigen::Vector4f clearColor = Eigen::Vector4f(0.298f, 0.337f, 0.416f, 1.0f);
 
     Registry registry;
     Dispatcher dispatcher;
@@ -211,6 +212,7 @@ private:
 	std::unordered_map<int, PointCloud*> pointClouds;
 	PointCloud* selectedPointCloud = nullptr;
 
+    const float voxelSize = 0.3f;
 	std::unordered_map<int, SparseGrid*> sparseGrids;
 	std::unordered_map<int, SparseDataBlock*> sparseDataBlocks;
 };

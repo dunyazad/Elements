@@ -172,7 +172,7 @@ void PointCloud::UpdateLoading()
 						auto position = this->positions[pickedIndex];
 						auto normal = this->normals[pickedIndex];
 
-						VD::AddSphere("Selected Point", position, normal, 0.051f, {1.0f, 0.0f, 0.0f, 1.0f});
+						VD::AddSphere("Selected Point", position, normal, 0.052f, {1.0f, 0.0f, 0.0f, 1.0f});
 
 						if (event.IsCtrlPressed())
 						{
@@ -294,7 +294,7 @@ PointCloud* PointCloud::Clone()
 				auto normal = newPC->normals[pickedIndex];
 
 				VD::Clear("Selected Point");
-				VD::AddSphere("Selected Point", position, normal, 0.051f, { 1.0f, 0.0f, 0.0f, 1.0f });
+				VD::AddSphere("Selected Point", position, normal, 0.055f, { 1.0f, 0.0f, 0.0f, 1.0f });
 
 				if (event.IsCtrlPressed())
 				{

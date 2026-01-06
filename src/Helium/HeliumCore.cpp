@@ -149,7 +149,7 @@ void HeliumCore::Render()
         shader->Unbind();
     }
 
-    if (backend) backend->Clear(0.3f, 0.5f, 0.7f, 1.0f);
+    if (backend) backend->Clear(clearColor.x(), clearColor.y(), clearColor.z(), clearColor.w());
 
     if (renderSystem)
     {
