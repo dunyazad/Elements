@@ -41,6 +41,8 @@ public:
 
 	void UpdateLoading();
 
+	void UpdateRenderable();
+
 	using OnClonedCallback = std::function<void(PointCloud*)>;
 	void SetOnClonedCallback(const OnClonedCallback& callback) { onClonedCallback = callback; }
 	PointCloud* Clone(OnClonedCallback callback);
@@ -54,7 +56,7 @@ public:
 	inline const std::string& GetFileName() const { return fileName; }
 
 	inline size_t Size() const { return positions.size(); }
-	
+
 	inline const Eigen::Vector3f& GetPosition(size_t index) const { return positions[index]; }
 	inline const Eigen::Vector3f& GetNormal(size_t index) const { return normals[index]; }
 	inline const Eigen::Vector4f& GetColor(size_t index) const { return colors[index]; }
@@ -67,9 +69,9 @@ public:
 	inline const std::vector<Eigen::Vector3f>& GetNormals() const { return normals; }
 	inline const std::vector<Eigen::Vector4f>& GetColors() const { return colors; }
 
-	inline void SetPositions(const std::vector<Eigen::Vector3f>& positions) { this->positions = positions; }
-	inline void SetNormals(const std::vector<Eigen::Vector3f>& normals) { this->normals = normals; }
-	inline void SetColors(const std::vector<Eigen::Vector4f>& colors) { this->colors = colors; }
+	inline void SetPositions(const std::vector<Eigen::Vector3f>& positions) { this->positions = positions; UpdateRenderable(); }
+	inline void SetNormals(const std::vector<Eigen::Vector3f>& normals) { this->normals = normals; UpdateRenderable(); }
+	inline void SetColors(const std::vector<Eigen::Vector4f>& colors) { this->colors = colors; UpdateRenderable(); }
 
 	inline const AABB& GetAABB() const { return aabb; }
 

@@ -167,6 +167,7 @@
                         <Separator/>
                         <MenuItem Header="Clone" Click="Menu_PointCloud_Clone_Click"/>
                         <MenuItem Header="Clustering" Click="Menu_PointCloud_Clustering_Click"/>
+                        <MenuItem Header="SOR" Click="Menu_PointCloud_SOR_Click"/>
                         <MenuItem Header="Show Normals" Click="Menu_PointCloud_ShowNormals_Click"/>
                         <Separator/>
                         <MenuItem Header="Reset Layout"/>

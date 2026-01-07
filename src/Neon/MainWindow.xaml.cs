@@ -336,6 +336,11 @@ namespace Neon
 
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                 HeliumNative.He_ManagedToNative(command);
+
+                for (int i = 0; i < filenames.Length; i++)
+                {
+                    ShowNotification($"Loading Point Cloud: {filenames[i]}");
+                }
             }
         }
 
@@ -433,6 +438,23 @@ namespace Neon
             }
         }
 
+        private void Menu_PointCloud_SOR_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                var commandData = new
+                {
+                    command = "PerformSOR",
+                    pointCloudID = selectedSceneNode.ID,
+                    kNeighbors = 50,
+                    stdDevMulThresh = 3.0f,
+                    deletePoints = false
+                };
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ManagedToNative(command);
+            }
+        }
+
         private void Menu_PointCloud_ShowNormals_Click(object sender, RoutedEventArgs e)
         {
             if (selectedSceneNode != null)
@@ -523,18 +545,35 @@ namespace Neon
         {
             if (sender is CheckBox checkBox && checkBox.DataContext is SceneNode sceneNode)
             {
-                // UI의 체크 상태 가져오기 (null일 경우 false 처리)
-                bool isVisible = checkBox.IsChecked ?? false;
-                sceneNode.IsVisible = isVisible;
-
-                var commandData = new
                 {
-                    command = "SetPointCloudVisibility",
-                    pointCloudID = sceneNode.ID,
-                    isVisible = isVisible
-                };
-                var command = System.Text.Json.JsonSerializer.Serialize(commandData);
-                HeliumNative.He_ManagedToNative(command);
+                    bool isVisible = checkBox.IsChecked ?? false;
+                    sceneNode.IsVisible = isVisible;
+
+                    var commandData = new
+                    {
+                        command = "SetPointCloudVisibility",
+                        pointCloudID = sceneNode.ID,
+                        isVisible = isVisible
+                    };
+                    var command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                    HeliumNative.He_ManagedToNative(command);
+                }
+
+                {
+                    selectedSceneNode = sceneNode;
+                    selectedPointCloudID = sceneNode.ID;
+
+                    Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        var commandData = new
+                        {
+                            command = "SelectPointCloud",
+                            pointCloudID = sceneNode.ID
+                        };
+                        string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                        HeliumNative.He_ManagedToNative(command);
+                    });
+                }
 
                 //NeonLogger.Log("", $"PointCloud Visibility Changed: {sceneNode.Name} (ID: {sceneNode.ID}) to {(isVisible ? "Visible" : "Hidden")}");
             }
@@ -563,6 +602,59 @@ namespace Neon
                 }
                 e.Handled = true;
             }
+        }
+
+        private void SceneTree_TogglePointClouds(int order, bool exclusive)
+        {
+            if (exclusive)
+            {
+                SceneItems.ToList().ForEach(sceneItem => {
+                    if (null != sceneItem)
+                    {
+                        sceneItem.IsVisible = false;
+                    }
+                });
+            }
+
+            if(order < SceneItems.ToList().Count)
+            {
+                SceneNode sceneNode = SceneItems.ToList().ElementAt(order);
+                if (sceneNode != null)
+                {
+                    sceneNode.IsVisible = true;
+                    if(exclusive)
+                    {
+                        selectedSceneNode = sceneNode;
+                        selectedPointCloudID = sceneNode.ID;
+
+                        Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            var commandData = new
+                            {
+                                command = "SelectPointCloud",
+                                pointCloudID = sceneNode.ID
+                            };
+                            string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                            HeliumNative.He_ManagedToNative(command);
+                        });
+                    }
+                }
+            }
+
+            var pointCloudVisibleInfoList = new List<object>(); // 혹은 구체적인 struct 사용
+            foreach (var sceneItem in SceneItems)
+            {
+                // Tuple 대신 익명 객체 사용
+                pointCloudVisibleInfoList.Add(new { pointCloudID = sceneItem.ID, visible = sceneItem.IsVisible });
+            }
+
+            var commandData = new
+            {
+                command = "TogglePointClouds",
+                pointCloudVisibleInfoList = pointCloudVisibleInfoList
+            };
+            var command = System.Text.Json.JsonSerializer.Serialize(commandData);
+            HeliumNative.He_ManagedToNative(command);
         }
         #endregion
 
@@ -696,6 +788,26 @@ namespace Neon
                         string eventType = eventElement.GetString() ?? string.Empty;
                         switch (eventType)
                         {
+                            case "Notification":
+                                {
+                                    root.TryGetProperty("Parameters", out JsonElement paramsElement);
+                                    root = paramsElement;
+                                    string message = root.GetProperty("Message").GetString() ?? string.Empty;
+                                    int durationMS = root.GetProperty("DurationMS").GetInt32();
+                                    ShowNotification(message, durationMS);
+                                    break;
+                                }
+
+                            case "TogglePointCloud":
+                                {
+                                    root.TryGetProperty("Parameters", out JsonElement paramsElement);
+                                    root = paramsElement;
+                                    int order = root.GetProperty("Order").GetInt32();
+                                    bool exclusive = root.GetProperty("Exclusive").GetBoolean();
+                                    SceneTree_TogglePointClouds(order, exclusive);
+                                    break;
+                                }
+
                             case "PointCloudLoaded":
                                 {
                                     root.TryGetProperty("Parameters", out JsonElement paramsElement);

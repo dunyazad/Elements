@@ -249,7 +249,7 @@ void CameraManipulatorTrackball::OnMouseWheel(const MouseWheelEvent& event)
 {
 	if (nullptr == camera) return;
 
-	bool isShiftPressed = (0 != pressedKeys.count(VK_SHIFT) || (0 != pressedKeys.count(VK_LSHIFT) || 0 != pressedKeys.count(VK_RSHIFT)));
+	bool isShiftPressed = (0 != pressedKeys.count(KeyCode::Shift) || (0 != pressedKeys.count(KeyCode::LeftShift) || 0 != pressedKeys.count(KeyCode::RightShift)));
 
 	if (camera->GetProjectionMode() == Camera::Perspective)
 	{
@@ -309,7 +309,7 @@ void CameraManipulatorTrackball::OnMouseWheel(const MouseWheelEvent& event)
 
 void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 {
-	int key = event.keyCode;
+	KeyCode key = event.keyCode;
 
 	if (event.action == 1) pressedKeys.insert(key);
 	else if (event.action == 0) pressedKeys.erase(key);
@@ -325,7 +325,7 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 
 	float moveStep = 0.2f;
 
-	if ((key == 'W' || key == 'w') && event.action != 0)
+	if ((key == KeyCode::W) && event.action != 0)
 	{
 		eye += viewDir * moveStep;
 		target += viewDir * moveStep;
@@ -333,7 +333,7 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 		camera->SetEye(eye);
 		camera->SetTarget(target);
 	}
-	else if ((key == 'S' || key == 's') && event.action != 0)
+	else if ((KeyCode::S == key) && event.action != 0)
 	{
 		eye -= viewDir * moveStep;
 		target -= viewDir * moveStep;
@@ -341,7 +341,7 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 		camera->SetEye(eye);
 		camera->SetTarget(target);
 	}
-	else if ((key == 'A' || key == 'a') && event.action != 0)
+	else if ((KeyCode::A == key) && event.action != 0)
 	{
 		eye -= right * moveStep;
 		target -= right * moveStep;
@@ -349,7 +349,7 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 		camera->SetEye(eye);
 		camera->SetTarget(target);
 	}
-	else if ((key == 'D' || key == 'd') && event.action != 0)
+	else if ((KeyCode::D == key) && event.action != 0)
 	{
 		eye += right * moveStep;
 		target += right * moveStep;
@@ -357,11 +357,11 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 		camera->SetEye(eye);
 		camera->SetTarget(target);
 	}
-	else if ((key == 'R' || key == 'r') && event.action == 1)
+	else if ((KeyCode::R == key) && event.action == 1)
 	{
 		Reset();
 	}
-	else if ((key == 'P' || key == 'p') && event.action == 1)
+	else if ((key == KeyCode::P) && event.action == 1)
 	{
 		if (camera->GetProjectionMode() == Camera::Perspective)
 		{
@@ -397,7 +397,7 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 		}
 		return;
 	}
-	else if((VK_F9 == key) && (event.action == 0))
+	else if((KeyCode::F9 == key) && (event.action == 0))
 	{
 		auto selectedPointCloud = Helium.GetSelectedPointCloud();
 		if (nullptr == selectedPointCloud) return;
@@ -414,7 +414,7 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 			RestoreSetting(key, subKey);
 		}
 	}
-	else if ((VK_F10 == key) && (event.action == 0))
+	else if ((KeyCode::F10 == key) && (event.action == 0))
 	{
 		auto selectedPointCloud = Helium.GetSelectedPointCloud();
 		if (nullptr == selectedPointCloud) return;
@@ -431,7 +431,7 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 			RestoreSetting(key, subKey);
 		}
 	}
-	else if ((VK_F11 == key) && (event.action == 0))
+	else if ((KeyCode::F11 == key) && (event.action == 0))
 	{
 		auto selectedPointCloud = Helium.GetSelectedPointCloud();
 		if (nullptr == selectedPointCloud) return;
@@ -448,7 +448,7 @@ void CameraManipulatorTrackball::OnKey(const KeyEvent& event)
 			RestoreSetting(key, subKey);
 		}
 	}
-	else if ((VK_F12 == key) && (event.action == 0))
+	else if ((KeyCode::F12 == key) && (event.action == 0))
 	{
 		auto selectedPointCloud = Helium.GetSelectedPointCloud();
 		if (nullptr == selectedPointCloud) return;

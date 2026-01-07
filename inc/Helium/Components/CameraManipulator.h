@@ -135,7 +135,7 @@ private:
 
 	Eigen::Quaternionf cameraRotation = Eigen::Quaternionf::Identity();
 
-	std::unordered_set<int> pressedKeys;
+	std::unordered_set<KeyCode> pressedKeys;
 
 	std::vector<std::tuple<Eigen::Vector3f, Eigen::Vector3f, Eigen::Vector3f, float>> cameraHistory;
 	size_t cameraHistoryIndex = 0;

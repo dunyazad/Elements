@@ -122,6 +122,15 @@ public:
         return &(registry.emplace<T>(entity, std::forward<Args>(args)...));
     }
 
+	template<typename T>
+    void RemoveComponent(Entity entity)
+    {
+        if (registry.all_of<T>(entity))
+        {
+            registry.remove<T>(entity);
+        }
+	}
+
     inline void AddOnInitializeCallback(std::function<void()> callback) { onInitializeCallbacks.push_back(callback); }
     inline void AddOnUpdateCallback(std::function<void(float)> callback) { onUpdateCallbacks.push_back(callback); }
     inline void AddOnRenderCallback(std::function<void()> callback) { onRenderCallbacks.push_back(callback); }
@@ -177,12 +186,13 @@ public:
     void DeletePointCloud(int pointCloudID);
 
 	void PerformClustering(int pointCloudID, float searchRadius, float angleThreshold);
-    void PerformSOR(int pointCloudID, float searchRadius);
+    void PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints);
 
     void ProcessManagedToNativeEvents();
     void EnqueueManagedToNativeEvent(std::function<void()> event);
     void OnManagedToNative(const char* jsonString);
     void NativeToManaged(const char* jsonString);
+    void NotifyMessage(const std::string& message, int durationMS = 3000);
 
     inline SparseGrid* GetSparseGrid(int pointCloudID)
     {

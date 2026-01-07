@@ -114,9 +114,9 @@ void PointCloud::SetupEntity(ProcessedInstanceData& data)
 
 		if (0 == event.action)
 		{
-			if (192 == event.keyCode) renderable->NextDrawingMode();
-			else if ('1' == event.keyCode) renderable->SetActiveShaderIndex(0);
-			else if ('2' == event.keyCode) renderable->SetActiveShaderIndex(1);
+			if (KeyCode::Tilde == event.keyCode) renderable->NextDrawingMode();
+			else if (KeyCode::D1 == event.keyCode) renderable->SetActiveShaderIndex(0);
+			else if (KeyCode::D2 == event.keyCode) renderable->SetActiveShaderIndex(1);
 		}
 		});
 
@@ -244,6 +244,70 @@ void PointCloud::UpdateLoading()
 			Helium.NativeToManaged(j.dump().c_str());
 		}
 	}
+}
+
+void PointCloud::UpdateRenderable()
+{
+	if (renderable == nullptr) return;
+
+	Helium.RemoveComponent<Renderable>(entity);
+	renderable = Helium.CreateComponent<Renderable>(entity);
+
+	renderable->Initialize(Renderable::GeometryMode::Triangles);
+
+	renderable->AddShader(Helium.CreateShader("Instancing", File("../../res/Shaders/Instancing.vs"), File("../../res/Shaders/Instancing.fs")));
+	renderable->AddShader(Helium.CreateShader("InstancingWithoutNormal", File("../../res/Shaders/InstancingWithoutNormal.vs"), File("../../res/Shaders/InstancingWithoutNormal.fs")));
+	renderable->SetActiveShaderIndex(1);
+
+	GeometryBuilder::BuildSphere(renderable, { 0.0f, 0.0f, 0.0f }, 0.5f, 6, 6, { 1.0f, 1.0f, 1.0f, 1.0f });
+
+	size_t count = positions.size();
+
+	aabb = AABB();
+
+	for (size_t i = 0; i < count; i++)
+	{
+		const Eigen::Vector3f& p = positions[i];
+		const Eigen::Vector3f& n = (i < normals.size()) ? normals[i] : Eigen::Vector3f::Zero();
+		const Eigen::Vector4f& c = (i < colors.size()) ? colors[i] : Eigen::Vector4f::Ones();
+
+		aabb.Expand(p);
+
+		Eigen::Affine3f tm = Eigen::Affine3f::Identity();
+		Eigen::Matrix3f rot = Eigen::Matrix3f::Identity();
+
+		if (n.norm() > 0.0001f)
+		{
+			Eigen::Vector3f up(0.0f, 0.0f, 1.0f);
+			Eigen::Vector3f normalDir = n.normalized();
+			Eigen::Vector3f axis = up.cross(normalDir);
+			float dot = up.dot(normalDir);
+
+			if (dot > 1.0f) dot = 1.0f; else if (dot < -1.0f) dot = -1.0f;
+			float angle = std::acos(dot);
+
+			if (axis.norm() > 0.0001f)
+			{
+				axis.normalize();
+				rot = Eigen::AngleAxisf(angle, axis).toRotationMatrix();
+			}
+			else if (dot < -0.9f)
+			{
+				rot = Eigen::AngleAxisf(3.1415926f, Eigen::Vector3f::UnitX()).toRotationMatrix();
+			}
+		}
+
+		tm.translate(p);
+		tm.rotate(rot);
+		tm.scale(0.1f);
+
+		renderable->AddInstanceNormal(n);
+		renderable->AddInstanceColor(c);
+		renderable->AddInstanceTransform(tm.matrix());
+		renderable->IncreaseNumberOfInstances();
+	}
+
+	renderable->EnableInstancing();
 }
 
 PointCloud* PointCloud::Clone(OnClonedCallback callback)

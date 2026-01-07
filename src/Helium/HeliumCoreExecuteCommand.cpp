@@ -345,7 +345,7 @@ void HeliumCore::PerformClustering(int pointCloudID, float searchRadius, float a
 	}
 }
 
-void HeliumCore::PerformSOR(int pointCloudID, float searchRadius)
+void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints)
 {
 	auto currentPointCloud = GetPointCloud(pointCloudID);
 	if (nullptr == currentPointCloud)
@@ -355,16 +355,127 @@ void HeliumCore::PerformSOR(int pointCloudID, float searchRadius)
 	}
 
 	auto sparseGrid = GetSparseGrid(pointCloudID);
-	if(nullptr == sparseGrid)
+	if (nullptr == sparseGrid)
 	{
 		BuildSpatialPartitionings(pointCloudID);
 		sparseGrid = GetSparseGrid(pointCloudID);
 	}
 
-
 	TS(SOR_Filter);
 
+	size_t numberOfPoints = currentPointCloud->Size();
+	if (numberOfPoints == 0) return;
+
+	std::vector<float> pointMeanDistances(numberOfPoints);
+
+	std::vector<uint8_t> outlierMarking(numberOfPoints, 0);
+
+	std::vector<int> indices(numberOfPoints);
+	std::iota(indices.begin(), indices.end(), 0);
+
+	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
+		{
+			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
+
+			std::vector<unsigned int> neighbors;
+			std::vector<float> distances;
+			neighbors.reserve(kNeighbors);
+			distances.reserve(kNeighbors);
+
+			sparseGrid->GetKNearestNeighbors(
+				currentPointCloud->GetPositions(),
+				p,
+				kNeighbors,
+				neighbors,
+				distances
+			);
+
+			double sumDist = 0.0;
+			int validCount = 0;
+			for (float d : distances)
+			{
+				if (d > 1e-6f) // 자기 자신 제외
+				{
+					sumDist += d;
+					validCount++;
+				}
+			}
+
+			if (validCount > 0)
+				pointMeanDistances[i] = (float)(sumDist / validCount);
+			else
+				pointMeanDistances[i] = 0.0f;
+		});
+
+	double totalSum = 0.0;
+	double totalSqSum = 0.0;
+	for (float d : pointMeanDistances)
+	{
+		totalSum += d;
+		totalSqSum += d * d;
+	}
+
+	float globalMean = (float)(totalSum / numberOfPoints);
+	double variance = (totalSqSum / numberOfPoints) - (globalMean * globalMean);
+	float globalStdDev = std::sqrtf(std::max(0.0f, (float)variance));
+
+	// 임계값 설정
+	float distanceThreshold = globalMean + stdDevMulThresh * globalStdDev;
+
+	InfoLog("", "[SOR] Mean: %.4f, StdDev: %.4f, Threshold: %.4f (k=%d, mul=%.1f)",
+		globalMean, globalStdDev, distanceThreshold, kNeighbors, stdDevMulThresh);
+
+	int outlierCount = 0;
+	for (size_t i = 0; i < numberOfPoints; ++i)
+	{
+		if (pointMeanDistances[i] > distanceThreshold)
+		{
+			outlierMarking[i] = 1;
+			outlierCount++;
+		}
+	}
+
+	currentPointCloud->SetAttribute<std::vector<uint8_t>>("SOR_OutlierMarking", outlierMarking);
+
 	TE(SOR_Filter);
+
+	if (deletePoints)
+	{
+		if (outlierCount > 0)
+		{
+			size_t newSize = numberOfPoints - outlierCount;
+
+			std::vector<Eigen::Vector3f> newPositions;
+			std::vector<Eigen::Vector3f> newNormals;
+			std::vector<Eigen::Vector4f> newColors;
+
+			newPositions.reserve(newSize);
+			newNormals.reserve(newSize);
+			newColors.reserve(newSize);
+
+			for (size_t i = 0; i < numberOfPoints; ++i)
+			{
+				if (outlierMarking[i] == 0) // Keep Inliers
+				{
+					newPositions.push_back(currentPointCloud->GetPosition(i));
+					newNormals.push_back(currentPointCloud->GetNormal(i));
+					newColors.push_back(currentPointCloud->GetColor(i));
+				}
+			}
+
+			currentPointCloud->SetPositions(newPositions);
+			currentPointCloud->SetNormals(newNormals);
+			currentPointCloud->SetColors(newColors);
+
+			BuildSpatialPartitionings(pointCloudID);
+
+			InfoLog("", "[SOR] Removed %d outliers. Remaining: %zu", outlierCount, newSize);
+		}
+		else
+		{
+			InfoLog("", "[SOR] Found 0 outliers (Clean).");
+		}
+	}
 }
 
 void HeliumCore::ProcessManagedToNativeEvents()
@@ -448,6 +559,27 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 							SetPointCloudVisibility(pointCloudID, isVisible);
 						}
 					}
+					else if (cmd == "TogglePointClouds")
+					{
+						if (j.contains("pointCloudVisibleInfoList"))
+						{
+							const auto& visibleList = j["pointCloudVisibleInfoList"];
+
+							for (const auto& item : visibleList)
+							{
+								if (item.contains("pointCloudID") && item.contains("visible"))
+								{
+									int pointCloudID = item["pointCloudID"].get<int>();
+									bool isVisible = item["visible"].get<bool>();
+									auto pointCloud = GetPointCloud(pointCloudID);
+									if (nullptr != pointCloud)
+									{
+										pointCloud->SetVisible(isVisible);
+									}
+								}
+							}
+						}
+					}
 					else if (cmd == "ClonePointCloud")
 					{
 						if (j.contains("pointCloudID"))
@@ -501,6 +633,39 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 									float angleThreshold = j.value("angleThreshold", 0.9f);
 
 									PerformClustering(pointCloudID, searchRadius, angleThreshold);
+								}
+							}
+						}
+					}
+					else if (cmd == "PerformSOR")
+					{
+						if (j.contains("pointCloudID"))
+						{
+							int pointCloudID = j["pointCloudID"];
+							auto pointCloud = GetPointCloud(pointCloudID);
+							if (nullptr != pointCloud)
+							{
+								int kNeighbors = j.value("kNeighbors", 50);
+								float stdDevMulThresh = j.value("stdDevMulThresh", 1.0f);
+								bool deletePoints = j.value("deletePoints", false);
+
+								PerformSOR(pointCloudID, kNeighbors, stdDevMulThresh, deletePoints);
+
+								VD::Clear("SOR");
+
+								auto outlierMarking = pointCloud->GetAttribute<std::vector<uint8_t>>("SOR_OutlierMarking");
+								const auto& positions = pointCloud->GetPositions();
+								size_t numberOfPoints = pointCloud->Size();
+								for (size_t i = 0; i < numberOfPoints; ++i)
+								{
+									if (outlierMarking[i] == 1)
+									{
+										VD::AddSphere("SOR", positions[i], Eigen::Vector3f(1, 0, 0), 0.055f, Eigen::Vector4f(1, 0, 0, 1));
+									}
+									else
+									{
+										VD::AddSphere("SOR", positions[i], Eigen::Vector3f(0, 1, 0), 0.03f, Eigen::Vector4f(0, 1, 0, 0.7f));
+									}
 								}
 							}
 						}
@@ -580,22 +745,6 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 							}
 						}
 					}
-					else if (cmd == "ShowSOR")
-					{
-						if (j.contains("pointCloudID"))
-						{
-							int pointCloudID = j["pointCloudID"];
-							auto pointCloud = GetPointCloud(pointCloudID);
-							if (nullptr != pointCloud)
-							{
-								float searchRadius = j.value("searchRadius", 0.1f);
-								PerformSOR(pointCloudID, searchRadius);
-
-								VD::Clear("SOR");
-
-							}
-						}
-					}
 				}
 			}
 			catch (const nlohmann::json::parse_error& e)
@@ -615,4 +764,13 @@ extern void OnNativeToManaged(const char* jsonString);
 void HeliumCore::NativeToManaged(const char* jsonString)
 {
 	OnNativeToManaged(jsonString);
+}
+
+void HeliumCore::NotifyMessage(const std::string& message, int durationMS)
+{
+	json j;
+	j["EventType"] = "Notification";
+	j["Parameters"]["Message"] = message;
+	j["Parameters"]["DurationMS"] = durationMS;
+	Helium.NativeToManaged(j.dump().c_str());
 }

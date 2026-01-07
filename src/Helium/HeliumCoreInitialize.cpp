@@ -503,5 +503,28 @@ void HeliumCore::InitializeScene()
 				}
 			}
 			});
+
+		Helium.CreateEventCallback<KeyEvent>(entity, [](Entity e, const KeyEvent& event) {
+			if (event.action == 0 && KeyCode::Enter == event.keyCode)
+			{
+				Helium.NotifyMessage("Enter key pressed!");
+			}
+			else if (event.action == 0 && KeyCode::F1 <= event.keyCode && KeyCode::F8 >= event.keyCode)
+			{
+				json j;
+				j["EventType"] = "TogglePointCloud";
+				j["Parameters"]["Order"] = (int)event.keyCode - (int)KeyCode::F1;
+				if (event.IsShiftPressed())
+				{
+					j["Parameters"]["Exclusive"] = false;
+				}
+				else
+				{
+					j["Parameters"]["Exclusive"] = true;
+				}
+
+				Helium.NativeToManaged(j.dump().c_str());
+			}
+			});
 	}
 }
