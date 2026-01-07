@@ -1,15 +1,15 @@
 #pragma once
 
-#include <vector>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
-#include <memory>
+#include <vector>
 
 #include <entt/entt.hpp>
 
 #include <Helium/File.h>
-
 #include <Helium/Backend/GraphicsBackend.h>
 #include <Helium/Components/Components.h>
 #include <Helium/Systems/Systems.h>
@@ -177,8 +177,14 @@ public:
     void DeletePointCloud(int pointCloudID);
 
 	void PerformClustering(int pointCloudID, float searchRadius, float angleThreshold);
+    void PerformSOR(int pointCloudID, float searchRadius);
 
     bool ExecuteCommand(const char* command);
+
+    void ProcessManagedToNativeEvents();
+    void EnqueueManagedToNativeEvent(std::function<void()> event);
+    void OnManagedToNative(const char* jsonString);
+    void NativeToManaged(const char* jsonString);
 
     inline SparseGrid* GetSparseGrid(int pointCloudID)
     {
@@ -240,6 +246,9 @@ private:
     const float cellSize = 0.3f;
 	std::unordered_map<int, SparseGrid*> sparseGrids;
 	std::unordered_map<int, SparseDataBlock*> sparseDataBlocks;
+
+    std::mutex managedToNativeEventQueueMutex;
+    std::vector<std::function<void()>> managedToNativeEventQueue;
 };
 
 #define Helium HeliumCore::GetStaticInstance()

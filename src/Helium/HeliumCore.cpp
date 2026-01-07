@@ -103,6 +103,8 @@ void HeliumCore::Update(float dt)
 {
     if (!isInitialized) return;
 
+    ProcessManagedToNativeEvents();
+
     for (auto& [ID, pointCloud] : pointClouds)
     {
         if (nullptr != pointCloud)

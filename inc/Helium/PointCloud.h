@@ -33,14 +33,17 @@ public:
 	PointCloud();
 	~PointCloud();
 
-	bool LoadFromPLY(const std::string& fileName, const std::string& name);
+	using OnPLYLoadedCallback = std::function<void(PointCloud*)>;
+	void SetOnPLYLoadedCallback(const OnPLYLoadedCallback& callback) { onPLYLoadedCallback = callback; }
+	bool LoadFromPLY(const std::string& fileName, const std::string& name, OnPLYLoadedCallback callback);
+
+	void SetupEntity(ProcessedInstanceData& data);
 
 	void UpdateLoading();
 
-	using OnPLYLoadedCallback = std::function<void(PointCloud*)>;
-	void SetOnPLYLoadedCallback(const OnPLYLoadedCallback& callback) { onPLYLoadedCallback = callback; }
-
-	PointCloud* Clone();
+	using OnClonedCallback = std::function<void(PointCloud*)>;
+	void SetOnClonedCallback(const OnClonedCallback& callback) { onClonedCallback = callback; }
+	PointCloud* Clone(OnClonedCallback callback);
 
 	bool SetVisible(bool isVisible);
 
@@ -155,7 +158,10 @@ protected:
 	Renderable* renderable = nullptr;
 	bool isLoading = false;
 	std::future<ProcessedInstanceData> loadingFuture;
+	bool isCloning = false;
+	std::future<ProcessedInstanceData> cloningFuture;
 	OnPLYLoadedCallback onPLYLoadedCallback = nullptr;
+	OnClonedCallback onClonedCallback = nullptr;
 
 	std::map<std::string, std::any> attributes;
 };

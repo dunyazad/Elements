@@ -37,5 +37,11 @@ extern "C"
     typedef void(*PointSelectedDelegate)(int pointCloudID, int index);
     HELIUM_API void He_SetPointSelectedCallback(PointSelectedDelegate callback);
 
-	HELIUM_API bool He_ExecuteCommand(const char* command);
+    typedef void(*ManagedToNativeCallback)(const char* jsonString); 
+    HELIUM_API void He_SetManagedToNativeCallback(ManagedToNativeCallback callback);
+
+    typedef void(*NativeToManagedCallback)(const char* jsonString);
+	HELIUM_API void He_SetNativeToManagedCallback(NativeToManagedCallback callback);
+
+	HELIUM_API void He_ManagedToNative(const char* command);
 }

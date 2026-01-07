@@ -102,7 +102,35 @@ void OnPointSelected(int pointCloudID, int index)
 	}
 }
 
-bool He_ExecuteCommand(const char* command)
+static ManagedToNativeCallback g_ManagedToNativeCallback = nullptr;
+void He_SetManagedToNativeCallback(ManagedToNativeCallback callback)
 {
-	return Helium.ExecuteCommand(command);
+	g_ManagedToNativeCallback = callback;
+}
+
+void OnManagedToNative(const char* jsonString)
+{
+	if (g_ManagedToNativeCallback)
+	{
+		g_ManagedToNativeCallback(jsonString);
+	}
+}
+
+static NativeToManagedCallback g_NativeToManagedCallback = nullptr;
+void He_SetNativeToManagedCallback(NativeToManagedCallback callback)
+{
+	g_NativeToManagedCallback = callback;
+}
+
+void OnNativeToManaged(const char* jsonString)
+{
+	if (g_NativeToManagedCallback)
+	{
+		g_NativeToManagedCallback(jsonString);
+	}
+}
+
+void He_ManagedToNative(const char* command)
+{
+	Helium.OnManagedToNative(command);
 }
