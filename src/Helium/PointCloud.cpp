@@ -123,7 +123,7 @@ void PointCloud::SetupEntity(ProcessedInstanceData& data)
 	Helium.CreateEventCallback<MouseButtonEvent>(entity, [this](Entity entity, const MouseButtonEvent& event) {
 		auto renderable = Helium.GetComponent<Renderable>(entity);
 		if (nullptr == renderable) return;
-		if (false == renderable->IsVisible()) return;
+		//if (false == renderable->IsVisible()) return;
 		if (this != Helium.GetSelectedPointCloud()) return;
 
 		if (0 == event.action && 0 == event.button)

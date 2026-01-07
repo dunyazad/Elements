@@ -245,6 +245,49 @@ void SparseGrid::GetKNearestNeighbors(const std::vector<Eigen::Vector3f>& points
 	}
 }
 
+void SparseGrid::GetPointsWithinRadius(const std::vector<Eigen::Vector3f>& points, const Eigen::Vector3f& queryPos, float radius, std::vector<unsigned int>& outIndices)
+{
+	outIndices.clear();
+	if (points.empty() || radius <= 0.0f) return;
+
+	float radiusSq = radius * radius;
+
+	int range = (int)std::ceil(radius / cellSize);
+
+	int centerGx = (int)std::floor((queryPos.x() - aabb.min.x()) / cellSize);
+	int centerGy = (int)std::floor((queryPos.y() - aabb.min.y()) / cellSize);
+	int centerGz = (int)std::floor((queryPos.z() - aabb.min.z()) / cellSize);
+
+	for (int dz = -range; dz <= range; ++dz)
+	{
+		for (int dy = -range; dy <= range; ++dy)
+		{
+			for (int dx = -range; dx <= range; ++dx)
+			{
+				uint64_t key = GetKey(centerGx + dx, centerGy + dy, centerGz + dz);
+				auto it = voxelPointListHead.find(key);
+
+				if (it != voxelPointListHead.end())
+				{
+					int currIdx = it->second;
+					while (currIdx != -1)
+					{
+						const auto& pt = points[currIdx];
+						float sqDist = (queryPos - pt).squaredNorm();
+
+						if (sqDist <= radiusSq)
+						{
+							outIndices.push_back((unsigned int)currIdx);
+						}
+
+						currIdx = nextPoint[currIdx];
+					}
+				}
+			}
+		}
+	}
+}
+
 void SparseGrid::Visualize()
 {
 	const uint64_t mask = 0x1FFFFF;

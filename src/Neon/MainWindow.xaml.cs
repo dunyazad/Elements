@@ -120,6 +120,8 @@ namespace Neon
             }
         }
 
+        private SorParameterDialog? _sorDialog = null;
+        private RorParameterDialog? _rorDialog = null;
         public MainWindow()
         {
             InitializeComponent();
@@ -223,12 +225,12 @@ namespace Neon
             {
                 switch (e.Key)
                 {
-                    case Key.Escape:
-                        {
-                            e.Handled = true;
-                            this.Close();
-                            break;
-                        }
+                    //case Key.Escape:
+                    //    {
+                    //        e.Handled = true;
+                    //        this.Close();
+                    //        break;
+                    //    }
                     case Key.T:
                         {
                             ShowNotification($"Event Triggered at {DateTime.Now:ss.fff}");
@@ -442,16 +444,92 @@ namespace Neon
         {
             if (selectedSceneNode != null)
             {
-                var commandData = new
+                if (_sorDialog != null)
                 {
-                    command = "PerformSOR",
-                    pointCloudID = selectedSceneNode.ID,
-                    kNeighbors = 50,
-                    stdDevMulThresh = 3.0f,
-                    deletePoints = false
+                    _sorDialog.Activate();
+                    return;
+                }
+
+                _sorDialog = new SorParameterDialog();
+                _sorDialog.Owner = this;
+                _sorDialog.WindowStartupLocation = WindowStartupLocation.Manual;
+
+                double dialogWidth = 300;
+                double dialogHeight = 220;
+
+                // X: 메인 윈도우 오른쪽 끝 - 다이얼로그 너비 - 여백(20)
+                _sorDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
+
+                // Y: 메인 윈도우 수직 중앙 - 다이얼로그 절반 높이
+                _sorDialog.Top = (this.Top + (this.ActualHeight / 2)) - (dialogHeight / 2);
+
+                _sorDialog.ApplyAction = (kNeighbors, stdDevMul) =>
+                {
+                    var commandData = new
+                    {
+                        command = "PerformSOR",
+                        pointCloudID = selectedSceneNode.ID,
+                        kNeighbors = kNeighbors,
+                        stdDevMulThresh = stdDevMul,
+                        deletePoints = false
+                    };
+                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                    HeliumNative.He_ManagedToNative(command);
+
+                    ShowNotification($"Applied SOR (K={kNeighbors}, StdDev={stdDevMul})");
                 };
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
-                HeliumNative.He_ManagedToNative(command);
+
+                _sorDialog.Closed += (s, args) => { _sorDialog = null; };
+                _sorDialog.Show();
+            }
+            else
+            {
+                ShowNotification("No Point Cloud Selected.");
+            }
+        }
+
+        private void Menu_PointCloud_ROR_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                if (_rorDialog != null)
+                {
+                    _rorDialog.Activate();
+                    return;
+                }
+
+                _rorDialog = new RorParameterDialog();
+                _rorDialog.Owner = this;
+                _rorDialog.WindowStartupLocation = WindowStartupLocation.Manual;
+
+                double dialogWidth = 300;
+                double dialogHeight = 220;
+
+                _rorDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
+                _rorDialog.Top = (this.Top + (this.ActualHeight / 2)) - (dialogHeight / 2);
+
+                _rorDialog.ApplyAction = (radius, minNeighbors) =>
+                {
+                    var commandData = new
+                    {
+                        command = "PerformROR",
+                        pointCloudID = selectedSceneNode.ID,
+                        radius = radius,
+                        minNeighborsInRadius = minNeighbors,
+                        deletePoints = false
+                    };
+                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                    HeliumNative.He_ManagedToNative(command);
+
+                    ShowNotification($"Applied ROR (R={radius}, MinN={minNeighbors})");
+                };
+
+                _rorDialog.Closed += (s, args) => { _rorDialog = null; };
+                _rorDialog.Show();
+            }
+            else
+            {
+                ShowNotification("No Point Cloud Selected.");
             }
         }
 
@@ -608,21 +686,22 @@ namespace Neon
         {
             if (exclusive)
             {
-                SceneItems.ToList().ForEach(sceneItem => {
+                SceneItems.ToList().ForEach(sceneItem =>
+                {
                     if (null != sceneItem)
                     {
-                        sceneItem.IsVisible = false;
+                        sceneItem.IsVisible = !sceneItem.IsVisible;
                     }
                 });
             }
 
-            if(order < SceneItems.ToList().Count)
+            if (order < SceneItems.ToList().Count)
             {
                 SceneNode sceneNode = SceneItems.ToList().ElementAt(order);
                 if (sceneNode != null)
                 {
-                    sceneNode.IsVisible = true;
-                    if(exclusive)
+                    sceneNode.IsVisible = !sceneNode.IsVisible;
+                    if (exclusive)
                     {
                         selectedSceneNode = sceneNode;
                         selectedPointCloudID = sceneNode.ID;
@@ -660,20 +739,20 @@ namespace Neon
 
         #region Logging
         private sealed class LogItem
+    {
+        public string Text { get; }
+        public Brush Foreground { get; }
+
+        public LogItem(string text, Brush foreground)
         {
-            public string Text { get; }
-            public Brush Foreground { get; }
+            Text = text;
+            Foreground = foreground;
+        }
 
-            public LogItem(string text, Brush foreground)
-            {
-                Text = text;
-                Foreground = foreground;
-            }
-
-            public override string ToString()
-            {
-                return Text;
-            }
+        public override string ToString()
+        {
+            return Text;
+        }
         }
 
         private void OnHeliumLog(NeonLogger.LogLevel level, string? key, string value)

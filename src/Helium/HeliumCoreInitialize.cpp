@@ -516,11 +516,11 @@ void HeliumCore::InitializeScene()
 				j["Parameters"]["Order"] = (int)event.keyCode - (int)KeyCode::F1;
 				if (event.IsShiftPressed())
 				{
-					j["Parameters"]["Exclusive"] = false;
+					j["Parameters"]["Exclusive"] = true;
 				}
 				else
 				{
-					j["Parameters"]["Exclusive"] = true;
+					j["Parameters"]["Exclusive"] = false;
 				}
 
 				Helium.NativeToManaged(j.dump().c_str());

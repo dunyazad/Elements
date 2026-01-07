@@ -476,6 +476,139 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 			InfoLog("", "[SOR] Found 0 outliers (Clean).");
 		}
 	}
+
+	{
+		VD::Clear("SOR");
+
+		const auto& positions = currentPointCloud->GetPositions();
+		size_t numberOfPoints = currentPointCloud->Size();
+		for (size_t i = 0; i < numberOfPoints; ++i)
+		{
+			if (outlierMarking[i] == 1)
+			{
+				VD::AddSphere("SOR", positions[i], Eigen::Vector3f(1, 0, 0), 0.05f, Eigen::Vector4f(1, 0, 0, 1));
+			}
+			else
+			{
+				VD::AddSphere("SOR", positions[i], Eigen::Vector3f(0, 1, 0), 0.05f, Eigen::Vector4f(0, 1, 0, 0.7f));
+			}
+		}
+	}
+}
+
+void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints)
+{
+	auto currentPointCloud = GetPointCloud(pointCloudID);
+	if (nullptr == currentPointCloud)
+	{
+		ErrorLog("", "PointCloud with ID %d not found.", pointCloudID);
+		return;
+	}
+
+	auto sparseGrid = GetSparseGrid(pointCloudID);
+	if (nullptr == sparseGrid)
+	{
+		BuildSpatialPartitionings(pointCloudID);
+		sparseGrid = GetSparseGrid(pointCloudID);
+	}
+
+	TS(ROR_Filter);
+
+	size_t numberOfPoints = currentPointCloud->Size();
+	if (numberOfPoints == 0) return;
+
+	std::vector<uint8_t> outlierMarking(numberOfPoints, 0);
+	std::vector<int> indices(numberOfPoints);
+	std::iota(indices.begin(), indices.end(), 0);
+
+	std::atomic<int> totalOutlierCount = 0;
+
+	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
+		{
+			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
+
+			std::vector<unsigned int> neighbors;
+
+			// SparseGrid에 반경 검색 기능이 있다고 가정 (없다면 구현 필요)
+			// 보통 자기 자신을 포함하여 반환하므로 결과 개수가 1 이상이어야 함
+			sparseGrid->GetPointsWithinRadius(
+				currentPointCloud->GetPositions(),
+				p,
+				radius,
+				neighbors
+			);
+
+			// neighbor 개수가 최소 기준보다 적으면 Outlier (자기 자신 포함 여부에 따라 조정 필요할 수 있음)
+			// 여기서는 neighbors.size()가 minNeighbors보다 작으면 제거 대상으로 판단
+			if (neighbors.size() < (size_t)minNeighborsInRadius)
+			{
+				outlierMarking[i] = 1;
+				totalOutlierCount++;
+			}
+		});
+
+	currentPointCloud->SetAttribute<std::vector<uint8_t>>("ROR_OutlierMarking", outlierMarking);
+
+	InfoLog("", "[ROR] Radius: %.4f, MinNeighbors: %d, Found Outliers: %d", radius, minNeighborsInRadius, totalOutlierCount.load());
+
+	TE(ROR_Filter);
+
+	if (deletePoints)
+	{
+		int outlierCount = totalOutlierCount.load();
+		if (outlierCount > 0)
+		{
+			size_t newSize = numberOfPoints - outlierCount;
+
+			std::vector<Eigen::Vector3f> newPositions;
+			std::vector<Eigen::Vector3f> newNormals;
+			std::vector<Eigen::Vector4f> newColors;
+
+			newPositions.reserve(newSize);
+			newNormals.reserve(newSize);
+			newColors.reserve(newSize);
+
+			for (size_t i = 0; i < numberOfPoints; ++i)
+			{
+				if (outlierMarking[i] == 0) // Keep Inliers
+				{
+					newPositions.push_back(currentPointCloud->GetPosition(i));
+					newNormals.push_back(currentPointCloud->GetNormal(i));
+					newColors.push_back(currentPointCloud->GetColor(i));
+				}
+			}
+
+			currentPointCloud->SetPositions(newPositions);
+			currentPointCloud->SetNormals(newNormals);
+			currentPointCloud->SetColors(newColors);
+
+			BuildSpatialPartitionings(pointCloudID);
+
+			InfoLog("", "[ROR] Removed %d outliers. Remaining: %zu", outlierCount, newSize);
+		}
+		else
+		{
+			InfoLog("", "[ROR] Found 0 outliers (Clean).");
+		}
+	}
+
+	{
+		VD::Clear("ROR");
+
+		const auto& positions = currentPointCloud->GetPositions();
+		size_t numberOfPoints = currentPointCloud->Size();
+		for (size_t i = 0; i < numberOfPoints; ++i)
+		{
+			if (outlierMarking[i] == 1)
+			{
+				VD::AddSphere("ROR", positions[i], Eigen::Vector3f(1, 0, 0), 0.05f, Eigen::Vector4f(1, 0, 0, 1));
+			}
+			else
+			{
+				VD::AddSphere("ROR", positions[i], Eigen::Vector3f(0, 1, 0), 0.05f, Eigen::Vector4f(0, 1, 0, 0.7f));
+			}
+		}
+	}
 }
 
 void HeliumCore::ProcessManagedToNativeEvents()
@@ -650,23 +783,21 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 								bool deletePoints = j.value("deletePoints", false);
 
 								PerformSOR(pointCloudID, kNeighbors, stdDevMulThresh, deletePoints);
-
-								VD::Clear("SOR");
-
-								auto outlierMarking = pointCloud->GetAttribute<std::vector<uint8_t>>("SOR_OutlierMarking");
-								const auto& positions = pointCloud->GetPositions();
-								size_t numberOfPoints = pointCloud->Size();
-								for (size_t i = 0; i < numberOfPoints; ++i)
-								{
-									if (outlierMarking[i] == 1)
-									{
-										VD::AddSphere("SOR", positions[i], Eigen::Vector3f(1, 0, 0), 0.055f, Eigen::Vector4f(1, 0, 0, 1));
-									}
-									else
-									{
-										VD::AddSphere("SOR", positions[i], Eigen::Vector3f(0, 1, 0), 0.03f, Eigen::Vector4f(0, 1, 0, 0.7f));
-									}
-								}
+							}
+						}
+					}
+					else if(cmd == "PerformROR")
+					{
+						if (j.contains("pointCloudID"))
+						{
+							int pointCloudID = j["pointCloudID"];
+							auto pointCloud = GetPointCloud(pointCloudID);
+							if (nullptr != pointCloud)
+							{
+								float radius = j.value("radius", 0.5f);
+								int minNeighborsInRadius = j.value("minNeighborsInRadius", 5);
+								bool deletePoints = j.value("deletePoints", false);
+								PerformROR(pointCloudID, radius, minNeighborsInRadius, deletePoints);
 							}
 						}
 					}
