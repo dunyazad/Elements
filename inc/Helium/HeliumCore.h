@@ -179,8 +179,6 @@ public:
 	void PerformClustering(int pointCloudID, float searchRadius, float angleThreshold);
     void PerformSOR(int pointCloudID, float searchRadius);
 
-    bool ExecuteCommand(const char* command);
-
     void ProcessManagedToNativeEvents();
     void EnqueueManagedToNativeEvent(std::function<void()> event);
     void OnManagedToNative(const char* jsonString);

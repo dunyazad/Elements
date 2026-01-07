@@ -13,10 +13,6 @@
 
 using VD = VisualDebugging;
 
-extern void OnPointCloudCreated(int pointCloudID, const std::string& fileName, const std::string& name);
-extern void OnPointCloudDeleted(int pointCloudID);
-extern void OnPointSelected(int pointCloudID, int pointIndex);
-
 int PointCloud::nextID = -1;
 
 PointCloud::PointCloud()
@@ -27,8 +23,6 @@ PointCloud::PointCloud()
 PointCloud::~PointCloud()
 {
 	Helium.RemoveEntity(entity);
-
-	OnPointCloudDeleted(GetID());
 }
 
 bool PointCloud::LoadFromPLY(const std::string& fileName, const std::string& name, OnPLYLoadedCallback callback)
@@ -159,7 +153,13 @@ void PointCloud::SetupEntity(ProcessedInstanceData& data)
 				Helium.EnqueueEvent<CustomEvent>(customEvent);
 			}
 
-			OnPointSelected(GetID(), pickedIndex);
+			json j;
+			j["EventType"] = "PointSelected";
+			j["Parameters"]["PointCloudID"] = GetID();
+			j["Parameters"]["PickedIndex"] = pickedIndex;
+			j["Parameters"]["IsCtrlPressed"] = event.IsCtrlPressed();
+
+			Helium.NativeToManaged(j.dump().c_str());
 		}
 		});
 
@@ -186,14 +186,6 @@ void PointCloud::SetupEntity(ProcessedInstanceData& data)
 	this->normals = std::move(data.normals);
 	this->colors = std::move(data.colors);
 	this->aabb = data.aabb;
-
-	json j;
-	j["EventType"] = "PointCloudCreated";
-	j["Parameters"]["PointCloudID"] = id;
-	j["Parameters"]["FileName"] = fileName;
-	j["Parameters"]["Name"] = name;
-
-	Helium.NativeToManaged(j.dump().c_str());
 }
 
 void PointCloud::UpdateLoading()
@@ -216,6 +208,14 @@ void PointCloud::UpdateLoading()
 			if (onPLYLoadedCallback)
 			{
 				onPLYLoadedCallback(this);
+
+				json j;
+				j["EventType"] = "PointCloudLoaded";
+				j["Parameters"]["PointCloudID"] = id;
+				j["Parameters"]["FileName"] = fileName;
+				j["Parameters"]["Name"] = name;
+
+				Helium.NativeToManaged(j.dump().c_str());
 			}
 		}
 	}
@@ -234,6 +234,14 @@ void PointCloud::UpdateLoading()
 			{
 				onClonedCallback(this);
 			}
+
+			json j;
+			j["EventType"] = "PointCloudCloned";
+			j["Parameters"]["PointCloudID"] = id;
+			j["Parameters"]["FileName"] = fileName;
+			j["Parameters"]["Name"] = name;
+
+			Helium.NativeToManaged(j.dump().c_str());
 		}
 	}
 }

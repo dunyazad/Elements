@@ -125,58 +125,58 @@ void HeliumCore::ClonePointCloud(int pointCloudID)
 
 void HeliumCore::DeletePointCloud(int pointCloudID)
 {
-	if (pointClouds.find(pointCloudID) != pointClouds.end())
+	auto pointCloud = GetPointCloud(pointCloudID);
+	if (pointCloud == nullptr)
 	{
+		ErrorLog("", "PointCloud with ID %d not found.", pointCloudID);
+		return;
+	}
+
+	{
+		auto it = sparseGrids.find(pointCloudID);
+		if (it != sparseGrids.end())
 		{
-			auto it = sparseGrids.find(pointCloudID);
-			if (it != sparseGrids.end())
+			SparseGrid* sparseGrid = it->second;
+			if (sparseGrid)
 			{
-				SparseGrid* sparseGrid = it->second;
-				if (sparseGrid)
-				{
-					delete sparseGrid;
-					sparseGrid = nullptr;
-				}
-				sparseGrids.erase(it);
+				delete sparseGrid;
+				sparseGrid = nullptr;
 			}
-		}
-		{
-			auto it = sparseDataBlocks.find(pointCloudID);
-			if (it != sparseDataBlocks.end())
-			{
-				SparseDataBlock* sparseDataBlock = it->second;
-				if (sparseDataBlock)
-				{
-					delete sparseDataBlock;
-					sparseDataBlock = nullptr;
-				}
-				sparseDataBlocks.erase(it);
-			}
-		}
-
-		std::string name = "";
-
-		PointCloud* pointCloud = pointClouds[pointCloudID];
-		if (nullptr != pointCloud)
-		{
-			name = pointCloud->GetName();
-
-			delete pointCloud;
-			pointCloud = nullptr;
-
-			json j;
-			j["EventType"] = "PointCloudDeleted";
-			j["Parameters"]["PointCloudID"] = pointCloudID;
-			j["Parameters"]["Name"] = name;
-			Helium.NativeToManaged(j.dump().c_str());
-		}
-
-		pointClouds.erase(pointCloudID);
-		if (selectedPointCloud && selectedPointCloud->GetID() == pointCloudID)
-		{
-			selectedPointCloud = nullptr;
+			sparseGrids.erase(it);
 		}
 	}
+	{
+		auto it = sparseDataBlocks.find(pointCloudID);
+		if (it != sparseDataBlocks.end())
+		{
+			SparseDataBlock* sparseDataBlock = it->second;
+			if (sparseDataBlock)
+			{
+				delete sparseDataBlock;
+				sparseDataBlock = nullptr;
+			}
+			sparseDataBlocks.erase(it);
+		}
+	}
+
+	std::string name = "";
+
+	name = pointCloud->GetName();
+
+	delete pointCloud;
+	pointCloud = nullptr;
+
+	pointClouds.erase(pointCloudID);
+	if (selectedPointCloud && selectedPointCloud->GetID() == pointCloudID)
+	{
+		selectedPointCloud = nullptr;
+	}
+
+	json j;
+	j["EventType"] = "PointCloudDeleted";
+	j["Parameters"]["PointCloudID"] = pointCloudID;
+	j["Parameters"]["Name"] = name;
+	Helium.NativeToManaged(j.dump().c_str());
 }
 
 void HeliumCore::PerformClustering(int pointCloudID, float searchRadius, float angleThreshold)
@@ -367,218 +367,6 @@ void HeliumCore::PerformSOR(int pointCloudID, float searchRadius)
 	TE(SOR_Filter);
 }
 
-bool HeliumCore::ExecuteCommand(const char* command)
-{
-	//if (command == nullptr)
-	//{
-	//	ErrorLog("", "ExecuteCommand: Command string is null");
-	//	return false;
-	//}
-
-	////InfoLog("", "ExecuteCommand: %s", command);
-
-	//try
-	//{
-	//	auto j = nlohmann::json::parse(command);
-
-	//	if (j.contains("command"))
-	//	{
-	//		std::string cmd = j["command"];
-
-	//		if (cmd == "LoadPointCloudFromPLY")
-	//		{
-	//			if (j.contains("fileNames") && j["fileNames"].is_array())
-	//			{
-	//				for (const auto& fileName : j["fileNames"])
-	//				{
-	//					std::string path = fileName.get<std::string>();
-	//					std::filesystem::path fsPath(path);
-	//					auto name = fsPath.filename();
-	//					LoadPointCloudFromPLY(path, name.string());
-	//				}
-	//			}
-	//		}
-	//		else if (cmd == "SelectPointCloud")
-	//		{
-	//			if (j.contains("pointCloudID"))
-	//			{
-	//				int pointCloudID = j["pointCloudID"];
-	//				SelectPointCloud(pointCloudID);
-	//			}
-	//		}
-	//		else if (cmd == "SetPointCloudVisibility")
-	//		{
-	//			if (j.contains("pointCloudID") && j.contains("isVisible"))
-	//			{
-	//				int pointCloudID = j["pointCloudID"];
-	//				bool isVisible = j["isVisible"];
-	//				SetPointCloudVisibility(pointCloudID, isVisible);
-	//			}
-	//		}
-	//		else if (cmd == "ClonePointCloud")
-	//		{
-	//			if (j.contains("pointCloudID"))
-	//			{
-	//				int pointCloudID = j["pointCloudID"];
-	//				ClonePointCloud(pointCloudID);
-	//			}
-	//		}
-	//		else if (cmd == "DeletePointCloud")
-	//		{
-	//			if (j.contains("pointCloudID"))
-	//			{
-	//				int pointCloudID = j["pointCloudID"];
-	//				DeletePointCloud(pointCloudID);
-	//			}
-	//		}
-	//		else if (cmd == "ShowSparseGrid")
-	//		{
-	//			if (j.contains("pointCloudID"))
-	//			{
-	//				int pointCloudID = j["pointCloudID"];
-	//				auto sparseGrid = GetSparseGrid(pointCloudID);
-	//				if (sparseGrid)
-	//				{
-	//					sparseGrid->Visualize();
-	//				}
-	//			}
-	//		}
-	//		else if (cmd == "ShowSparseDataBlocks")
-	//		{
-	//			if (j.contains("pointCloudID"))
-	//			{
-	//				int pointCloudID = j["pointCloudID"];
-	//				auto sparseDataBlock = GetSparseDataBlock(pointCloudID);
-	//				if (sparseDataBlock)
-	//				{
-	//					sparseDataBlock->Visualize();
-	//				}
-	//			}
-	//		}
-	//		else if (cmd == "PerformClustering")
-	//		{
-	//			if (nullptr != selectedPointCloud)
-	//			{
-	//				if (j.contains("pointCloudID"))
-	//				{
-	//					int pointCloudID = j["pointCloudID"];
-	//					if (pointCloudID == selectedPointCloud->GetID())
-	//					{
-	//						float searchRadius = j.value("searchRadius", 0.15f);
-	//						float angleThreshold = j.value("angleThreshold", 0.9f);
-
-	//						PerformClustering(pointCloudID, searchRadius, angleThreshold);
-	//					}
-	//				}
-	//			}
-	//		}
-	//		else if (cmd == "ToggleGrid")
-	//		{
-	//			auto entity = GetEntityByName("Grid");
-	//			auto renderable = registry.try_get<Renderable>(entity);
-	//			if (renderable)
-	//			{
-	//				renderable->SetVisible(!renderable->IsVisible());
-	//			}
-	//		}
-	//		else if (cmd == "ToggleAxisGizmo")
-	//		{
-	//			if (immediateModeRenderSystem)
-	//			{
-	//				immediateModeRenderSystem->ToggleAxisGizmo();
-	//			}
-	//		}
-	//		else if (cmd == "ToggleCenterGizmo")
-	//		{
-	//			if (immediateModeRenderSystem)
-	//			{
-	//				immediateModeRenderSystem->ToggleCenterGizmo();
-	//			}
-	//		}
-	//		else if (cmd == "ClearAllVisualDebugging")
-	//		{
-	//			VD::ClearAll();
-	//		}
-	//		else if (cmd == "ShowPointNormal")
-	//		{
-	//			if (j.contains("pointCloudID"))
-	//			{
-	//				int pointCloudID = j["pointCloudID"];
-	//				int pointIndex = j.value("pointIndex", -1);
-	//				if (-1 != pointIndex)
-	//				{
-	//					auto pointCloud = GetPointCloud(pointCloudID);
-	//					if (nullptr != pointCloud)
-	//					{
-	//						const auto& positions = pointCloud->GetPositions();
-	//						const auto& normals = pointCloud->GetNormals();
-	//						VD::Clear("PointNormal");
-	//						VD::AddArrow("PointNormal", positions[pointIndex], normals[pointIndex], 1.0f, Eigen::Vector4f(1, 0, 0, 1));
-
-	//						/*size_t numberOfPoints = pointCloud->Size();
-	//						if (pointIndex >= 0 && pointIndex < (int)numberOfPoints)
-	//						{
-	//							VD::Clear("PointNormal_SelectedPoint");
-	//							Eigen::Vector3f p0 = positions[pointIndex];
-	//							Eigen::Vector3f p1 = positions[pointIndex] + normals[pointIndex] * 0.1f;
-	//							VD::AddLine("PointNormal_SelectedPoint", p0, p1, Eigen::Vector4f(1, 0, 0, 1));
-	//						}*/
-	//					}
-	//				}
-	//			}
-	//		}
-	//		else if (cmd == "ShowPointCloudNormals")
-	//		{
-	//			if (j.contains("pointCloudID"))
-	//			{
-	//				int pointCloudID = j["pointCloudID"];
-	//				auto pointCloud = GetPointCloud(pointCloudID);
-	//				if (nullptr != pointCloud)
-	//				{
-	//					VD::Clear("PointNormals");
-
-	//					size_t numberOfPoints = pointCloud->Size();
-	//					for (size_t i = 0; i < numberOfPoints; i++)
-	//					{
-	//						Eigen::Vector3f p0 = pointCloud->GetPosition(i);
-	//						Eigen::Vector3f p1 = p0 + pointCloud->GetNormal(i) * 0.1f;
-	//						VD::AddLine("PointNormals", p0, p1, Eigen::Vector4f(1, 0, 0, 1));
-	//					}
-	//				}
-	//			}
-	//		}
-	//		else if (cmd == "ShowSOR")
-	//		{
-	//			if (j.contains("pointCloudID"))
-	//			{
-	//				int pointCloudID = j["pointCloudID"];
-	//				auto pointCloud = GetPointCloud(pointCloudID);
-	//				if (nullptr != pointCloud)
-	//				{
-	//					float searchRadius = j.value("searchRadius", 0.1f);
-	//					PerformSOR(pointCloudID, searchRadius);
-
-	//					VD::Clear("SOR");
-
-	//				}
-	//			}
-	//		}
-	//	}
-	//}
-	//catch (const nlohmann::json::parse_error& e)
-	//{
-	//	ErrorLog("", "ExecuteCommand: JSON Parse Error - %s", e.what());
-	//	return false;
-	//}
-	//catch (const std::exception& e)
-	//{
-	//	ErrorLog("", "ExecuteCommand: Error - %s", e.what());
-	//	return false;
-	//}
-
-	return true;
-}
-
 void HeliumCore::ProcessManagedToNativeEvents()
 {
 	std::lock_guard<std::mutex> lock(managedToNativeEventQueueMutex);
@@ -593,13 +381,11 @@ void HeliumCore::EnqueueManagedToNativeEvent(std::function<void()> event)
 {
 	try
 	{
-		// Mutex 잠금 시도 자체가 실패할 경우(메모리 오염 등)를 대비
 		std::lock_guard<std::mutex> lock(managedToNativeEventQueueMutex);
 		managedToNativeEventQueue.push_back(event);
 	}
 	catch (const std::system_error& e)
 	{
-		// Mutex 관련 치명적 오류 (이미 소멸되었거나 초기화 실패)
 		ErrorLog("", "EnqueueCommand System Error: %s", e.what());
 	}
 	catch (const std::exception& e)

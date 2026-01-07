@@ -58,50 +58,6 @@ void He_ProcessMouseWheel(float xoffset, float yoffset)
 	}
 }
 
-static PointCloudCreatedCallback g_PointCloudCreatedCallback = nullptr;
-
-void He_SetPointCloudCreatedCallback(PointCloudCreatedCallback callback)
-{
-	g_PointCloudCreatedCallback = callback;
-}
-
-void OnPointCloudCreated(int pointCloudID, const std::string& fileName, const std::string& name)
-{
-	if (g_PointCloudCreatedCallback)
-	{
-		g_PointCloudCreatedCallback(pointCloudID, fileName.c_str(), name.c_str());
-	}
-}
-
-static PointCloudDeletedCallback g_PointCloudDeletedCallback = nullptr;
-
-void He_SetPointCloudDeletedCallback(PointCloudDeletedCallback callback)
-{
-	g_PointCloudDeletedCallback = callback;
-}
-
-void OnPointCloudDeleted(int pointCloudID)
-{
-	if (g_PointCloudDeletedCallback)
-	{
-		g_PointCloudDeletedCallback(pointCloudID);
-	}
-}
-
-static PointSelectedDelegate g_PointSelectedCallback = nullptr;
-void He_SetPointSelectedCallback(PointSelectedDelegate callback)
-{
-	g_PointSelectedCallback = callback;
-}
-
-void OnPointSelected(int pointCloudID, int index)
-{
-	if (g_PointSelectedCallback)
-	{
-		g_PointSelectedCallback(pointCloudID, index);
-	}
-}
-
 static ManagedToNativeCallback g_ManagedToNativeCallback = nullptr;
 void He_SetManagedToNativeCallback(ManagedToNativeCallback callback)
 {

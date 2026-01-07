@@ -13,6 +13,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Xml.Linq;
 using static HeliumNative;
 
 namespace Neon
@@ -87,8 +88,6 @@ namespace Neon
         private HeliumLogDelegate _logDelegate;
         private bool _autoScroll = true;
 
-        private HeliumNative.PointSelectedDelegate _pointSelectedDelegate;
-
         private HeliumNative.NativeToManagedDelegate _nativeToManagedDelegate;
         private HeliumNative.ManagedToNativeDelegate _managedToNativeDelegate;
 
@@ -137,9 +136,6 @@ namespace Neon
             _logDelegate = OnHeliumLog;
             HeliumNative.He_SetLogCallback(_logDelegate);
             //NeonLogger.Log("system", "Application started");
-
-            _pointSelectedDelegate = OnPointSelected;
-            HeliumNative.He_SetPointSelectedCallback(_pointSelectedDelegate);
 
             _nativeToManagedDelegate = OnNativeToManagedMessage;
             HeliumNative.He_SetNativeToManagedCallback(_nativeToManagedDelegate);
@@ -285,15 +281,6 @@ namespace Neon
             // 컨트롤 영역 안에 있는지 확인
             return (pos.X >= 0 && pos.X < HeliumHostControl.ActualWidth &&
                     pos.Y >= 0 && pos.Y < HeliumHostControl.ActualHeight);
-        }
-
-        private void OnPointSelected(int pointCloudID, int pointIndex)
-        {
-            selectedPointCloudID = pointCloudID;
-            selectedPointIndex = pointIndex;
-
-            string message = $"Point Selected: Cloud ID = {pointCloudID}, Point Index = {pointIndex}";
-            ShowNotification(message);
         }
         #endregion
 
@@ -709,7 +696,7 @@ namespace Neon
                         string eventType = eventElement.GetString() ?? string.Empty;
                         switch (eventType)
                         {
-                            case "PointCloudCreated":
+                            case "PointCloudLoaded":
                                 {
                                     root.TryGetProperty("Parameters", out JsonElement paramsElement);
                                     root = paramsElement;
@@ -717,19 +704,26 @@ namespace Neon
                                     int pointCloudID = root.GetProperty("PointCloudID").GetInt32();
                                     string fileName = root.GetProperty("FileName").GetString() ?? string.Empty;
                                     string name = root.GetProperty("Name").GetString() ?? string.Empty;
-                                    OnPointCloudCreated(pointCloudID, fileName, name);
-
-                                    ShowNotification($"Point Cloud Created: {name} (ID: {pointCloudID})");
+                                    OnPointCloudLoaded(pointCloudID, fileName, name);
                                     break;
                                 }
-                                case "PointCloudDeleted":
+                            case "PointCloudCloned":
+                                {
+                                    root.TryGetProperty("Parameters", out JsonElement paramsElement);
+                                    root = paramsElement;
+
+                                    int pointCloudID = root.GetProperty("PointCloudID").GetInt32();
+                                    string fileName = root.GetProperty("FileName").GetString() ?? string.Empty;
+                                    string name = root.GetProperty("Name").GetString() ?? string.Empty;
+                                    OnPointCloudCloned(pointCloudID, fileName, name);
+                                    break;
+                                }
+                            case "PointCloudDeleted":
                                 {
                                     root.TryGetProperty("Parameters", out JsonElement paramsElement);
                                     root = paramsElement;
                                     int pointCloudID = root.GetProperty("PointCloudID").GetInt32();
                                     OnPointCloudDeleted(pointCloudID);
-
-                                    ShowNotification($"Point Cloud Deleted: ID {pointCloudID}");
                                     break;
                                 }
                             default:
@@ -750,19 +744,17 @@ namespace Neon
             NeonLogger.Log("ManagedToNative", jsonString);
         }
 
-        private void OnPointCloudCreated(int pointCloudID, string fineName, string name)
+        private void OnPointCloudLoaded(int pointCloudID, string fileName, string name)
         {
-            // 네이티브 스레드에서 호출될 수 있으므로 Dispatcher 사용
-            Application.Current.Dispatcher.Invoke(() =>
+            Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 var node = new SceneNode
                 {
                     ID = pointCloudID,
                     Name = name,
-                    FullPath = fineName
+                    FullPath = fileName
                 };
 
-                // 중복 방지 (선택 사항)
                 bool exists = false;
                 foreach (var item in SceneItems)
                 {
@@ -776,15 +768,51 @@ namespace Neon
                 if (!exists)
                 {
                     SceneItems.Add(node);
-                    //NeonLogger.Log("System", $"PointCloud Added via Callback: {name} (ID: {id})");
                 }
                 node.IsSelected = true;
+
+                selectedPointCloudID = pointCloudID;
+
+                ShowNotification($"Point Cloud Loaded: {name} (ID: {pointCloudID})");
+            });
+        }
+
+        private void OnPointCloudCloned(int pointCloudID, string fileName, string name)
+        {
+            Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                var node = new SceneNode
+                {
+                    ID = pointCloudID,
+                    Name = name,
+                    FullPath = fileName
+                };
+
+                bool exists = false;
+                foreach (var item in SceneItems)
+                {
+                    if (item.ID == pointCloudID)
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+
+                if (!exists)
+                {
+                    SceneItems.Add(node);
+                }
+                node.IsSelected = true;
+
+                selectedPointCloudID = pointCloudID;
+
+                ShowNotification($"Point Cloud Loaded: {name} (ID: {pointCloudID})");
             });
         }
 
         private void OnPointCloudDeleted(int pointCloudID)
         {
-            Application.Current.Dispatcher.Invoke(() =>
+            Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 SceneNode? nodeToRemove = null;
                 foreach (var item in SceneItems)
@@ -797,13 +825,16 @@ namespace Neon
                 }
                 if (nodeToRemove != null)
                 {
+                    string name = nodeToRemove.Name;
                     if (selectedSceneNode == nodeToRemove)
                     {
                         selectedSceneNode = null!;
+                        name = nodeToRemove.Name;
                     }
 
                     SceneItems.Remove(nodeToRemove);
-                    //NeonLogger.Log("System", $"PointCloud Removed via Callback: {nodeToRemove.Name} (ID: {ID})");
+
+                    ShowNotification($"Point Cloud Deleted: {name} (ID: {pointCloudID})");
                 }
             });
         }

@@ -34,12 +34,6 @@ internal static class HeliumNative
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void He_ProcessMouseWheel(float xoffset, float yoffset);
 
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    public delegate void PointSelectedDelegate(int pointCloudID, int index);
-
-    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)] 
-    public static extern void He_SetPointSelectedCallback(PointSelectedDelegate callback);
-
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void He_ManagedToNative([MarshalAs(UnmanagedType.LPStr)] string command);
 

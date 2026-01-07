@@ -28,15 +28,6 @@ extern "C"
 
     HELIUM_API void He_ProcessMouseWheel(float xoffset, float yoffset);
 
-    typedef void(*PointCloudCreatedCallback)(int pointCloudID, const char* fileName, const char* name);
-    HELIUM_API void He_SetPointCloudCreatedCallback(PointCloudCreatedCallback callback);
-
-    typedef void(*PointCloudDeletedCallback)(int pointCloudID);
-    HELIUM_API void He_SetPointCloudDeletedCallback(PointCloudDeletedCallback callback);
-
-    typedef void(*PointSelectedDelegate)(int pointCloudID, int index);
-    HELIUM_API void He_SetPointSelectedCallback(PointSelectedDelegate callback);
-
     typedef void(*ManagedToNativeCallback)(const char* jsonString); 
     HELIUM_API void He_SetManagedToNativeCallback(ManagedToNativeCallback callback);
 
