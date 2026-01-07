@@ -18,7 +18,6 @@ public:
 	float weight = 0.0f;
 	Eigen::Vector3f normal = Eigen::Vector3f::Zero();
 	Eigen::Vector3f color = Eigen::Vector3f::Zero();
-	int clusterId = -1;
 	float divergence = 0.0f;
 };
 
@@ -47,7 +46,6 @@ public:
 	void FromPointsData(const std::vector<Eigen::Vector3f>& points,
 		const std::vector<Eigen::Vector3f>& normals,
 		const std::vector<Eigen::Vector3f>& colors,
-		const std::vector<int>& clusterIds,
 		const Eigen::Vector3f& aabbMin);
 
 	void Visualize();

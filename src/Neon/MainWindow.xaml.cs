@@ -89,13 +89,16 @@ namespace Neon
 
         private HeliumNative.PointCloudCreatedDelegate _pointCloudCreatedDelegate;
         private HeliumNative.PointCloudDeletedDelegate _pointCloudDeletedDelegate;
+        private HeliumNative.PointSelectedDelegate _pointSelectedDelegate;
 
         private readonly Dictionary<(NeonLogger.LogLevel level, string key), int> _keyToIndex = new();
 
         private double _lastLogHeight = 224.0;
         private const double MinLogHeight = 30.0;
 
-        private SceneNode? selectedSceneNode = null; // null 허용
+        private SceneNode? selectedSceneNode = null;
+        private int selectedPointCloudID = -1;
+        private int selectedPointIndex = -1;
 
         public ObservableCollection<NotificationItem> Notifications { get; set; }
         = new ObservableCollection<NotificationItem>();
@@ -139,6 +142,9 @@ namespace Neon
 
             _pointCloudDeletedDelegate = TreeView_OnPointCloudDeleted;
             HeliumNative.He_SetPointCloudDeletedCallback(_pointCloudDeletedDelegate);
+
+            _pointSelectedDelegate = OnPointSelected;
+            HeliumNative.He_SetPointSelectedCallback(_pointSelectedDelegate);
 
             _uiStopwatch.Start();
             CompositionTarget.Rendering += OnUpdateUI;
@@ -279,6 +285,15 @@ namespace Neon
             return (pos.X >= 0 && pos.X < HeliumHostControl.ActualWidth &&
                     pos.Y >= 0 && pos.Y < HeliumHostControl.ActualHeight);
         }
+
+        private void OnPointSelected(int pointCloudID, int pointIndex)
+        {
+            selectedPointCloudID = pointCloudID;
+            selectedPointIndex = pointIndex;
+
+            string message = $"Point Selected: Cloud ID = {pointCloudID}, Point Index = {pointIndex}";
+            ShowNotification(message);
+        }
         #endregion
 
         #region TitleBar
@@ -341,13 +356,42 @@ namespace Neon
             Close();
         }
 
-        private void Menu_PointCloud_BuildSparseGrid_Click(object sender, RoutedEventArgs e)
+        private void Menu_Point_ShowPointNormal_Click(object sender, RoutedEventArgs e)
+        {
+            if(selectedSceneNode != null)
+            {
+                var commandData = new
+                {
+                    command = "ShowPointNormal",
+                    pointCloudID = selectedSceneNode.ID,
+                    pointIndex = selectedPointIndex
+                };
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ExecuteCommand(command);
+            }
+        }
+
+        private void Menu_Point_ShowPointNormalDeviation_Click(object sender, RoutedEventArgs e)
         {
             if (selectedSceneNode != null)
             {
                 var commandData = new
                 {
-                    command = "BuildSparseGrid",
+                    command = "ShowPointNormalDeviation",
+                    pointCloudID = selectedSceneNode.ID,
+                    pointIndex = selectedPointIndex
+                };
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ExecuteCommand(command);
+            }
+        }
+        private void Menu_PointCloud_ShowSparseGrid_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                var commandData = new
+                {
+                    command = "ShowSparseGrid",
                     pointCloudID = selectedSceneNode.ID
                 };
 
@@ -357,13 +401,13 @@ namespace Neon
             }
         }
 
-        private void Menu_PointCloud_BuildSparseDataBlocks_Click(object sender, RoutedEventArgs e)
+        private void Menu_PointCloud_ShowSparseDataBlocks_Click(object sender, RoutedEventArgs e)
         {
             if (selectedSceneNode != null)
             {
                 var commandData = new
                 {
-                    command = "BuildSparseDataBlocks",
+                    command = "ShowSparseDataBlocks",
                     pointCloudID = selectedSceneNode.ID
                 };
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
@@ -395,6 +439,20 @@ namespace Neon
                     pointCloudID = selectedSceneNode.ID,
                     searchRadius = 0.15f,
                     angleThreshold = 0.9f
+                };
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ExecuteCommand(command);
+            }
+        }
+
+        private void Menu_PointCloud_ShowNormals_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                var commandData = new
+                {
+                    command = "ShowPointCloudNormals",
+                    pointCloudID = selectedSceneNode.ID
                 };
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                 HeliumNative.He_ExecuteCommand(command);
@@ -454,14 +512,14 @@ namespace Neon
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
 
-        private void Treeview_OnPointCloudCreated(int ID, string fineName, string name)
+        private void Treeview_OnPointCloudCreated(int pointCloudID, string fineName, string name)
         {
             // 네이티브 스레드에서 호출될 수 있으므로 Dispatcher 사용
             Application.Current.Dispatcher.Invoke(() =>
             {
                 var node = new SceneNode
                 {
-                    ID = ID,
+                    ID = pointCloudID,
                     Name = name,
                     FullPath = fineName
                 };
@@ -470,7 +528,7 @@ namespace Neon
                 bool exists = false;
                 foreach (var item in SceneItems)
                 {
-                    if (item.ID == ID)
+                    if (item.ID == pointCloudID)
                     {
                         exists = true;
                         break;
@@ -486,14 +544,14 @@ namespace Neon
             });
         }
 
-        private void TreeView_OnPointCloudDeleted(int ID)
+        private void TreeView_OnPointCloudDeleted(int pointCloudID)
         {
             Application.Current.Dispatcher.Invoke(() =>
             {
                 SceneNode? nodeToRemove = null;
                 foreach (var item in SceneItems)
                 {
-                    if (item.ID == ID)
+                    if (item.ID == pointCloudID)
                     {
                         nodeToRemove = item;
                         break;
@@ -521,6 +579,8 @@ namespace Neon
                 HeliumNative.He_ExecuteCommand(command);
 
                 selectedSceneNode = sceneNode;
+
+                selectedPointIndex = sceneNode.ID;
             }
         }
 

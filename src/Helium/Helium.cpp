@@ -65,11 +65,11 @@ void He_SetPointCloudCreatedCallback(PointCloudCreatedCallback callback)
 	g_PointCloudCreatedCallback = callback;
 }
 
-void OnPointCloudCreated(int id, const std::string& fileName, const std::string& name)
+void OnPointCloudCreated(int pointCloudID, const std::string& fileName, const std::string& name)
 {
 	if (g_PointCloudCreatedCallback)
 	{
-		g_PointCloudCreatedCallback(id, fileName.c_str(), name.c_str());
+		g_PointCloudCreatedCallback(pointCloudID, fileName.c_str(), name.c_str());
 	}
 }
 
@@ -80,11 +80,25 @@ void He_SetPointCloudDeletedCallback(PointCloudDeletedCallback callback)
 	g_PointCloudDeletedCallback = callback;
 }
 
-void OnPointCloudDeleted(int id)
+void OnPointCloudDeleted(int pointCloudID)
 {
 	if (g_PointCloudDeletedCallback)
 	{
-		g_PointCloudDeletedCallback(id);
+		g_PointCloudDeletedCallback(pointCloudID);
+	}
+}
+
+static PointSelectedDelegate g_PointSelectedCallback = nullptr;
+void He_SetPointSelectedCallback(PointSelectedDelegate callback)
+{
+	g_PointSelectedCallback = callback;
+}
+
+void OnPointSelected(int pointCloudID, int index)
+{
+	if (g_PointSelectedCallback)
+	{
+		g_PointSelectedCallback(pointCloudID, index);
 	}
 }
 

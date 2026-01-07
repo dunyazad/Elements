@@ -168,17 +168,35 @@ public:
     void Log(HeliumLogLevel level, const char* key, const char* fmt, ...);
 
 	int LoadPointCloudFromPLY(const std::string& filename, const std::string& name);
-    void BuildSpatialPartitionings(int ID);
-    bool SelectPointCloud(int ID);
-	PointCloud* GetPointCloud(int ID);
+    void BuildSpatialPartitionings(int pointCloudID);
+    bool SelectPointCloud(int pointCloudID);
+	PointCloud* GetPointCloud(int pointCloudID);
     PointCloud* GetSelectedPointCloud();
-    void SetPointCloudVisibility(int ID, bool visible);
-    void ClonePointCloud(int ID);
-    void DeletePointCloud(int ID);
+    void SetPointCloudVisibility(int pointCloudID, bool visible);
+    void ClonePointCloud(int pointCloudID);
+    void DeletePointCloud(int pointCloudID);
 
-	void PerformClustering(int ID, float searchRadius, float angleThreshold);
+	void PerformClustering(int pointCloudID, float searchRadius, float angleThreshold);
 
     bool ExecuteCommand(const char* command);
+
+    inline SparseGrid* GetSparseGrid(int pointCloudID)
+    {
+        if (sparseGrids.find(pointCloudID) != sparseGrids.end())
+        {
+            return sparseGrids[pointCloudID];
+        }
+        return nullptr;
+	}
+
+    inline SparseDataBlock* GetSparseDataBlock(int pointCloudID)
+    {
+        if (sparseDataBlocks.find(pointCloudID) != sparseDataBlocks.end())
+        {
+            return sparseDataBlocks[pointCloudID];
+        }
+        return nullptr;
+	}
 
 private:
     HeliumCore();
@@ -219,6 +237,7 @@ private:
 	PointCloud* selectedPointCloud = nullptr;
 
     const float voxelSize = 0.3f;
+    const float cellSize = 0.3f;
 	std::unordered_map<int, SparseGrid*> sparseGrids;
 	std::unordered_map<int, SparseDataBlock*> sparseDataBlocks;
 };

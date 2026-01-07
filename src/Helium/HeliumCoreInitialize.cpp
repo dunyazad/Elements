@@ -459,8 +459,8 @@ void HeliumCore::InitializeScene()
 
 		GeometryBuilder::BuildGrid(
 			renderable,
-			500.0f, // Size
-			50,    // Divisions
+			500.0f,
+			50,
 			Eigen::Vector4f(0.5f, 0.5f, 0.5f, 1.0f)
 		);
 
@@ -488,11 +488,11 @@ void HeliumCore::InitializeScene()
 					Eigen::Vector3f pickedPosition = pointCloud->GetPosition(pickedIndex);
 					Eigen::Vector3f pickedNormal = pointCloud->GetNormal(pickedIndex);
 					
-					VD::Clear("Selected Point");
-					VD::AddSphere("Selected Point", pickedPosition, pickedNormal, 0.055f, { 1.0f, 0.0f, 0.0f, 1.0f });
-
 					if (isCtrlPressed)
 					{
+						//VD::Clear("Selected Point");
+						//VD::AddSphere("Selected Point", pickedPosition, pickedNormal, 0.055f, { 1.0f, 0.0f, 0.0f, 1.0f });
+
 						auto cameraEntity = Helium.GetEntityByName("MainCamera");
 						auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
 						if (cameraManipulator)

@@ -275,6 +275,37 @@ void VisualDebugging::CreateTubeEntity(const std::string& tag, float radius, uns
     );
 }
 
+void VisualDebugging::CreateArrowEntity(const std::string& tag)
+{
+    auto entity = Helium.CreateEntity(tag);
+    entities[tag] = entity;
+
+    auto renderable = Helium.CreateComponent<DebuggingRenderable>(entity);
+    renderable->Initialize(Renderable::GeometryMode::Triangles);
+    debuggingRenderables[tag] = renderable;
+
+    // 셰이더 설정 (기존과 동일)
+    SetupStandardShaders(renderable);
+
+    // [중요] 인스턴싱을 위한 "Base Model" 생성
+    // Y축 방향(Up), 길이 1.0, 두께는 적절한 비율로 설정
+    // 이렇게 만들어두면 AddArrow에서 Scale을 통해 길이를 조절합니다.
+    Eigen::Vector3f start(0.0f, 0.0f, 0.0f);
+    Eigen::Vector3f end(0.0f, 1.0f, 0.0f);
+
+    // 비율 예시: 기둥 반지름 0.05, 헤드 반지름 0.1, 헤드 길이 0.2 (전체 길이 1.0 기준)
+    GeometryBuilder::BuildArrow(
+        renderable,
+        start,
+        end,
+        0.05f,  // Stem Radius
+        0.1f,   // Head Radius
+        0.2f,   // Head Length
+        Color::white(),
+        false
+    );
+}
+
 // ============================================================================
 // Universal Helper (AddGeometryInstance)
 // ============================================================================
@@ -452,23 +483,19 @@ void VisualDebugging::AddArrow(const std::string& tag, const Eigen::Vector3f& st
 {
     if (length < 0.0001f) return;
 
+    // Scale 계산
+    // X, Z축(두께)은 길이와 무관하게 고정하거나, 길이에 비례하게 할 수 있습니다.
+    // 여기서는 길이에 비례하여 두께가 커지는 방식(Uniform Scale 느낌)을 적용합니다.
+    // 만약 두께를 고정하고 싶다면 scale.x, scale.z에 1.0f 등을 넣으시면 됩니다.
+
+    // 1. 길이(Y축) 적용
+    Eigen::Vector3f scale(length, length, length);
+
+    // 2. 방향 벡터 정규화
     Eigen::Vector3f dirNormalized = direction.normalized();
 
-    // Arrow Head Ratio
-    float headLength = length * 0.2f;
-    float shaftLength = length - headLength;
-    float shaftRadius = headLength * 0.2f;
-    float headRadius = headLength * 0.5f;
-
-    // Shaft Center
-    Eigen::Vector3f shaftCenter = start + dirNormalized * (shaftLength * 0.5f);
-    AddCylinder(tag + "_Shaft", shaftCenter, dirNormalized, shaftRadius, shaftLength, color);
-
-    // Head Center
-    Eigen::Vector3f headCenter = start + dirNormalized * (shaftLength + headLength * 0.5f);
-    // Note: Cone pivot is usually center. Adjust if pivot is bottom.
-    // If cone pivot is at geometric center (height/2):
-    AddCone(tag + "_Head", headCenter, dirNormalized, headRadius, headLength, color);
+    // 3. 인스턴스 추가 (CreateArrowEntity 람다 전달)
+    AddGeometryInstance(tag, CreateArrowEntity, start, dirNormalized, scale, color);
 }
 
 void VisualDebugging::AddFrustum(const std::string& tag, const Eigen::Matrix4f& invViewProj, const Eigen::Vector4f& color)
@@ -590,7 +617,7 @@ void VisualDebugging::Clear(const std::string& tag)
     std::lock_guard<std::mutex> lock(commandMutex);
     commandQueue.emplace_back([=]()
         {
-            if (false == initialized) Initialize();
+            //if (false == initialized) Initialize();
             if (debuggingRenderables.find(tag) != debuggingRenderables.end())
             {
                 auto& renderable = debuggingRenderables[tag];

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <any>
 #include <future>
 #include <functional>
 #include <string>
@@ -54,31 +55,87 @@ public:
 	inline const Eigen::Vector3f& GetPosition(size_t index) const { return positions[index]; }
 	inline const Eigen::Vector3f& GetNormal(size_t index) const { return normals[index]; }
 	inline const Eigen::Vector4f& GetColor(size_t index) const { return colors[index]; }
-	inline uint64_t GetPointFlag(size_t index) const { return pointFlags[index]; }
-	inline int GetClusterId(size_t index) const { return clusterIDs[index]; }
 
 	inline void SetPosition(size_t index, const Eigen::Vector3f& position) { positions[index] = position; }
 	inline void SetNormal(size_t index, const Eigen::Vector3f& normal) { normals[index] = normal; }
 	inline void SetColor(size_t index, const Eigen::Vector4f& color) { colors[index] = color; }
-	inline void SetPointFlag(size_t index, uint64_t flag) { pointFlags[index] = flag; }
-	inline void SetClusterID(size_t index, int clusterID) { clusterIDs[index] = clusterID; }
 
 	inline const std::vector<Eigen::Vector3f>& GetPositions() const { return positions; }
 	inline const std::vector<Eigen::Vector3f>& GetNormals() const { return normals; }
 	inline const std::vector<Eigen::Vector4f>& GetColors() const { return colors; }
-	inline const std::vector<uint64_t>& GetPointFlags() const { return pointFlags; }
-	inline const std::vector<int>& GetClusterIDs() const { return clusterIDs; }
 
 	inline void SetPositions(const std::vector<Eigen::Vector3f>& positions) { this->positions = positions; }
 	inline void SetNormals(const std::vector<Eigen::Vector3f>& normals) { this->normals = normals; }
 	inline void SetColors(const std::vector<Eigen::Vector4f>& colors) { this->colors = colors; }
-	inline void SetPointFlags(const std::vector<uint64_t>& pointFlags) { this->pointFlags = pointFlags; }
-	inline void SetClusterIDs(const std::vector<int>& clusterIDs) { this->clusterIDs = clusterIDs; }
 
 	inline const AABB& GetAABB() const { return aabb; }
 
-	const std::vector<std::pair<int, int>>& GetSortedClusters() const { return sortedClusters; }
-	std::vector<std::pair<int, int>>& GetSortedClusters() { return sortedClusters; }
+	template <typename T>
+	void SetAttribute(const std::string& key, const T& value)
+	{
+		if(attributes.find(key) != attributes.end())
+		{
+			if (attributes[key].type() != typeid(T))
+			{
+				ErrorLog("", "SetAttribute: Overwriting attribute '%s' with different type.", key.c_str());
+			}
+
+			RemoveAttribute(key);
+		}
+
+		attributes[key] = value;
+	}
+
+	void RemoveAttribute(const std::string& key)
+	{
+		auto it = attributes.find(key);
+		if (it != attributes.end())
+		{
+			attributes.erase(it);
+		}
+	}
+
+	template <typename T>
+	T& GetAttribute(const std::string& key)
+	{
+		auto it = attributes.find(key);
+		if (it == attributes.end())
+		{
+			attributes[key] = T();
+		}
+
+		return std::any_cast<T&>(attributes[key]);
+	}
+
+	template <typename T>
+	const T& GetAttribute(const std::string& key) const
+	{
+		auto it = attributes.find(key);
+		if (it != attributes.end())
+		{
+			if (it->second.type() == typeid(T))
+			{
+				return std::any_cast<const T&>(it->second);
+			}
+			else
+			{
+				ErrorLog("", "GetAttribute: Bad any_cast for key '%s'. Returning empty value.", key.c_str());
+			}
+		}
+
+		static const T empty{};
+		return empty;
+	}
+
+	template <typename T>
+	bool HasAttribute(const std::string& key) const
+	{
+		auto it = attributes.find(key);
+		if (it == attributes.end())
+			return false;
+
+		return it->second.type() == typeid(T);
+	}
 
 protected:
 	static int nextID;
@@ -90,8 +147,6 @@ protected:
 	std::vector<Eigen::Vector3f> positions;
 	std::vector<Eigen::Vector3f> normals;
 	std::vector<Eigen::Vector4f> colors;
-	std::vector<uint64_t> pointFlags;
-	std::vector<int> clusterIDs;
 
 	AABB aabb;
 
@@ -102,5 +157,5 @@ protected:
 	std::future<ProcessedInstanceData> loadingFuture;
 	OnPLYLoadedCallback onPLYLoadedCallback = nullptr;
 
-	std::vector<std::pair<int, int>> sortedClusters;
+	std::map<std::string, std::any> attributes;
 };

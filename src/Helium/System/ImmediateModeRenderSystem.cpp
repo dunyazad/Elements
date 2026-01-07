@@ -56,8 +56,6 @@ void ImmediateModeRenderSystem::Update(float dt)
         glEnd();
     }
 
-    glEnable(GL_DEPTH_TEST);
-
     if (centerGizmoEnabled)
     {
         auto& registry = Helium.GetRegistry();
@@ -103,4 +101,6 @@ void ImmediateModeRenderSystem::Update(float dt)
             glEnd();
         }
     }
+
+    glEnable(GL_DEPTH_TEST);
 }

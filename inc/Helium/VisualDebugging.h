@@ -43,6 +43,7 @@ public:
 	static void CreateCapsuleEntity(const std::string& tag, float radius, float height, unsigned int rings);
 	static void CreateTorusEntity(const std::string& tag, float majorRadius, float minorRadius, unsigned int majorSegments, unsigned int minorSegments);
 	static void CreateTubeEntity(const std::string& tag, float radius, unsigned int curveSegments, unsigned int radialSegments);
+	static void CreateArrowEntity(const std::string& tag);
 
 	static void Clear(const std::string& tag);
 	static void ClearAll();

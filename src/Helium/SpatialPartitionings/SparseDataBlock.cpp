@@ -66,7 +66,6 @@ void SparseDataBlock::Build(const PointCloud* pc)
 	auto points = pc->GetPositions();
 	auto normals = pc->GetNormals();
 	auto colors = pc->GetColors();
-	auto clusterIDs = pc->GetClusterIDs();
 	
 	{
 		TS(Pass1_Alloc);
@@ -165,8 +164,7 @@ void SparseDataBlock::Build(const PointCloud* pc)
 			auto p = points[i];
 			Eigen::Vector3f n = (normals.empty()) ? Eigen::Vector3f(0.0f, 1.0f, 0.0f) : normals[i];
 			Eigen::Vector3f c = (colors.empty()) ? Eigen::Vector3f(1.0f, 1.0f, 1.0f) : colors[i].head<3>();
-			int cid = (clusterIDs.empty()) ? -1 : clusterIDs[i];
-
+			
 			if (c.x() > 1.0f) c /= 255.0f;
 
 			Eigen::Vector3f vecFromOrigin = p - gridOrigin;
@@ -233,7 +231,6 @@ void SparseDataBlock::Build(const PointCloud* pc)
 								voxel.normal = n;
 								voxel.weight = weight;
 								voxel.valid = true;
-								voxel.clusterId = cid;
 								voxel.divergence = 0.0f;
 							}
 							else
@@ -262,7 +259,6 @@ void SparseDataBlock::Build(const PointCloud* pc)
 void SparseDataBlock::FromPointsData(const std::vector<Eigen::Vector3f>& points,
 	const std::vector<Eigen::Vector3f>& normals,
 	const std::vector<Eigen::Vector3f>& colors,
-	const std::vector<int>& clusterIds,
 	const Eigen::Vector3f& aabbMin)
 {
 	blockSizePerAxis = voxelSize * SpatialPartitioningConfiguration::voxelsPerBlockAxis;
@@ -376,7 +372,6 @@ void SparseDataBlock::FromPointsData(const std::vector<Eigen::Vector3f>& points,
 			auto p = points[i];
 			Eigen::Vector3f n = (normals.empty()) ? Eigen::Vector3f(0, 1, 0) : normals[i];
 			Eigen::Vector3f c = (colors.empty()) ? Eigen::Vector3f(1, 1, 1) : colors[i];
-			int cid = (clusterIds.empty()) ? -1 : clusterIds[i];
 
 			if (c.x() > 1.0f) c /= 255.0f;
 
@@ -444,7 +439,6 @@ void SparseDataBlock::FromPointsData(const std::vector<Eigen::Vector3f>& points,
 								voxel.normal = n;
 								voxel.weight = weight;
 								voxel.valid = true;
-								voxel.clusterId = cid;
 								voxel.divergence = 0.0f;
 							}
 							else

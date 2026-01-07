@@ -156,12 +156,18 @@
                         <MenuItem Header="_Exit" Click="Menu_File_Exit_Click" InputGestureText="Alt+F4"/>
                     </MenuItem>
 
+                    <MenuItem Header="Point">
+                        <MenuItem Header="Show Point Normal" Click="Menu_Point_ShowPointNormal_Click"/>
+                        <MenuItem Header="Show Point Normal Deviation" Click="Menu_Point_ShowPointNormalDeviation_Click"/>
+                    </MenuItem>
+                    
                     <MenuItem Header="PointCloud">
-                        <MenuItem Header="Build Sparse Grid" Click="Menu_PointCloud_BuildSparseGrid_Click"/>
-                        <MenuItem Header="Build Sparse DataBlocks" Click="Menu_PointCloud_BuildSparseDataBlocks_Click"/>
+                        <MenuItem Header="Show Sparse Grid" Click="Menu_PointCloud_ShowSparseGrid_Click"/>
+                        <MenuItem Header="Show Sparse DataBlocks" Click="Menu_PointCloud_ShowSparseDataBlocks_Click"/>
                         <Separator/>
                         <MenuItem Header="Clone" Click="Menu_PointCloud_Clone_Click"/>
                         <MenuItem Header="Clustering" Click="Menu_PointCloud_Clustering_Click"/>
+                        <MenuItem Header="Show Normals" Click="Menu_PointCloud_ShowNormals_Click"/>
                         <Separator/>
                         <MenuItem Header="Reset Layout"/>
                     </MenuItem>

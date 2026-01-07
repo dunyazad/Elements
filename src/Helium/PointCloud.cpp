@@ -13,8 +13,9 @@
 
 using VD = VisualDebugging;
 
-extern void OnPointCloudCreated(int id, const std::string& fileName, const std::string& name);
-extern void OnPointCloudDeleted(int ID);
+extern void OnPointCloudCreated(int pointCloudID, const std::string& fileName, const std::string& name);
+extern void OnPointCloudDeleted(int pointCloudID);
+extern void OnPointSelected(int pointCloudID, int pointIndex);
 
 int PointCloud::nextID = -1;
 
@@ -39,18 +40,14 @@ bool PointCloud::LoadFromPLY(const std::string& fileName, const std::string& nam
 
 	isLoading = true;
 
-	// Launch async task for IO and CPU heavy math
 	loadingFuture = std::async(std::launch::async, [this]() -> ProcessedInstanceData {	
 		ProcessedInstanceData data;
 		PLYFormat ply;
 
-		// IO Operation
 		ply.Deserialize(this->fileName);
-		ply.SwapAxisYZ();
 
 		data.pointCount = ply.GetPoints().size();
 
-		// Pre-allocate memory to avoid reallocation overhead
 		data.positions.reserve(data.pointCount);
 		data.normals.reserve(data.pointCount);
 		data.colors.reserve(data.pointCount);
@@ -152,8 +149,6 @@ void PointCloud::UpdateLoading()
 
 				if (0 == event.action && 0 == event.button)
 				{
-					VD::Clear("Selected Point");
-
 					auto cameraEntity = Helium.GetEntityByName("MainCamera");
 					auto camera = Helium.GetComponent<Camera>(cameraEntity);
 					if (nullptr == camera) return;
@@ -178,6 +173,8 @@ void PointCloud::UpdateLoading()
 						CustomEvent customEvent(j.dump());
 						Helium.EnqueueEvent<CustomEvent>(customEvent);
 					}
+
+					OnPointSelected(GetID(), pickedIndex);
 				}
 				});
 
@@ -204,8 +201,6 @@ void PointCloud::UpdateLoading()
 			this->normals = std::move(data.normals);
 			this->colors = std::move(data.colors);
 			this->aabb = data.aabb;
-			this->pointFlags.resize(data.pointCount, 0);
-			this->clusterIDs.resize(data.pointCount, 0);
 
 			isLoading = false;
 
@@ -237,11 +232,7 @@ PointCloud* PointCloud::Clone()
 	newPC->positions = this->positions;
 	newPC->normals = this->normals;
 	newPC->colors = this->colors;
-	newPC->pointFlags = this->pointFlags;
-	newPC->clusterIDs = this->clusterIDs;
 	newPC->aabb = this->aabb;
-	newPC->pointFlags = this->pointFlags;
-	newPC->clusterIDs = this->clusterIDs;
 
 	newPC->entityName = this->entityName + "_Clone";
 	newPC->entity = Helium.CreateEntity(newPC->entityName);
@@ -268,8 +259,6 @@ PointCloud* PointCloud::Clone()
 
 		if (0 == event.action && 0 == event.button)
 		{
-			VD::Clear("Selected Point");
-
 			auto cameraEntity = Helium.GetEntityByName("MainCamera");
 			auto camera = Helium.GetComponent<Camera>(cameraEntity);
 			if (nullptr == camera) return;
@@ -293,6 +282,8 @@ PointCloud* PointCloud::Clone()
 
 				CustomEvent customEvent(j.dump());
 				Helium.EnqueueEvent<CustomEvent>(customEvent);
+
+				OnPointSelected(newPC->GetID(), pickedIndex);
 			}
 		}
 		});
