@@ -6,8 +6,8 @@ namespace Neon
 {
     public partial class RorParameterDialog : Window
     {
-        private static float _lastRadius = 0.1f;
-        private static int _lastMinN = 10;
+        private static float _lastRadius = 0.3f;
+        private static int _lastMinN = 24;
         private static bool _lastIsGradient = true;
 
         public Action<float, int, bool>? ApplyAction { get; set; }
