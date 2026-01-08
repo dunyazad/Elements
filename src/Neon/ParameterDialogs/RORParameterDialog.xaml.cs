@@ -1,26 +1,46 @@
 ﻿using System;
+using System.Globalization;
 using System.Windows;
 
 namespace Neon
 {
     public partial class RorParameterDialog : Window
     {
-        public Action<float, int>? ApplyAction { get; set; }
+        private static float _lastRadius = 0.1f;
+        private static int _lastMinN = 10;
+        private static bool _lastIsGradient = true;
+
+        public Action<float, int, bool>? ApplyAction { get; set; }
 
         public RorParameterDialog()
         {
             InitializeComponent();
+
+            SliderRadius.Value = _lastRadius;
+            SliderMinNeighbors.Value = _lastMinN;
+
+            if (_lastIsGradient)
+                RadioGradient.IsChecked = true;
+            else
+                RadioBinary.IsChecked = true;
         }
 
         private void Apply_Click(object sender, RoutedEventArgs e)
         {
-            if (float.TryParse(TxtRadius.Text, out float r) && int.TryParse(TxtMinNeighborsInRadius.Text, out int n))
+            if (float.TryParse(TxtRadius.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out float r) &&
+                int.TryParse(TxtMinNeighbors.Text, out int n))
             {
-                ApplyAction?.Invoke(r, n);
+                bool isGradient = RadioGradient.IsChecked == true;
+
+                _lastRadius = r;
+                _lastMinN = n;
+                _lastIsGradient = isGradient;
+
+                ApplyAction?.Invoke(r, n, isGradient);
             }
             else
             {
-                MessageBox.Show("Please enter valid numeric values.", "Invalid Input", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Invalid input values.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 

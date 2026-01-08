@@ -345,7 +345,7 @@ void HeliumCore::PerformClustering(int pointCloudID, float searchRadius, float a
 	}
 }
 
-void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints)
+void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, bool binaryVisualizationMode)
 {
 	auto currentPointCloud = GetPointCloud(pointCloudID);
 	if (nullptr == currentPointCloud)
@@ -367,12 +367,11 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 	if (numberOfPoints == 0) return;
 
 	std::vector<float> pointMeanDistances(numberOfPoints);
-
 	std::vector<uint8_t> outlierMarking(numberOfPoints, 0);
-
 	std::vector<int> indices(numberOfPoints);
 	std::iota(indices.begin(), indices.end(), 0);
 
+	// 1. 평균 거리 계산
 	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
 		{
 			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
@@ -394,7 +393,7 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 			int validCount = 0;
 			for (float d : distances)
 			{
-				if (d > 1e-6f) // 자기 자신 제외
+				if (d > 1e-6f)
 				{
 					sumDist += d;
 					validCount++;
@@ -407,6 +406,7 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 				pointMeanDistances[i] = 0.0f;
 		});
 
+	// 2. 통계 계산
 	double totalSum = 0.0;
 	double totalSqSum = 0.0;
 	for (float d : pointMeanDistances)
@@ -419,12 +419,13 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 	double variance = (totalSqSum / numberOfPoints) - (globalMean * globalMean);
 	float globalStdDev = std::sqrtf(std::max(0.0f, (float)variance));
 
-	// 임계값 설정
+	// ★ 임계값 계산 (이 값이 시각화의 기준이 됨)
 	float distanceThreshold = globalMean + stdDevMulThresh * globalStdDev;
 
 	InfoLog("", "[SOR] Mean: %.4f, StdDev: %.4f, Threshold: %.4f (k=%d, mul=%.1f)",
 		globalMean, globalStdDev, distanceThreshold, kNeighbors, stdDevMulThresh);
 
+	// 3. Outlier 판별
 	int outlierCount = 0;
 	for (size_t i = 0; i < numberOfPoints; ++i)
 	{
@@ -439,6 +440,7 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 
 	TE(SOR_Filter);
 
+	// 4. 삭제 처리
 	if (deletePoints)
 	{
 		if (outlierCount > 0)
@@ -455,7 +457,7 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 
 			for (size_t i = 0; i < numberOfPoints; ++i)
 			{
-				if (outlierMarking[i] == 0) // Keep Inliers
+				if (outlierMarking[i] == 0)
 				{
 					newPositions.push_back(currentPointCloud->GetPosition(i));
 					newNormals.push_back(currentPointCloud->GetNormal(i));
@@ -477,26 +479,70 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 		}
 	}
 
+	// 5. 시각화 (Visual Debugging)
 	{
 		VD::Clear("SOR");
 
 		const auto& positions = currentPointCloud->GetPositions();
-		size_t numberOfPoints = currentPointCloud->Size();
-		for (size_t i = 0; i < numberOfPoints; ++i)
+		size_t displayCount = currentPointCloud->Size();
+
+		// 히트맵의 최대값은 Threshold와 동일하게 설정 (그 이상은 Outlier이므로)
+		float visMaxDist = distanceThreshold;
+
+		for (size_t i = 0; i < displayCount; ++i)
 		{
-			if (outlierMarking[i] == 1)
+			Eigen::Vector3f colorRGB;
+			Eigen::Vector4f colorRGBA;
+			float radius = 0.05f;
+
+			// Outlier (Threshold 초과) -> 빨간색 강조
+			if (pointMeanDistances[i] > distanceThreshold)
 			{
-				VD::AddSphere("SOR", positions[i], Eigen::Vector3f(1, 0, 0), 0.05f, Eigen::Vector4f(1, 0, 0, 1));
+				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
+				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f }; // 불투명
+				radius = 0.08f;
 			}
+			// Inlier -> Gradient or Green
 			else
 			{
-				VD::AddSphere("SOR", positions[i], Eigen::Vector3f(0, 1, 0), 0.05f, Eigen::Vector4f(0, 1, 0, 0.7f));
+				if (binaryVisualizationMode)
+				{
+					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
+					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f }; // 투명하게
+				}
+				else
+				{
+					// Gradient: 0.0(Blue) ~ Threshold(Green/Yellow)
+					// Color::GetHeatMapColor는 0(Blue)->0.5(Green)->1(Red) 이므로
+					// 여기서는 0.0 ~ 0.5 사이의 값으로 매핑해서 Blue->Green 느낌을 냄
+					// 혹은 그냥 전체 레인지 사용하되, 1.0(Red)는 위에서 이미 걸러졌으므로 Green까지만 감.
+
+					// 정규화 (0 ~ 1)
+					float t = std::clamp(pointMeanDistances[i] / visMaxDist, 0.0f, 1.0f);
+
+					// t가 1에 가까울수록(Threshold에 가까울수록) Green, 0이면 Blue
+					Eigen::Vector3f c;
+					if (t < 0.5f) {
+						// Blue -> Cyan
+						c = Eigen::Vector3f(0.0f, t * 2.0f, 1.0f);
+					}
+					else {
+						// Cyan -> Green
+						c = Eigen::Vector3f(0.0f, 1.0f, 1.0f - (t - 0.5f) * 2.0f);
+					}
+
+					colorRGB = c;
+					colorRGBA = { c.x(), c.y(), c.z(), 0.5f };
+				}
 			}
+
+			VD::AddSphere("SOR", positions[i], colorRGB, radius, colorRGBA);
 		}
 	}
 }
 
-void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints)
+// PerformROR: minNeighborsInRadius가 곧 Outlier의 기준선이 됩니다.
+void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, bool binaryVisualizationMode)
 {
 	auto currentPointCloud = GetPointCloud(pointCloudID);
 	if (nullptr == currentPointCloud)
@@ -518,19 +564,18 @@ void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRa
 	if (numberOfPoints == 0) return;
 
 	std::vector<uint8_t> outlierMarking(numberOfPoints, 0);
+	std::vector<int> neighborCounts(numberOfPoints, 0);
 	std::vector<int> indices(numberOfPoints);
 	std::iota(indices.begin(), indices.end(), 0);
 
 	std::atomic<int> totalOutlierCount = 0;
 
+	// 1. 반경 검색
 	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
 		{
 			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
-
 			std::vector<unsigned int> neighbors;
 
-			// SparseGrid에 반경 검색 기능이 있다고 가정 (없다면 구현 필요)
-			// 보통 자기 자신을 포함하여 반환하므로 결과 개수가 1 이상이어야 함
 			sparseGrid->GetPointsWithinRadius(
 				currentPointCloud->GetPositions(),
 				p,
@@ -538,9 +583,10 @@ void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRa
 				neighbors
 			);
 
-			// neighbor 개수가 최소 기준보다 적으면 Outlier (자기 자신 포함 여부에 따라 조정 필요할 수 있음)
-			// 여기서는 neighbors.size()가 minNeighbors보다 작으면 제거 대상으로 판단
-			if (neighbors.size() < (size_t)minNeighborsInRadius)
+			int count = (int)neighbors.size();
+			neighborCounts[i] = count;
+
+			if (count < minNeighborsInRadius)
 			{
 				outlierMarking[i] = 1;
 				totalOutlierCount++;
@@ -553,6 +599,7 @@ void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRa
 
 	TE(ROR_Filter);
 
+	// 2. 삭제 처리
 	if (deletePoints)
 	{
 		int outlierCount = totalOutlierCount.load();
@@ -570,7 +617,7 @@ void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRa
 
 			for (size_t i = 0; i < numberOfPoints; ++i)
 			{
-				if (outlierMarking[i] == 0) // Keep Inliers
+				if (outlierMarking[i] == 0)
 				{
 					newPositions.push_back(currentPointCloud->GetPosition(i));
 					newNormals.push_back(currentPointCloud->GetNormal(i));
@@ -592,25 +639,53 @@ void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRa
 		}
 	}
 
+	// 3. 시각화 (Visual Debugging)
 	{
 		VD::Clear("ROR");
 
 		const auto& positions = currentPointCloud->GetPositions();
-		size_t numberOfPoints = currentPointCloud->Size();
-		for (size_t i = 0; i < numberOfPoints; ++i)
+		size_t displayCount = currentPointCloud->Size();
+
+		// Inlier들의 시각화를 위해 "충분히 안전한 개수"를 설정 (Min의 3배 정도)
+		float maxSafeCount = (float)minNeighborsInRadius * 3.0f;
+
+		for (size_t i = 0; i < displayCount; ++i)
 		{
-			if (outlierMarking[i] == 1)
+			Eigen::Vector3f colorRGB;
+			Eigen::Vector4f colorRGBA;
+			float radiusVal = 0.05f;
+			int count = neighborCounts[i];
+
+			// Outlier (기준 미달) -> 빨간색 강조
+			if (count < minNeighborsInRadius)
 			{
-				VD::AddSphere("ROR", positions[i], Eigen::Vector3f(1, 0, 0), 0.05f, Eigen::Vector4f(1, 0, 0, 1));
+				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
+				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
+				radiusVal = 0.08f;
 			}
+			// Inlier (기준 충족) -> Blue/Green
 			else
 			{
-				VD::AddSphere("ROR", positions[i], Eigen::Vector3f(0, 1, 0), 0.05f, Eigen::Vector4f(0, 1, 0, 0.7f));
+				if (binaryVisualizationMode)
+				{
+					colorRGB = { 0.0f, 1.0f, 0.0f };
+					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
+				}
+				else
+				{
+					// Gradient: Min(턱걸이, Green) -> MaxSafe(안전, Blue)
+					float t = std::clamp((float)(count - minNeighborsInRadius) / (maxSafeCount - minNeighborsInRadius), 0.0f, 1.0f);
+
+					// t=0 (Green) -> t=1 (Blue)
+					colorRGB = Eigen::Vector3f(0.0f, 1.0f - t, t);
+					colorRGBA = { colorRGB.x(), colorRGB.y(), colorRGB.z(), 0.6f };
+				}
 			}
+
+			VD::AddSphere("ROR", positions[i], colorRGB, radiusVal, colorRGBA);
 		}
 	}
 }
-
 void HeliumCore::ProcessManagedToNativeEvents()
 {
 	std::lock_guard<std::mutex> lock(managedToNativeEventQueueMutex);
@@ -781,12 +856,14 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 								int kNeighbors = j.value("kNeighbors", 50);
 								float stdDevMulThresh = j.value("stdDevMulThresh", 1.0f);
 								bool deletePoints = j.value("deletePoints", false);
+								std::string visualizationMode = j.value("visualizationMode", "Binary");
+								bool binaryVisualizationMode = (visualizationMode == "Binary");
 
-								PerformSOR(pointCloudID, kNeighbors, stdDevMulThresh, deletePoints);
+								PerformSOR(pointCloudID, kNeighbors, stdDevMulThresh, deletePoints, binaryVisualizationMode);
 							}
 						}
-					}
-					else if(cmd == "PerformROR")
+						}
+					else if (cmd == "PerformROR")
 					{
 						if (j.contains("pointCloudID"))
 						{
@@ -797,10 +874,13 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 								float radius = j.value("radius", 0.5f);
 								int minNeighborsInRadius = j.value("minNeighborsInRadius", 5);
 								bool deletePoints = j.value("deletePoints", false);
-								PerformROR(pointCloudID, radius, minNeighborsInRadius, deletePoints);
+								std::string visualizationMode = j.value("visualizationMode", "Binary");
+								bool binaryVisualizationMode = (visualizationMode == "Binary");
+
+								PerformROR(pointCloudID, radius, minNeighborsInRadius, deletePoints, binaryVisualizationMode);
 							}
 						}
-					}
+						}
 					else if (cmd == "ToggleGrid")
 					{
 						auto entity = GetEntityByName("Grid");

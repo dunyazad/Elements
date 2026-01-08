@@ -186,8 +186,8 @@ public:
     void DeletePointCloud(int pointCloudID);
 
 	void PerformClustering(int pointCloudID, float searchRadius, float angleThreshold);
-    void PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints);
-    void PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints);
+    void PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, bool binaryVisualizationMode);
+    void PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, bool binaryVisualizationMode);
 
     void ProcessManagedToNativeEvents();
     void EnqueueManagedToNativeEvent(std::function<void()> event);

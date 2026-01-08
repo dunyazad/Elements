@@ -454,16 +454,12 @@ namespace Neon
                 _sorDialog.Owner = this;
                 _sorDialog.WindowStartupLocation = WindowStartupLocation.Manual;
 
-                double dialogWidth = 300;
-                double dialogHeight = 220;
-
-                // X: 메인 윈도우 오른쪽 끝 - 다이얼로그 너비 - 여백(20)
+                double dialogWidth = 380;
+                double estimatedHeight = 300;
                 _sorDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
+                _sorDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
 
-                // Y: 메인 윈도우 수직 중앙 - 다이얼로그 절반 높이
-                _sorDialog.Top = (this.Top + (this.ActualHeight / 2)) - (dialogHeight / 2);
-
-                _sorDialog.ApplyAction = (kNeighbors, stdDevMul) =>
+                _sorDialog.ApplyAction = (kNeighbors, stdDevMul, isGradient) =>
                 {
                     var commandData = new
                     {
@@ -471,12 +467,13 @@ namespace Neon
                         pointCloudID = selectedSceneNode.ID,
                         kNeighbors = kNeighbors,
                         stdDevMulThresh = stdDevMul,
-                        deletePoints = false
+                        deletePoints = false,
+                        visualizationMode = isGradient ? "Gradient" : "Binary",
                     };
                     string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                     HeliumNative.He_ManagedToNative(command);
 
-                    ShowNotification($"Applied SOR (K={kNeighbors}, StdDev={stdDevMul})");
+                    ShowNotification($"Applied SOR (K={kNeighbors}, Vis={(isGradient ? "Gradient" : "Binary")})");
                 };
 
                 _sorDialog.Closed += (s, args) => { _sorDialog = null; };
@@ -502,13 +499,12 @@ namespace Neon
                 _rorDialog.Owner = this;
                 _rorDialog.WindowStartupLocation = WindowStartupLocation.Manual;
 
-                double dialogWidth = 300;
-                double dialogHeight = 220;
-
+                double dialogWidth = 380;
+                double estimatedHeight = 300;
                 _rorDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
-                _rorDialog.Top = (this.Top + (this.ActualHeight / 2)) - (dialogHeight / 2);
+                _rorDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
 
-                _rorDialog.ApplyAction = (radius, minNeighbors) =>
+                _rorDialog.ApplyAction = (radius, minNeighbors, isGradient) =>
                 {
                     var commandData = new
                     {
@@ -516,12 +512,13 @@ namespace Neon
                         pointCloudID = selectedSceneNode.ID,
                         radius = radius,
                         minNeighborsInRadius = minNeighbors,
-                        deletePoints = false
+                        deletePoints = false,
+                        visualizationMode = isGradient ? "Gradient" : "Binary",
                     };
                     string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                     HeliumNative.He_ManagedToNative(command);
 
-                    ShowNotification($"Applied ROR (R={radius}, MinN={minNeighbors})");
+                    ShowNotification($"Applied ROR (R={radius}, Vis={(isGradient ? "Gradient" : "Binary")})");
                 };
 
                 _rorDialog.Closed += (s, args) => { _rorDialog = null; };

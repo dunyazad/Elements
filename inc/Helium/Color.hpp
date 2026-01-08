@@ -587,4 +587,24 @@ namespace Color
 
 		return result;
 	}
+
+	// [추가됨] 히트맵 색상 생성 함수 (Blue -> Green -> Red)
+	inline Eigen::Vector4f GetHeatMapColor(float value, float minVal, float maxVal)
+	{
+		float t = std::clamp((value - minVal) / (maxVal - minVal), 0.0f, 1.0f);
+
+		// Blue (0.0) -> Green (0.5) -> Red (1.0)
+		if (t < 0.5f)
+		{
+			// Blue to Green
+			float localT = t * 2.0f;
+			return Eigen::Vector4f(0.0f, localT, 1.0f - localT, 1.0f);
+		}
+		else
+		{
+			// Green to Red
+			float localT = (t - 0.5f) * 2.0f;
+			return Eigen::Vector4f(localT, 1.0f - localT, 0.0f, 1.0f);
+		}
+	}
 }
