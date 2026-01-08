@@ -371,7 +371,6 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 	std::vector<int> indices(numberOfPoints);
 	std::iota(indices.begin(), indices.end(), 0);
 
-	// 1. 평균 거리 계산
 	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
 		{
 			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
@@ -440,7 +439,6 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 
 	TE(SOR_Filter);
 
-	// 4. 삭제 처리
 	if (deletePoints)
 	{
 		if (outlierCount > 0)
@@ -479,14 +477,12 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 		}
 	}
 
-	// 5. 시각화 (Visual Debugging)
 	{
 		VD::Clear("SOR");
 
 		const auto& positions = currentPointCloud->GetPositions();
 		size_t displayCount = currentPointCloud->Size();
 
-		// 히트맵의 최대값은 Threshold와 동일하게 설정 (그 이상은 Outlier이므로)
 		float visMaxDist = distanceThreshold;
 
 		for (size_t i = 0; i < displayCount; ++i)
@@ -495,14 +491,12 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 			Eigen::Vector4f colorRGBA;
 			float radius = 0.05f;
 
-			// Outlier (Threshold 초과) -> 빨간색 강조
 			if (pointMeanDistances[i] > distanceThreshold)
 			{
 				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
 				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f }; // 불투명
 				radius = 0.08f;
 			}
-			// Inlier -> Gradient or Green
 			else
 			{
 				if (binaryVisualizationMode)
@@ -541,7 +535,6 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 	}
 }
 
-// PerformROR: minNeighborsInRadius가 곧 Outlier의 기준선이 됩니다.
 void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, bool binaryVisualizationMode)
 {
 	auto currentPointCloud = GetPointCloud(pointCloudID);
@@ -570,7 +563,6 @@ void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRa
 
 	std::atomic<int> totalOutlierCount = 0;
 
-	// 1. 반경 검색
 	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
 		{
 			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
@@ -599,7 +591,6 @@ void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRa
 
 	TE(ROR_Filter);
 
-	// 2. 삭제 처리
 	if (deletePoints)
 	{
 		int outlierCount = totalOutlierCount.load();
@@ -686,6 +677,237 @@ void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRa
 		}
 	}
 }
+
+void HeliumCore::PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, bool binaryVisualizationMode)
+{
+	auto currentPointCloud = GetPointCloud(pointCloudID);
+	if (nullptr == currentPointCloud) return;
+
+	auto sparseGrid = GetSparseGrid(pointCloudID);
+	if (nullptr == sparseGrid)
+	{
+		BuildSpatialPartitionings(pointCloudID);
+		sparseGrid = GetSparseGrid(pointCloudID);
+	}
+
+	TS(Curvature_Analysis);
+
+	size_t numberOfPoints = currentPointCloud->Size();
+	if (numberOfPoints == 0) return;
+
+	std::vector<float> curvatureValues(numberOfPoints, 0.0f);
+	std::vector<int> indices(numberOfPoints);
+	std::iota(indices.begin(), indices.end(), 0);
+
+	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
+		{
+			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
+			std::vector<unsigned int> neighbors;
+			std::vector<float> distances;
+
+			sparseGrid->GetKNearestNeighbors(
+				currentPointCloud->GetPositions(),
+				p,
+				kNeighbors,
+				neighbors,
+				distances
+			);
+
+			if (neighbors.size() < 3)
+			{
+				curvatureValues[i] = 0.0f;
+				return;
+			}
+
+			Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
+			for (unsigned int idx : neighbors)
+			{
+				centroid += currentPointCloud->GetPosition(idx);
+			}
+			centroid /= (float)neighbors.size();
+
+			Eigen::Matrix3f covariance = Eigen::Matrix3f::Zero();
+			for (unsigned int idx : neighbors)
+			{
+				Eigen::Vector3f d = currentPointCloud->GetPosition(idx) - centroid;
+				covariance += d * d.transpose();
+			}
+			covariance /= (float)neighbors.size();
+
+			Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> solver(covariance);
+			Eigen::Vector3f eigenValues = solver.eigenvalues();
+
+			// 3. Surface Variation (Curvature 근사값)
+			float sumEigen = eigenValues[0] + eigenValues[1] + eigenValues[2];
+			if (sumEigen > 1e-9f)
+			{
+				curvatureValues[i] = eigenValues[0] / sumEigen;
+			}
+			else
+			{
+				curvatureValues[i] = 0.0f;
+			}
+		});
+
+	currentPointCloud->SetAttribute<std::vector<float>>("Curvature", curvatureValues);
+
+	TE(Curvature_Analysis);
+
+	{
+		VD::Clear("Curvature");
+		const auto& positions = currentPointCloud->GetPositions();
+
+		float maxVal = 0.1f * curvatureThreshold;
+
+		for (size_t i = 0; i < numberOfPoints; ++i)
+		{
+			float val = curvatureValues[i];
+			Eigen::Vector3f colorRGB;
+			Eigen::Vector4f colorRGBA;
+
+			if (binaryVisualizationMode)
+			{
+				if (val > maxVal)
+				{
+					colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
+					colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
+				}
+				else
+				{
+					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
+					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f }; // 투명하게
+				}
+			}
+			else
+			{
+				// [Gradient Mode] 0(Flat, Blue) -> maxVal(Curved, Red)
+				colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxVal);
+				colorRGBA.w() = 0.8f;
+				colorRGB = colorRGBA.head<3>();
+			}
+
+			VD::AddSphere("Curvature", positions[i], colorRGB, 0.05f, colorRGBA);
+		}
+		InfoLog("", "[Curvature] Analysis Done. CurvatureThreshold: %.2f", curvatureThreshold);
+	}
+}
+
+void HeliumCore::PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, bool binaryVisualizationMode)
+{
+	auto currentPointCloud = GetPointCloud(pointCloudID);
+	if (nullptr == currentPointCloud) return;
+
+	if (0 == currentPointCloud->GetNormals().size())
+	{
+		ErrorLog("", "PointCloud has no normals. Cannot compute deviation.");
+		return;
+	}
+
+	auto sparseGrid = GetSparseGrid(pointCloudID);
+	if (nullptr == sparseGrid)
+	{
+		BuildSpatialPartitionings(pointCloudID);
+		sparseGrid = GetSparseGrid(pointCloudID);
+	}
+
+	TS(Normal_Deviation);
+
+	size_t numberOfPoints = currentPointCloud->Size();
+	std::vector<float> deviationValues(numberOfPoints, 0.0f);
+	std::vector<int> indices(numberOfPoints);
+	std::iota(indices.begin(), indices.end(), 0);
+
+	const auto& normals = currentPointCloud->GetNormals();
+
+	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
+		{
+			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
+			const Eigen::Vector3f& n = normals[i];
+
+			std::vector<unsigned int> neighbors;
+			sparseGrid->GetPointsWithinRadius(
+				currentPointCloud->GetPositions(),
+				p,
+				radius,
+				neighbors
+			);
+
+			if (neighbors.empty())
+			{
+				deviationValues[i] = 0.0f;
+				return;
+			}
+
+			double sumAngle = 0.0;
+			int validCount = 0;
+
+			for (unsigned int idx : neighbors)
+			{
+				if (i == idx) continue;
+
+				float dot = n.dot(normals[idx]);
+				dot = std::clamp(dot, -1.0f, 1.0f);
+
+				float angleRad = std::acos(dot);
+				sumAngle += angleRad;
+				validCount++;
+			}
+
+			if (validCount > 0)
+			{
+				// Radian to Degree
+				deviationValues[i] = (float)((sumAngle / validCount) * (180.0 / 3.14159265359));
+			}
+			else
+			{
+				deviationValues[i] = 0.0f;
+			}
+		});
+
+	currentPointCloud->SetAttribute<std::vector<float>>("NormalDeviation", deviationValues);
+
+	TE(Normal_Deviation);
+
+	{
+		VD::Clear("NormalDeviation");
+		const auto& positions = currentPointCloud->GetPositions();
+
+		// deviationThreshold은 "최대 각도(Degree)"를 의미
+		float maxAngle = deviationThreshold;
+
+		for (size_t i = 0; i < numberOfPoints; ++i)
+		{
+			float val = deviationValues[i];
+			Eigen::Vector3f colorRGB;
+			Eigen::Vector4f colorRGBA;
+
+			if (binaryVisualizationMode)
+			{
+				if (val > maxAngle)
+				{
+					colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
+					colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
+				}
+				else
+				{
+					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
+					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
+				}
+			}
+			else
+			{
+				// [Gradient Mode] 0도(Blue) -> maxAngle도(Red)
+				colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxAngle);
+				colorRGBA.w() = 0.8f;
+				colorRGB = colorRGBA.head<3>();
+			}
+
+			VD::AddSphere("NormalDeviation", positions[i], colorRGB, 0.05f, colorRGBA);
+		}
+		InfoLog("", "[NormalDeviation] Analysis Done. MaxAngle: %.1f", maxAngle);
+	}
+}
+
 void HeliumCore::ProcessManagedToNativeEvents()
 {
 	std::lock_guard<std::mutex> lock(managedToNativeEventQueueMutex);
@@ -879,6 +1101,34 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 
 								PerformROR(pointCloudID, radius, minNeighborsInRadius, deletePoints, binaryVisualizationMode);
 							}
+						}
+					}
+					else if (cmd == "PerformCurvatureAnalysis")
+					{
+						if (j.contains("pointCloudID"))
+						{
+							int pointCloudID = j["pointCloudID"];
+							int kNeighbors = j.value("kNeighbors", 30);
+							float curvatureThreshold = j.value("curvatureThreshold", 1.0f);
+
+							std::string visualizationMode = j.value("visualizationMode", "Gradient");
+							bool binaryVisualizationMode = (visualizationMode == "Binary");
+
+							PerformCurvatureAnalysis(pointCloudID, kNeighbors, curvatureThreshold, binaryVisualizationMode);
+						}
+						}
+					else if (cmd == "PerformNormalDeviationAnalysis")
+					{
+						if (j.contains("pointCloudID"))
+						{
+							int pointCloudID = j["pointCloudID"];
+							float radius = j.value("radius", 0.1f);
+							float deviationThreshold = j.value("deviationThreshold", 45.0f);
+
+							std::string visualizationMode = j.value("visualizationMode", "Gradient");
+							bool binaryVisualizationMode = (visualizationMode == "Binary");
+
+							PerformNormalDeviationAnalysis(pointCloudID, radius, deviationThreshold, binaryVisualizationMode);
 						}
 						}
 					else if (cmd == "ToggleGrid")

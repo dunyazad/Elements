@@ -20,4 +20,10 @@
     <OutputPath>$(SolutionDir)bin\Release\</OutputPath>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Page Update="ParameterDialogs\CurvatureAnalysisParameterDialog.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+
 </Project>

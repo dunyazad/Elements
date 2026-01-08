@@ -122,6 +122,9 @@ namespace Neon
 
         private SorParameterDialog? _sorDialog = null;
         private RorParameterDialog? _rorDialog = null;
+        private CurvatureAnalysisParameterDialog? _curvatureDialog = null;
+        private NormalDeviationAnalysisParameterDialog? _normalDeviationAnalysisParameterDialog = null;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -523,6 +526,94 @@ namespace Neon
 
                 _rorDialog.Closed += (s, args) => { _rorDialog = null; };
                 _rorDialog.Show();
+            }
+            else
+            {
+                ShowNotification("No Point Cloud Selected.");
+            }
+        }
+
+        private void Menu_PointCloud_Curvature_Analysis_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                if (_curvatureDialog != null)
+                {
+                    _curvatureDialog.Activate();
+                    return;
+                }
+
+                _curvatureDialog = new CurvatureAnalysisParameterDialog();
+                _curvatureDialog.Owner = this;
+                _curvatureDialog.WindowStartupLocation = WindowStartupLocation.Manual;
+
+                double dialogWidth = 380;
+                double estimatedHeight = 300;
+                _curvatureDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
+                _curvatureDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
+
+                _curvatureDialog.ApplyAction = (kNeighbors, curvatureThreshold, isGradient) =>
+                {
+                    var commandData = new
+                    {
+                        command = "PerformCurvatureAnalysis",
+                        pointCloudID = selectedSceneNode.ID,
+                        kNeighbors = kNeighbors,
+                        curvatureThreshold = curvatureThreshold,
+                        visualizationMode = isGradient ? "Gradient" : "Binary"
+                    };
+                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                    HeliumNative.He_ManagedToNative(command);
+
+                    ShowNotification($"Curvature Analysis (K={kNeighbors}, Threshold={curvatureThreshold}, Vis={(isGradient ? "Gradient" : "Binary")})");
+                };
+
+                _curvatureDialog.Closed += (s, args) => { _curvatureDialog = null; };
+                _curvatureDialog.Show();
+            }
+            else
+            {
+                ShowNotification("No Point Cloud Selected.");
+            }
+        }
+
+        private void Menu_PointCloud_Normal_Deviation_Analysis_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                if (_normalDeviationAnalysisParameterDialog != null)
+                {
+                    _normalDeviationAnalysisParameterDialog.Activate();
+                    return;
+                }
+
+                _normalDeviationAnalysisParameterDialog = new NormalDeviationAnalysisParameterDialog();
+                _normalDeviationAnalysisParameterDialog.Owner = this;
+                _normalDeviationAnalysisParameterDialog.WindowStartupLocation = WindowStartupLocation.Manual;
+
+                double dialogWidth = 380;
+                double estimatedHeight = 300;
+                _normalDeviationAnalysisParameterDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
+                _normalDeviationAnalysisParameterDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
+
+                _normalDeviationAnalysisParameterDialog.ApplyAction = (radius, deviationThreshold, isGradient) =>
+                {
+                    var commandData = new
+                    {
+                        command = "PerformNormalDeviationAnalysis",
+                        pointCloudID = selectedSceneNode.ID,
+                        radius = radius,
+                        deviationThreshold = deviationThreshold,
+                        visualizationMode = isGradient ? "Gradient" : "Binary"
+                    };
+                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                    HeliumNative.He_ManagedToNative(command);
+
+                    ShowNotification($"Normal Deviation (R={radius}, MaxDeviation={deviationThreshold}, Vis={(isGradient ? "Gradient" : "Binary")})");
+                };
+
+                _normalDeviationAnalysisParameterDialog.Closed += (s, args) => { _normalDeviationAnalysisParameterDialog = null; };
+                _normalDeviationAnalysisParameterDialog.Show();
             }
             else
             {
