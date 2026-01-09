@@ -100,7 +100,7 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <TextBox x:Name="TxtRadius" Text="{Binding ElementName=SliderRadius, Path=Value, StringFormat={}{0:0.00}}"/>
-                    <Slider x:Name="SliderRadius" Grid.Column="1" Minimum="0.01" Maximum="1.0" Value="0.1" TickFrequency="0.01" IsSnapToTickEnabled="True"/>
+                    <Slider x:Name="SliderRadius" Grid.Column="1" Minimum="0.01" Maximum="1.0" Value="0.3" TickFrequency="0.01" IsSnapToTickEnabled="True"/>
                 </Grid>
             </StackPanel>
 
@@ -112,7 +112,7 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <TextBox x:Name="TxtMinNeighbors" Text="{Binding ElementName=SliderMinNeighbors, Path=Value, StringFormat={}{0:0}}"/>
-                    <Slider x:Name="SliderMinNeighbors" Grid.Column="1" Minimum="1" Maximum="200" Value="10" TickFrequency="1" IsSnapToTickEnabled="True"/>
+                    <Slider x:Name="SliderMinNeighbors" Grid.Column="1" Minimum="1" Maximum="200" Value="24" TickFrequency="1" IsSnapToTickEnabled="True"/>
                 </Grid>
             </StackPanel>
 

@@ -115,6 +115,12 @@
     <ClInclude Include="..\..\inc\Helium\Morton3D.hpp" />
     <ClInclude Include="..\..\inc\Helium\PointCloud.h" />
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\AtomicDisjointSet.h" />
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\CurvatureAnalysis.h" />
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\NormalDeviation.h" />
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudProcessing.h" />
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudProcessor.h" />
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\ROR.h" />
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\SOR.h" />
     <ClInclude Include="..\..\inc\Helium\Serialization.hpp" />
     <ClInclude Include="..\..\inc\Helium\SpatialPartitionings\ISpartialPartitioning.h" />
     <ClInclude Include="..\..\inc\Helium\SpatialPartitionings\Morton3D.hpp" />
@@ -164,6 +170,10 @@
     </ClCompile>
     <ClCompile Include="PointCloud.cpp" />
     <ClCompile Include="PointCloudProcessing\AtomicDisjointSet.cpp" />
+    <ClCompile Include="PointCloudProcessing\CurvatureAnalysis.cpp" />
+    <ClCompile Include="PointCloudProcessing\NormalDeviation.cpp" />
+    <ClCompile Include="PointCloudProcessing\ROR.cpp" />
+    <ClCompile Include="PointCloudProcessing\SOR.cpp" />
     <ClCompile Include="SpatialPartitionings\SparseDataBlock.cpp" />
     <ClCompile Include="SpatialPartitionings\SparseGrid.cpp" />
     <ClCompile Include="System\EventSystem.cpp" />

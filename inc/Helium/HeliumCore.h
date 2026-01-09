@@ -187,10 +187,10 @@ public:
     void RenamePointCloud(int pointCloudID, const std::string& newName);
 
 	void PerformClustering(int pointCloudID, float searchRadius, float angleThreshold);
-    void PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, bool binaryVisualizationMode);
-    void PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, bool binaryVisualizationMode);
-    void PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, bool binaryVisualizationMode);
-    void PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, bool binaryVisualizationMode);
+    std::vector<uint8_t> PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, bool binaryVisualizationMode);
+    std::vector<uint8_t> PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, bool binaryVisualizationMode);
+    std::vector<uint8_t> PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, bool binaryVisualizationMode);
+    std::vector<uint8_t>  PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, bool binaryVisualizationMode);
 
     void ProcessManagedToNativeEvents();
     void EnqueueManagedToNativeEvent(std::function<void()> event);

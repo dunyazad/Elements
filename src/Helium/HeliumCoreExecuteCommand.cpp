@@ -24,6 +24,7 @@
 #include <Helium/PointCloud.h>
 
 #include <Helium/SpatialPartitionings/SpartialPartitionings.h>
+#include <Helium/PointCloudProcessing/PointCloudProcessing.h>
 #include <Helium/PointCloudProcessing/AtomicDisjointSet.h>
 
 using VD = VisualDebugging;
@@ -354,569 +355,57 @@ void HeliumCore::PerformClustering(int pointCloudID, float searchRadius, float a
 	}
 }
 
-void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, bool binaryVisualizationMode)
+std::vector<uint8_t> HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, bool binaryVisualizationMode)
 {
-	auto currentPointCloud = GetPointCloud(pointCloudID);
-	if (nullptr == currentPointCloud)
-	{
-		ErrorLog("", "PointCloud with ID %d not found.", pointCloudID);
-		return;
-	}
+	PointCloudProcessorParameters parameters;
+	parameters.SetParameter<int>("PointCloudID", pointCloudID);
+	parameters.SetParameter<int>("KNeighbors", kNeighbors);
+	parameters.SetParameter<float>("StdDevMulThresh", stdDevMulThresh);
+	parameters.SetParameter<bool>("DeletePoints", deletePoints);
+	parameters.SetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
 
-	auto sparseGrid = GetSparseGrid(pointCloudID);
-	if (nullptr == sparseGrid)
-	{
-		BuildSpatialPartitionings(pointCloudID);
-		sparseGrid = GetSparseGrid(pointCloudID);
-	}
+	SOR processor;
 
-	TS(SOR_Filter);
-
-	size_t numberOfPoints = currentPointCloud->Size();
-	if (numberOfPoints == 0) return;
-
-	std::vector<float> pointMeanDistances(numberOfPoints);
-	std::vector<uint8_t> outlierMarking(numberOfPoints, 0);
-	std::vector<int> indices(numberOfPoints);
-	std::iota(indices.begin(), indices.end(), 0);
-
-	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
-		{
-			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
-
-			std::vector<unsigned int> neighbors;
-			std::vector<float> distances;
-			neighbors.reserve(kNeighbors);
-			distances.reserve(kNeighbors);
-
-			sparseGrid->GetKNearestNeighbors(
-				currentPointCloud->GetPositions(),
-				p,
-				kNeighbors,
-				neighbors,
-				distances
-			);
-
-			double sumDist = 0.0;
-			int validCount = 0;
-			for (float d : distances)
-			{
-				if (d > 1e-6f)
-				{
-					sumDist += d;
-					validCount++;
-				}
-			}
-
-			if (validCount > 0)
-				pointMeanDistances[i] = (float)(sumDist / validCount);
-			else
-				pointMeanDistances[i] = 0.0f;
-		});
-
-	double totalSum = 0.0;
-	double totalSqSum = 0.0;
-	for (float d : pointMeanDistances)
-	{
-		totalSum += d;
-		totalSqSum += d * d;
-	}
-
-	float globalMean = (float)(totalSum / numberOfPoints);
-	double variance = (totalSqSum / numberOfPoints) - (globalMean * globalMean);
-	float globalStdDev = std::sqrtf(std::max(0.0f, (float)variance));
-
-	float distanceThreshold = globalMean + stdDevMulThresh * globalStdDev;
-
-	InfoLog("", "[SOR] Mean: %.4f, StdDev: %.4f, Threshold: %.4f (k=%d, mul=%.1f)",
-		globalMean, globalStdDev, distanceThreshold, kNeighbors, stdDevMulThresh);
-
-	int outlierCount = 0;
-	for (size_t i = 0; i < numberOfPoints; ++i)
-	{
-		if (pointMeanDistances[i] > distanceThreshold)
-		{
-			outlierMarking[i] = 1;
-			outlierCount++;
-		}
-	}
-
-	currentPointCloud->SetAttribute<std::vector<uint8_t>>("SOR_OutlierMarking", outlierMarking);
-
-	TE(SOR_Filter);
-
-	if (deletePoints)
-	{
-		if (outlierCount > 0)
-		{
-			size_t newSize = numberOfPoints - outlierCount;
-
-			std::vector<Eigen::Vector3f> newPositions;
-			std::vector<Eigen::Vector3f> newNormals;
-			std::vector<Eigen::Vector4f> newColors;
-
-			newPositions.reserve(newSize);
-			newNormals.reserve(newSize);
-			newColors.reserve(newSize);
-
-			for (size_t i = 0; i < numberOfPoints; ++i)
-			{
-				if (outlierMarking[i] == 0)
-				{
-					newPositions.push_back(currentPointCloud->GetPosition(i));
-					newNormals.push_back(currentPointCloud->GetNormal(i));
-					newColors.push_back(currentPointCloud->GetColor(i));
-				}
-			}
-
-			currentPointCloud->SetPositions(newPositions);
-			currentPointCloud->SetNormals(newNormals);
-			currentPointCloud->SetColors(newColors);
-
-			BuildSpatialPartitionings(pointCloudID);
-
-			InfoLog("", "[SOR] Removed %d outliers. Remaining: %zu", outlierCount, newSize);
-		}
-		else
-		{
-			InfoLog("", "[SOR] Found 0 outliers (Clean).");
-		}
-	}
-
-	{
-		VD::Clear("SOR");
-
-		const auto& positions = currentPointCloud->GetPositions();
-		size_t displayCount = currentPointCloud->Size();
-
-		float visMaxDist = distanceThreshold;
-
-		for (size_t i = 0; i < displayCount; ++i)
-		{
-			Eigen::Vector3f colorRGB;
-			Eigen::Vector4f colorRGBA;
-			float radius = 0.05f;
-
-			if (outlierMarking[i] == 1)
-			{
-				colorRGB = { 1.0f, 0.0f, 0.0f };
-				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-				radius = 0.08f;
-			}
-			else
-			{
-				if (binaryVisualizationMode)
-				{
-					colorRGB = { 0.0f, 1.0f, 0.0f };
-					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
-				}
-				else
-				{
-					float t = std::clamp(pointMeanDistances[i] / visMaxDist, 0.0f, 1.0f);
-					Eigen::Vector3f c;
-					if (t < 0.5f) {
-						c = Eigen::Vector3f(0.0f, t * 2.0f, 1.0f);
-					}
-					else {
-						c = Eigen::Vector3f(0.0f, 1.0f, 1.0f - (t - 0.5f) * 2.0f);
-					}
-
-					colorRGB = c;
-					colorRGBA = { c.x(), c.y(), c.z(), 0.5f };
-				}
-			}
-
-			VD::AddSphere("SOR", positions[i], colorRGB, radius, colorRGBA);
-		}
-	}
+	return processor.Process(parameters);
 }
 
-void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, bool binaryVisualizationMode)
+std::vector<uint8_t> HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, bool binaryVisualizationMode)
 {
-	auto currentPointCloud = GetPointCloud(pointCloudID);
-	if (nullptr == currentPointCloud)
-	{
-		ErrorLog("", "PointCloud with ID %d not found.", pointCloudID);
-		return;
-	}
-
-	auto sparseGrid = GetSparseGrid(pointCloudID);
-	if (nullptr == sparseGrid)
-	{
-		BuildSpatialPartitionings(pointCloudID);
-		sparseGrid = GetSparseGrid(pointCloudID);
-	}
-
-	TS(ROR_Filter);
-
-	size_t numberOfPoints = currentPointCloud->Size();
-	if (numberOfPoints == 0) return;
-
-	std::vector<uint8_t> outlierMarking(numberOfPoints, 0);
-	std::vector<int> neighborCounts(numberOfPoints, 0);
-	std::vector<int> indices(numberOfPoints);
-	std::iota(indices.begin(), indices.end(), 0);
-
-	std::atomic<int> totalOutlierCount = 0;
-
-	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
-		{
-			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
-			std::vector<unsigned int> neighbors;
-
-			sparseGrid->GetPointsWithinRadius(
-				currentPointCloud->GetPositions(),
-				p,
-				radius,
-				neighbors
-			);
-
-			int count = (int)neighbors.size();
-			neighborCounts[i] = count;
-
-			if (count < minNeighborsInRadius)
-			{
-				outlierMarking[i] = 1;
-				totalOutlierCount++;
-			}
-		});
-
-	currentPointCloud->SetAttribute<std::vector<uint8_t>>("ROR_OutlierMarking", outlierMarking);
-
-	InfoLog("", "[ROR] Radius: %.4f, MinNeighbors: %d, Found Outliers: %d", radius, minNeighborsInRadius, totalOutlierCount.load());
-
-	TE(ROR_Filter);
-
-	if (deletePoints)
-	{
-		int outlierCount = totalOutlierCount.load();
-		if (outlierCount > 0)
-		{
-			size_t newSize = numberOfPoints - outlierCount;
-
-			std::vector<Eigen::Vector3f> newPositions;
-			std::vector<Eigen::Vector3f> newNormals;
-			std::vector<Eigen::Vector4f> newColors;
-
-			newPositions.reserve(newSize);
-			newNormals.reserve(newSize);
-			newColors.reserve(newSize);
-
-			for (size_t i = 0; i < numberOfPoints; ++i)
-			{
-				if (outlierMarking[i] == 0)
-				{
-					newPositions.push_back(currentPointCloud->GetPosition(i));
-					newNormals.push_back(currentPointCloud->GetNormal(i));
-					newColors.push_back(currentPointCloud->GetColor(i));
-				}
-			}
-
-			currentPointCloud->SetPositions(newPositions);
-			currentPointCloud->SetNormals(newNormals);
-			currentPointCloud->SetColors(newColors);
-
-			BuildSpatialPartitionings(pointCloudID);
-
-			InfoLog("", "[ROR] Removed %d outliers. Remaining: %zu", outlierCount, newSize);
-		}
-		else
-		{
-			InfoLog("", "[ROR] Found 0 outliers (Clean).");
-		}
-	}
-
-	{
-		VD::Clear("ROR");
-
-		const auto& positions = currentPointCloud->GetPositions();
-		size_t displayCount = currentPointCloud->Size();
-
-		float maxSafeCount = (float)minNeighborsInRadius * 3.0f;
-
-		for (size_t i = 0; i < displayCount; ++i)
-		{
-			Eigen::Vector3f colorRGB;
-			Eigen::Vector4f colorRGBA;
-			float radiusVal = 0.05f;
-			int count = neighborCounts[i];
-
-			if (outlierMarking[i] == 1)
-			{
-				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
-				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-				radiusVal = 0.08f;
-			}
-			else
-			{
-				if (binaryVisualizationMode)
-				{
-					colorRGB = { 0.0f, 1.0f, 0.0f };
-					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
-				}
-				else
-				{
-					float t = std::clamp((float)(count - minNeighborsInRadius) / (maxSafeCount - minNeighborsInRadius), 0.0f, 1.0f);
-					colorRGB = Eigen::Vector3f(0.0f, 1.0f - t, t);
-					colorRGBA = { colorRGB.x(), colorRGB.y(), colorRGB.z(), 0.6f };
-				}
-			}
-
-			VD::AddSphere("ROR", positions[i], colorRGB, radiusVal, colorRGBA);
-		}
-	}
+	PointCloudProcessorParameters parameters;
+	parameters.SetParameter<int>("PointCloudID", pointCloudID);
+	parameters.SetParameter<float>("Radius", radius);
+	parameters.SetParameter<int>("MinNeighborsInRadius", minNeighborsInRadius);
+	parameters.SetParameter<bool>("DeletePoints", deletePoints);
+	parameters.SetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
+	
+	ROR processor;
+	
+	return processor.Process(parameters);
 }
 
-void HeliumCore::PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, bool binaryVisualizationMode)
+std::vector<uint8_t> HeliumCore::PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, bool binaryVisualizationMode)
 {
-	auto currentPointCloud = GetPointCloud(pointCloudID);
-	if (nullptr == currentPointCloud) return;
+	PointCloudProcessorParameters parameters;
+	parameters.SetParameter<int>("PointCloudID", pointCloudID);
+	parameters.SetParameter<int>("KNeighbors", kNeighbors);
+	parameters.SetParameter<float>("CurvatureThreshold", curvatureThreshold);
+	parameters.SetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
 
-	auto sparseGrid = GetSparseGrid(pointCloudID);
-	if (nullptr == sparseGrid)
-	{
-		BuildSpatialPartitionings(pointCloudID);
-		sparseGrid = GetSparseGrid(pointCloudID);
-	}
+	CurvatureAnalysis processor;
 
-	TS(Curvature_Analysis);
-
-	size_t numberOfPoints = currentPointCloud->Size();
-	if (numberOfPoints == 0) return;
-
-	std::vector<float> curvatureValues(numberOfPoints, 0.0f);
-	std::vector<int> indices(numberOfPoints);
-	std::iota(indices.begin(), indices.end(), 0);
-
-	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
-		{
-			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
-			std::vector<unsigned int> neighbors;
-			std::vector<float> distances;
-
-			sparseGrid->GetKNearestNeighbors(
-				currentPointCloud->GetPositions(),
-				p,
-				kNeighbors,
-				neighbors,
-				distances
-			);
-
-			if (neighbors.size() < 3)
-			{
-				curvatureValues[i] = 0.0f;
-				return;
-			}
-
-			Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
-			for (unsigned int idx : neighbors)
-			{
-				centroid += currentPointCloud->GetPosition(idx);
-			}
-			centroid /= (float)neighbors.size();
-
-			Eigen::Matrix3f covariance = Eigen::Matrix3f::Zero();
-			for (unsigned int idx : neighbors)
-			{
-				Eigen::Vector3f d = currentPointCloud->GetPosition(idx) - centroid;
-				covariance += d * d.transpose();
-			}
-			covariance /= (float)neighbors.size();
-
-			Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> solver(covariance);
-			Eigen::Vector3f eigenValues = solver.eigenvalues();
-
-			float sumEigen = eigenValues[0] + eigenValues[1] + eigenValues[2];
-			if (sumEigen > 1e-9f)
-			{
-				curvatureValues[i] = eigenValues[0] / sumEigen;
-			}
-			else
-			{
-				curvatureValues[i] = 0.0f;
-			}
-		});
-
-	currentPointCloud->SetAttribute<std::vector<float>>("Curvature", curvatureValues);
-
-	std::vector<uint8_t> outlierMarking(numberOfPoints, 0);
-	float maxVal = 0.1f * curvatureThreshold;
-
-	int outlierCount = 0;
-	for (size_t i = 0; i < numberOfPoints; ++i)
-	{
-		if (curvatureValues[i] > maxVal)
-		{
-			outlierMarking[i] = 1;
-			outlierCount++;
-		}
-	}
-
-	currentPointCloud->SetAttribute<std::vector<uint8_t>>("Curvature_OutlierMarking", outlierMarking);
-
-	TE(Curvature_Analysis);
-
-	{
-		VD::Clear("Curvature");
-		const auto& positions = currentPointCloud->GetPositions();
-
-		for (size_t i = 0; i < numberOfPoints; ++i)
-		{
-			float val = curvatureValues[i];
-			Eigen::Vector3f colorRGB;
-			Eigen::Vector4f colorRGBA;
-
-			if (outlierMarking[i] == 1)
-			{
-				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
-				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-			}
-			else
-			{
-				if (binaryVisualizationMode)
-				{
-					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
-					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
-				}
-				else
-				{
-					// Gradient Mode
-					colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxVal);
-					colorRGBA.w() = 0.8f;
-					colorRGB = colorRGBA.head<3>();
-				}
-			}
-
-			VD::AddSphere("Curvature", positions[i], colorRGB, 0.05f, colorRGBA);
-		}
-		InfoLog("", "[Curvature] Analysis Done. Threshold: %.3f, Outliers Marked: %d", maxVal, outlierCount);
-	}
+	return processor.Process(parameters);
 }
 
-void HeliumCore::PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, bool binaryVisualizationMode)
+std::vector<uint8_t> HeliumCore::PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, bool binaryVisualizationMode)
 {
-	auto currentPointCloud = GetPointCloud(pointCloudID);
-	if (nullptr == currentPointCloud) return;
+	PointCloudProcessorParameters parameters;
+	parameters.SetParameter<int>("PointCloudID", pointCloudID);
+	parameters.SetParameter<float>("Radius", radius);
+	parameters.SetParameter<float>("DeviationThreshold", deviationThreshold);
+	parameters.SetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
 
-	if (0 == currentPointCloud->GetNormals().size())
-	{
-		ErrorLog("", "PointCloud has no normals. Cannot compute deviation.");
-		return;
-	}
-
-	auto sparseGrid = GetSparseGrid(pointCloudID);
-	if (nullptr == sparseGrid)
-	{
-		BuildSpatialPartitionings(pointCloudID);
-		sparseGrid = GetSparseGrid(pointCloudID);
-	}
-
-	TS(Normal_Deviation);
-
-	size_t numberOfPoints = currentPointCloud->Size();
-	std::vector<float> deviationValues(numberOfPoints, 0.0f);
-	std::vector<int> indices(numberOfPoints);
-	std::iota(indices.begin(), indices.end(), 0);
-
-	const auto& normals = currentPointCloud->GetNormals();
-
-	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
-		{
-			const Eigen::Vector3f& p = currentPointCloud->GetPosition(i);
-			const Eigen::Vector3f& n = normals[i];
-
-			std::vector<unsigned int> neighbors;
-			sparseGrid->GetPointsWithinRadius(
-				currentPointCloud->GetPositions(),
-				p,
-				radius,
-				neighbors
-			);
-
-			if (neighbors.empty())
-			{
-				deviationValues[i] = 0.0f;
-				return;
-			}
-
-			double sumAngle = 0.0;
-			int validCount = 0;
-
-			for (unsigned int idx : neighbors)
-			{
-				if (i == idx) continue;
-
-				float dot = n.dot(normals[idx]);
-				dot = std::clamp(dot, -1.0f, 1.0f);
-
-				float angleRad = std::acos(dot);
-				sumAngle += angleRad;
-				validCount++;
-			}
-
-			if (validCount > 0)
-			{
-				deviationValues[i] = (float)((sumAngle / validCount) * (180.0 / 3.14159265359));
-			}
-			else
-			{
-				deviationValues[i] = 0.0f;
-			}
-		});
-
-	currentPointCloud->SetAttribute<std::vector<float>>("NormalDeviation", deviationValues);
-
-	std::vector<uint8_t> outlierMarking(numberOfPoints, 0);
-	float maxAngle = deviationThreshold; // �Ӱ谪 (Degree)
-
-	int outlierCount = 0;
-	for (size_t i = 0; i < numberOfPoints; ++i)
-	{
-		if (deviationValues[i] > maxAngle)
-		{
-			outlierMarking[i] = 1;
-			outlierCount++;
-		}
-	}
-
-	currentPointCloud->SetAttribute<std::vector<uint8_t>>("NormalDeviation_OutlierMarking", outlierMarking);
-
-	TE(Normal_Deviation);
-
-	{
-		VD::Clear("NormalDeviation");
-		const auto& positions = currentPointCloud->GetPositions();
-
-		for (size_t i = 0; i < numberOfPoints; ++i)
-		{
-			float val = deviationValues[i];
-			Eigen::Vector3f colorRGB;
-			Eigen::Vector4f colorRGBA;
-
-			if (outlierMarking[i] == 1)
-			{
-				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
-				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-			}
-			else
-			{
-				if (binaryVisualizationMode)
-				{
-					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
-					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
-				}
-				else
-				{
-					colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxAngle);
-					colorRGBA.w() = 0.8f;
-					colorRGB = colorRGBA.head<3>();
-				}
-			}
-
-			VD::AddSphere("NormalDeviation", positions[i], colorRGB, 0.05f, colorRGBA);
-		}
-		InfoLog("", "[NormalDeviation] Analysis Done. Threshold: %.1f deg, Outliers Marked: %d", maxAngle, outlierCount);
-	}
+	NormalDeviation processor;
+	return processor.Process(parameters);
 }
 
 void HeliumCore::ProcessManagedToNativeEvents()

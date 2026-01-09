@@ -171,6 +171,24 @@
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\AtomicDisjointSet.h">
       <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\SOR.h">
+      <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\ROR.h">
+      <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\CurvatureAnalysis.h">
+      <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\NormalDeviation.h">
+      <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudProcessing.h">
+      <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudProcessor.h">
+      <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -262,6 +280,18 @@
     </ClCompile>
     <ClCompile Include="HeliumCoreExecuteCommand.cpp">
       <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="PointCloudProcessing\SOR.cpp">
+      <Filter>소스 파일\PointCloudProcessing</Filter>
+    </ClCompile>
+    <ClCompile Include="PointCloudProcessing\ROR.cpp">
+      <Filter>소스 파일\PointCloudProcessing</Filter>
+    </ClCompile>
+    <ClCompile Include="PointCloudProcessing\CurvatureAnalysis.cpp">
+      <Filter>소스 파일\PointCloudProcessing</Filter>
+    </ClCompile>
+    <ClCompile Include="PointCloudProcessing\NormalDeviation.cpp">
+      <Filter>소스 파일\PointCloudProcessing</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

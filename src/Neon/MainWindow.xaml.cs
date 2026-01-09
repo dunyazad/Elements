@@ -124,6 +124,8 @@ namespace Neon
         private RorParameterDialog? _rorDialog = null;
         private CurvatureAnalysisParameterDialog? _curvatureDialog = null;
         private NormalDeviationAnalysisParameterDialog? _normalDeviationAnalysisParameterDialog = null;
+        private CompositeOutlierFilterDialog? _compositeOutlierFilterDialog = null;
+        private NodeEditorDialog? _nodeEditorDialog = null;
 
         public MainWindow()
         {
@@ -642,7 +644,75 @@ namespace Neon
 
         private void Menu_PointCloud_Composite_Outlier_Filter_Click(object sender, RoutedEventArgs e)
         {
+            if (selectedSceneNode != null)
+            {
+                if (_compositeOutlierFilterDialog != null)
+                {
+                    _compositeOutlierFilterDialog.Activate();
+                    return;
+                }
 
+                _compositeOutlierFilterDialog = new CompositeOutlierFilterDialog();
+                _compositeOutlierFilterDialog.Owner = this;
+                _compositeOutlierFilterDialog.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+
+                _compositeOutlierFilterDialog.ApplyAction = (a, b, c, d, e, f) =>
+                {
+                    var commandData = new
+                    {
+                        command = "PerformCompositeOutlierFilter",
+                        pointCloudID = selectedSceneNode.ID,
+                        //radius = radius,
+                        //temperature = temp,
+                        //visualizationMode = isGradient ? "Gradient" : "Binary"
+                    };
+                    //string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                    //HeliumNative.He_ManagedToNative(command);
+
+                    //ShowNotification($"Composite Outlier Filter (R={radius}, Temp={temp}, Vis={(isGradient ? "Gradient" : "Binary")})");
+                };
+
+                _compositeOutlierFilterDialog.Closed += (s, args) => { _compositeOutlierFilterDialog = null; };
+                _compositeOutlierFilterDialog.Show();
+            }
+            else
+            {
+                ShowNotification("No Point Cloud Selected.");
+            }
+        }
+
+        private void Menu_PointCloud_Node_Editor_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                if (_nodeEditorDialog != null)
+                {
+                    _nodeEditorDialog.Activate();
+                    return;
+                }
+
+                _nodeEditorDialog = new NodeEditorDialog();
+                _nodeEditorDialog.Owner = this;
+                _nodeEditorDialog.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+
+                _nodeEditorDialog.ApplyAction = (radius, temp, isGradient) =>
+                {
+                    var commandData = new
+                    {
+                        command = "PerformNodeEditorResult",
+                        pointCloudID = selectedSceneNode.ID,
+                        radius = radius,
+                        visualizationMode = isGradient ? "Gradient" : "Binary"
+                    };
+                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                    HeliumNative.He_ManagedToNative(command);
+
+                    ShowNotification($"Normal Deviation (R={radius}, Vis={(isGradient ? "Gradient" : "Binary")})");
+                };
+
+                _nodeEditorDialog.Closed += (s, args) => { _nodeEditorDialog = null; };
+                _nodeEditorDialog.Show();
+            }
         }
 
         private void Menu_VD_ClearAll_Click(object sender, RoutedEventArgs e)
