@@ -17,7 +17,7 @@ namespace Neon
     {
         public int PointCloudID { get; set; } = -1;
         public bool DeletePoints { get; set; } = false;
-        public PointCloudVisualizationMode visualizationMode { get; set; } = PointCloudVisualizationMode.Gradient;
+        public PointCloudVisualizationMode VisualizationMode { get; set; } = PointCloudVisualizationMode.Gradient;
     }
 
     public class PointCloudProcessorParametersSOR : PointCloudProcessorParameters

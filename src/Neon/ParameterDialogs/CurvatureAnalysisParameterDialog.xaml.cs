@@ -17,7 +17,7 @@ namespace Neon
         private void InitializeUI()
         {
             CmbColorMode.ItemsSource = Enum.GetValues(typeof(PointCloudVisualizationMode));
-            CmbColorMode.SelectedItem = Parameters.visualizationMode;
+            CmbColorMode.SelectedItem = Parameters.VisualizationMode;
 
             if (SliderK != null)
             {
@@ -41,7 +41,7 @@ namespace Neon
 
                 if (CmbColorMode.SelectedItem is PointCloudVisualizationMode mode)
                 {
-                    Parameters.visualizationMode = mode;
+                    Parameters.VisualizationMode = mode;
                 }
 
                 AnalyzeAction?.Invoke(Parameters);

@@ -356,54 +356,54 @@ void HeliumCore::PerformClustering(int pointCloudID, float searchRadius, float a
 	}
 }
 
-std::vector<uint8_t> HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, bool binaryVisualizationMode)
+std::vector<uint8_t> HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, PointCloudVisualizationMode visualizationMode)
 {
 	PointCloudProcessorParameters parameters;
 	parameters.SetParameter<int>("PointCloudID", pointCloudID);
 	parameters.SetParameter<int>("KNeighbors", kNeighbors);
 	parameters.SetParameter<float>("StdDevMulThresh", stdDevMulThresh);
 	parameters.SetParameter<bool>("DeletePoints", deletePoints);
-	parameters.SetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
+	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
 
 	SOR processor;
 
 	return processor.Process(parameters);
 }
 
-std::vector<uint8_t> HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, bool binaryVisualizationMode)
+std::vector<uint8_t> HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, PointCloudVisualizationMode visualizationMode)
 {
 	PointCloudProcessorParameters parameters;
 	parameters.SetParameter<int>("PointCloudID", pointCloudID);
 	parameters.SetParameter<float>("Radius", radius);
 	parameters.SetParameter<int>("MinNeighborsInRadius", minNeighborsInRadius);
 	parameters.SetParameter<bool>("DeletePoints", deletePoints);
-	parameters.SetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
+	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
 	
 	ROR processor;
 	
 	return processor.Process(parameters);
 }
 
-std::vector<uint8_t> HeliumCore::PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, bool binaryVisualizationMode)
+std::vector<uint8_t> HeliumCore::PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, PointCloudVisualizationMode visualizationMode)
 {
 	PointCloudProcessorParameters parameters;
 	parameters.SetParameter<int>("PointCloudID", pointCloudID);
 	parameters.SetParameter<int>("KNeighbors", kNeighbors);
 	parameters.SetParameter<float>("CurvatureThreshold", curvatureThreshold);
-	parameters.SetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
+	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
 
 	CurvatureAnalysis processor;
 
 	return processor.Process(parameters);
 }
 
-std::vector<uint8_t> HeliumCore::PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, bool binaryVisualizationMode)
+std::vector<uint8_t> HeliumCore::PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, PointCloudVisualizationMode visualizationMode)
 {
 	PointCloudProcessorParameters parameters;
 	parameters.SetParameter<int>("PointCloudID", pointCloudID);
 	parameters.SetParameter<float>("Radius", radius);
 	parameters.SetParameter<float>("DeviationThreshold", deviationThreshold);
-	parameters.SetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
+	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
 
 	NormalDeviation processor;
 	return processor.Process(parameters);
@@ -456,15 +456,15 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 			{
 				auto j = nlohmann::json::parse(jsonStr);
 
-				if (j.contains("command"))
+				if (j.contains("Command"))
 				{
-					std::string cmd = j["command"];
+					std::string cmd = j["Command"];
 
 					if (cmd == "LoadPointCloudFromPLY")
 					{
-						if (j.contains("fileNames") && j["fileNames"].is_array())
+						if (j.contains("FileNames") && j["FileNames"].is_array())
 						{
-							for (const auto& fileName : j["fileNames"])
+							for (const auto& fileName : j["FileNames"])
 							{
 								std::string path = fileName.get<std::string>();
 								std::filesystem::path fsPath(path);
@@ -475,33 +475,33 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 					}
 					else if (cmd == "SelectPointCloud")
 					{
-						if (j.contains("pointCloudID"))
+						if (j.contains("PointCloudID"))
 						{
-							int pointCloudID = j["pointCloudID"];
+							int pointCloudID = j["PointCloudID"];
 							SelectPointCloud(pointCloudID);
 						}
 					}
 					else if (cmd == "SetPointCloudVisibility")
 					{
-						if (j.contains("pointCloudID") && j.contains("isVisible"))
+						if (j.contains("PointCloudID") && j.contains("IsVisible"))
 						{
-							int pointCloudID = j["pointCloudID"];
-							bool isVisible = j["isVisible"];
+							int pointCloudID = j["PointCloudID"];
+							bool isVisible = j["IsVisible"];
 							SetPointCloudVisibility(pointCloudID, isVisible);
 						}
 					}
 					else if (cmd == "TogglePointClouds")
 					{
-						if (j.contains("pointCloudVisibleInfoList"))
+						if (j.contains("PointCloudVisibleInfoList"))
 						{
-							const auto& visibleList = j["pointCloudVisibleInfoList"];
+							const auto& visibleList = j["PointCloudVisibleInfoList"];
 
 							for (const auto& item : visibleList)
 							{
-								if (item.contains("pointCloudID") && item.contains("visible"))
+								if (item.contains("PointCloudID") && item.contains("IsVisible"))
 								{
-									int pointCloudID = item["pointCloudID"].get<int>();
-									bool isVisible = item["visible"].get<bool>();
+									int pointCloudID = item["PointCloudID"].get<int>();
+									bool isVisible = item["IsVisible"].get<bool>();
 									auto pointCloud = GetPointCloud(pointCloudID);
 									if (nullptr != pointCloud)
 									{
@@ -513,34 +513,34 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 					}
 					else if (cmd == "ClonePointCloud")
 					{
-						if (j.contains("pointCloudID"))
+						if (j.contains("PointCloudID"))
 						{
-							int pointCloudID = j["pointCloudID"];
+							int pointCloudID = j["PointCloudID"];
 							ClonePointCloud(pointCloudID);
 						}
 					}
 					else if (cmd == "DeletePointCloud")
 					{
-						if (j.contains("pointCloudID"))
+						if (j.contains("PointCloudID"))
 						{
-							int pointCloudID = j["pointCloudID"];
+							int pointCloudID = j["PointCloudID"];
 							DeletePointCloud(pointCloudID);
 						}
 					}
 					else if (cmd == "RenamePointCloud")
 					{
-						if (j.contains("pointCloudID") && j.contains("newName"))
+						if (j.contains("PointCloudID") && j.contains("NewName"))
 						{
-							int pointCloudID = j["pointCloudID"];
-							std::string newName = j["newName"];
+							int pointCloudID = j["PointCloudID"];
+							std::string newName = j["NewName"];
 							RenamePointCloud(pointCloudID, newName);
 						}
 					}
 					else if (cmd == "ShowSparseGrid")
 					{
-						if (j.contains("pointCloudID"))
+						if (j.contains("PointCloudID"))
 						{
-							int pointCloudID = j["pointCloudID"];
+							int pointCloudID = j["PointCloudID"];
 							auto sparseGrid = GetSparseGrid(pointCloudID);
 							if (sparseGrid)
 							{
@@ -550,9 +550,9 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 					}
 					else if (cmd == "ShowSparseDataBlocks")
 					{
-						if (j.contains("pointCloudID"))
+						if (j.contains("PointCloudID"))
 						{
-							int pointCloudID = j["pointCloudID"];
+							int pointCloudID = j["PointCloudID"];
 							auto sparseDataBlock = GetSparseDataBlock(pointCloudID);
 							if (sparseDataBlock)
 							{
@@ -564,13 +564,13 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 					{
 						if (nullptr != selectedPointCloud)
 						{
-							if (j.contains("pointCloudID"))
+							if (j.contains("PointCloudID"))
 							{
-								int pointCloudID = j["pointCloudID"];
+								int pointCloudID = j["PointCloudID"];
 								if (pointCloudID == selectedPointCloud->GetID())
 								{
-									float searchRadius = j.value("searchRadius", 0.15f);
-									float angleThreshold = j.value("angleThreshold", 0.9f);
+									float searchRadius = j.value("SearchRadius", 0.15f);
+									float angleThreshold = j.value("AngleThreshold", 0.9f);
 
 									PerformClustering(pointCloudID, searchRadius, angleThreshold);
 								}
@@ -579,73 +579,67 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 					}
 					else if (cmd == "PerformSOR")
 					{
-						if (j.contains("pointCloudID"))
+						if (j.contains("PointCloudID"))
 						{
-							int pointCloudID = j["pointCloudID"];
+							int pointCloudID = j["PointCloudID"];
 							auto pointCloud = GetPointCloud(pointCloudID);
 							if (nullptr != pointCloud)
 							{
-								int kNeighbors = j.value("kNeighbors", 50);
-								float stdDevMulThresh = j.value("stdDevMulThresh", 1.0f);
-								bool deletePoints = j.value("deletePoints", false);
-								std::string visualizationMode = j.value("visualizationMode", "Binary");
-								bool binaryVisualizationMode = (visualizationMode == "Binary");
+								int kNeighbors = j.value("KNeighbors", 50);
+								float stdDevMulThresh = j.value("StdDevMulThresh", 1.0f);
+								bool deletePoints = j.value("DeletePoints", false);
+								int visualizationMode = j.value("VisualizationMode", 0);
 
-								PerformSOR(pointCloudID, kNeighbors, stdDevMulThresh, deletePoints, binaryVisualizationMode);
+								PerformSOR(pointCloudID, kNeighbors, stdDevMulThresh, deletePoints, (PointCloudVisualizationMode)visualizationMode);
 							}
 						}
 						}
 					else if (cmd == "PerformROR")
 					{
-						if (j.contains("pointCloudID"))
+						if (j.contains("PointCloudID"))
 						{
-							int pointCloudID = j["pointCloudID"];
+							int pointCloudID = j["PointCloudID"];
 							auto pointCloud = GetPointCloud(pointCloudID);
 							if (nullptr != pointCloud)
 							{
-								float radius = j.value("radius", 0.5f);
-								int minNeighborsInRadius = j.value("minNeighborsInRadius", 5);
-								bool deletePoints = j.value("deletePoints", false);
-								std::string visualizationMode = j.value("visualizationMode", "Binary");
-								bool binaryVisualizationMode = (visualizationMode == "Binary");
+								float radius = j.value("Radius", 0.5f);
+								int minNeighborsInRadius = j.value("MinNeighborsInRadius", 5);
+								bool deletePoints = j.value("DeletePoints", false);
+								int visualizationMode = j.value("VisualizationMode", 0);
 
-								PerformROR(pointCloudID, radius, minNeighborsInRadius, deletePoints, binaryVisualizationMode);
+								PerformROR(pointCloudID, radius, minNeighborsInRadius, deletePoints, (PointCloudVisualizationMode)visualizationMode);
 							}
 						}
 					}
 					else if (cmd == "PerformCurvatureAnalysis")
 					{
-						if (j.contains("pointCloudID"))
+						if (j.contains("PointCloudID"))
 						{
-							int pointCloudID = j["pointCloudID"];
-							int kNeighbors = j.value("kNeighbors", 30);
-							float curvatureThreshold = j.value("curvatureThreshold", 1.0f);
+							int pointCloudID = j["PointCloudID"];
+							int kNeighbors = j.value("KNeighbors", 30);
+							float curvatureThreshold = j.value("CurvatureThreshold", 1.0f);
+							int visualizationMode = j.value("VisualizationMode", 0);
 
-							std::string visualizationMode = j.value("visualizationMode", "Gradient");
-							bool binaryVisualizationMode = (visualizationMode == "Binary");
-
-							PerformCurvatureAnalysis(pointCloudID, kNeighbors, curvatureThreshold, binaryVisualizationMode);
+							PerformCurvatureAnalysis(pointCloudID, kNeighbors, curvatureThreshold, (PointCloudVisualizationMode)visualizationMode);
 						}
-						}
+					}
 					else if (cmd == "PerformNormalDeviationAnalysis")
 					{
-						if (j.contains("pointCloudID"))
+						if (j.contains("PointCloudID"))
 						{
-							int pointCloudID = j["pointCloudID"];
-							float radius = j.value("radius", 0.1f);
-							float deviationThreshold = j.value("deviationThreshold", 45.0f);
+							int pointCloudID = j["PointCloudID"];
+							float radius = j.value("Radius", 0.1f);
+							float deviationThreshold = j.value("DeviationThreshold", 45.0f);
+							int visualizationMode = j.value("VisualizationMode", 0);
 
-							std::string visualizationMode = j.value("visualizationMode", "Gradient");
-							bool binaryVisualizationMode = (visualizationMode == "Binary");
-
-							PerformNormalDeviationAnalysis(pointCloudID, radius, deviationThreshold, binaryVisualizationMode);
+							PerformNormalDeviationAnalysis(pointCloudID, radius, deviationThreshold, (PointCloudVisualizationMode)visualizationMode);
 						}
 					}
 					else if (cmd == "PerformCompositeFilter")
 					{
-						if (j.contains("pointCloudID") && j.contains("pipeline"))
+						if (j.contains("PointCloudID") && j.contains("Pipeline"))
 						{
-							int pointCloudID = j["pointCloudID"];
+							int pointCloudID = j["PointCloudID"];
 							auto pointCloud = GetPointCloud(pointCloudID);
 
 							if (pointCloud != nullptr)
@@ -657,7 +651,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 								std::vector<bool> finalMask(numPoints, false);
 								bool isFirstStep = true;
 
-								const auto& pipeline = j["pipeline"];
+								const auto& pipeline = j["Pipeline"];
 
 								for (const auto& step : pipeline)
 								{
@@ -679,9 +673,11 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 									{
 										int kNeighbors = parameters.value("KNeighbors", 50);
 										float stdDevMulThresh = parameters.value("StdDevMulThresh", 1.0f);
+										int visualizationMode = parameters.value("VisualizationMode", 0);
 
 										params.SetParameter<int>("KNeighbors", kNeighbors);
 										params.SetParameter<float>("StdDevMulThresh", stdDevMulThresh);
+										params.SetParameter<int>("VisualizationMode", visualizationMode);
 
 										SOR processor;
 										outlierMarking = processor.Process(params);
@@ -818,9 +814,9 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 					}
 					else if (cmd == "ShowPointNormal")
 					{
-						if (j.contains("pointCloudID"))
+						if (j.contains("PointCloudID"))
 						{
-							int pointCloudID = j["pointCloudID"];
+							int pointCloudID = j["PointCloudID"];
 							int pointIndex = j.value("pointIndex", -1);
 							if (-1 != pointIndex)
 							{
@@ -846,9 +842,9 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 					}
 					else if (cmd == "ShowPointCloudNormals")
 					{
-						if (j.contains("pointCloudID"))
+						if (j.contains("PointCloudID"))
 						{
-							int pointCloudID = j["pointCloudID"];
+							int pointCloudID = j["PointCloudID"];
 							auto pointCloud = GetPointCloud(pointCloudID);
 							if (nullptr != pointCloud)
 							{

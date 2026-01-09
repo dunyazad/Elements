@@ -20,13 +20,13 @@ std::vector<uint8_t> ROR::Process(const PointCloudProcessorParameters& parameter
 	float radius = 0.3f;
 	int minNeighborsInRadius = 24;
 	bool deletePoints = false;
-	bool binaryVisualizationMode = false;
+	int visualizationMode = 0;
 	
 	pointCloudID = parameters.GetParameter<int>("PointCloudID", pointCloudID);
 	radius = parameters.GetParameter<float>("Radius", radius);
 	minNeighborsInRadius = parameters.GetParameter<int>("MinNeighborsInRadius", minNeighborsInRadius);
 	deletePoints = parameters.GetParameter<bool>("DeletePoints", deletePoints);
-	binaryVisualizationMode = parameters.GetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
+	visualizationMode = parameters.GetParameter<int>("VisualizationMode", visualizationMode);
 
 	std::vector<uint8_t> outlierMarking;
 
@@ -82,6 +82,50 @@ std::vector<uint8_t> ROR::Process(const PointCloudProcessorParameters& parameter
 
 	TE(ROR_Filter);
 
+	{
+		VD::Clear("ROR");
+
+		if (visualizationMode != (int)PointCloudVisualizationMode::None)
+		{
+			const auto& positions = currentPointCloud->GetPositions();
+			size_t displayCount = currentPointCloud->Size();
+
+			float maxSafeCount = (float)minNeighborsInRadius * 3.0f;
+
+			for (size_t i = 0; i < displayCount; ++i)
+			{
+				Eigen::Vector3f colorRGB;
+				Eigen::Vector4f colorRGBA;
+				float radiusVal = 0.05f;
+				int count = neighborCounts[i];
+
+				if (outlierMarking[i] == 1)
+				{
+					colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
+					colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
+					radiusVal = 0.08f;
+				}
+				else
+				{
+					if ((int)PointCloudVisualizationMode::Binary == visualizationMode)
+					{
+						colorRGB = { 0.0f, 1.0f, 0.0f };
+						colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
+					}
+					else if ((int)PointCloudVisualizationMode::Gradient == visualizationMode)
+					{
+						colorRGBA = Color::GetHeatMapColor((float)count, (float)minNeighborsInRadius, maxSafeCount);
+						colorRGB = colorRGBA.head<3>();
+
+						colorRGBA[3] = 0.6f;
+					}
+				}
+				
+				VD::AddSphere("ROR", positions[i], colorRGB, radiusVal, colorRGBA);
+			}
+		}
+	}
+
 	if (deletePoints)
 	{
 		int outlierCount = totalOutlierCount.load();
@@ -118,46 +162,6 @@ std::vector<uint8_t> ROR::Process(const PointCloudProcessorParameters& parameter
 		else
 		{
 			InfoLog("", "[ROR] Found 0 outliers (Clean).");
-		}
-	}
-
-	{
-		VD::Clear("ROR");
-
-		const auto& positions = currentPointCloud->GetPositions();
-		size_t displayCount = currentPointCloud->Size();
-
-		float maxSafeCount = (float)minNeighborsInRadius * 3.0f;
-
-		for (size_t i = 0; i < displayCount; ++i)
-		{
-			Eigen::Vector3f colorRGB;
-			Eigen::Vector4f colorRGBA;
-			float radiusVal = 0.05f;
-			int count = neighborCounts[i];
-
-			if (outlierMarking[i] == 1)
-			{
-				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
-				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-				radiusVal = 0.08f;
-			}
-			else
-			{
-				if (binaryVisualizationMode)
-				{
-					colorRGB = { 0.0f, 1.0f, 0.0f };
-					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
-				}
-				else
-				{
-					float t = std::clamp((float)(count - minNeighborsInRadius) / (maxSafeCount - minNeighborsInRadius), 0.0f, 1.0f);
-					colorRGB = Eigen::Vector3f(0.0f, 1.0f - t, t);
-					colorRGBA = { colorRGB.x(), colorRGB.y(), colorRGB.z(), 0.6f };
-				}
-			}
-
-			VD::AddSphere("ROR", positions[i], colorRGB, radiusVal, colorRGBA);
 		}
 	}
 

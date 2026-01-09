@@ -20,13 +20,13 @@ std::vector<uint8_t> SOR::Process(const PointCloudProcessorParameters& parameter
 	int kNeighbors = 50;
 	float stdDevMulThresh = 3.0f;
 	bool deletePoints = false;
-	bool binaryVisualizationMode = false;
+	int visualizationMode = 0;
 
 	pointCloudID = parameters.GetParameter<int>("PointCloudID", pointCloudID);
 	kNeighbors = parameters.GetParameter<int>("KNeighbors", kNeighbors);
 	stdDevMulThresh = parameters.GetParameter<float>("StdDevMulThresh", stdDevMulThresh);
 	deletePoints = parameters.GetParameter<bool>("DeletePoints", deletePoints);
-	binaryVisualizationMode = parameters.GetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
+	visualizationMode = parameters.GetParameter<int>("VisualizationMode", visualizationMode);
 
 	InfoLog("", "Starting SOR Filter (k=%d, mul=%.1f, delete=%s)", 
 		kNeighbors, stdDevMulThresh, deletePoints ? "true" : "false");
@@ -121,6 +121,49 @@ std::vector<uint8_t> SOR::Process(const PointCloudProcessorParameters& parameter
 
 	TE(SOR_Filter);
 
+	{
+		VD::Clear("SOR");
+
+		if (visualizationMode != (int)PointCloudVisualizationMode::None)
+		{
+			const auto& positions = currentPointCloud->GetPositions();
+
+			float visMaxDist = distanceThreshold;
+			if (visMaxDist < 1e-6f) visMaxDist = 1.0f;
+
+			for (size_t i = 0; i < numberOfPoints; ++i)
+			{
+				Eigen::Vector3f colorRGB;
+				Eigen::Vector4f colorRGBA;
+				float radius = 0.05f;
+
+				if (outlierMarking[i] == 1)
+				{
+					colorRGB = { 1.0f, 0.0f, 0.0f };
+					colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
+					radius = 0.08f;
+				}
+				else
+				{
+					if ((int)PointCloudVisualizationMode::Binary == visualizationMode)
+					{
+						colorRGB = { 0.0f, 1.0f, 0.0f };
+						colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
+					}
+					else if ((int)PointCloudVisualizationMode::Gradient == visualizationMode)
+					{
+						colorRGBA = Color::GetHeatMapColor(pointMeanDistances[i], 0.0f, visMaxDist);
+						colorRGB = colorRGBA.head<3>();
+
+						colorRGBA[3] = 0.6f;
+					}
+				}
+
+				VD::AddSphere("SOR", positions[i], colorRGB, radius, colorRGBA);
+			}
+		}
+	}
+
 	if (deletePoints)
 	{
 		if (outlierCount > 0)
@@ -156,53 +199,6 @@ std::vector<uint8_t> SOR::Process(const PointCloudProcessorParameters& parameter
 		else
 		{
 			InfoLog("", "[SOR] Found 0 outliers (Clean).");
-		}
-	}
-
-	{
-		VD::Clear("SOR");
-
-		const auto& positions = currentPointCloud->GetPositions();
-		size_t displayCount = currentPointCloud->Size();
-
-		float visMaxDist = distanceThreshold;
-
-		for (size_t i = 0; i < displayCount; ++i)
-		{
-			Eigen::Vector3f colorRGB;
-			Eigen::Vector4f colorRGBA;
-			float radius = 0.05f;
-
-			if (outlierMarking[i] == 1)
-			{
-				colorRGB = { 1.0f, 0.0f, 0.0f };
-				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-				radius = 0.08f;
-			}
-			else
-			{
-				if (binaryVisualizationMode)
-				{
-					colorRGB = { 0.0f, 1.0f, 0.0f };
-					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
-				}
-				else
-				{
-					float t = std::clamp(pointMeanDistances[i] / visMaxDist, 0.0f, 1.0f);
-					Eigen::Vector3f c;
-					if (t < 0.5f) {
-						c = Eigen::Vector3f(0.0f, t * 2.0f, 1.0f);
-					}
-					else {
-						c = Eigen::Vector3f(0.0f, 1.0f, 1.0f - (t - 0.5f) * 2.0f);
-					}
-
-					colorRGB = c;
-					colorRGBA = { c.x(), c.y(), c.z(), 0.5f };
-				}
-			}
-
-			VD::AddSphere("SOR", positions[i], colorRGB, radius, colorRGBA);
 		}
 	}
 

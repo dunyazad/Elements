@@ -13,6 +13,7 @@
 #include <Helium/Backend/GraphicsBackend.h>
 #include <Helium/Components/Components.h>
 #include <Helium/Systems/Systems.h>
+#include <Helium/PointCloudProcessing/PointCloudProcessor.h>
 
 class Scene;
 class PointCloud;
@@ -187,10 +188,10 @@ public:
     void RenamePointCloud(int pointCloudID, const std::string& newName);
 
 	void PerformClustering(int pointCloudID, float searchRadius, float angleThreshold);
-    std::vector<uint8_t> PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, bool binaryVisualizationMode);
-    std::vector<uint8_t> PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, bool binaryVisualizationMode);
-    std::vector<uint8_t> PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, bool binaryVisualizationMode);
-    std::vector<uint8_t>  PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, bool binaryVisualizationMode);
+    std::vector<uint8_t> PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, PointCloudVisualizationMode visualizationMode);
+    std::vector<uint8_t> PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, PointCloudVisualizationMode visualizationMode);
+    std::vector<uint8_t> PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, PointCloudVisualizationMode visualizationMode);
+    std::vector<uint8_t> PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, PointCloudVisualizationMode visualizationMode);
 
     void ProcessManagedToNativeEvents();
     void EnqueueManagedToNativeEvent(std::function<void()> event);

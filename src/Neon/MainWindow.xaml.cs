@@ -337,8 +337,8 @@ namespace Neon
 
                 var commandData = new
                 {
-                    command = "LoadPointCloudFromPLY",
-                    fileNames = filenames
+                    Command = "LoadPointCloudFromPLY",
+                    FileNames = filenames
                 };
 
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
@@ -362,9 +362,9 @@ namespace Neon
             {
                 var commandData = new
                 {
-                    command = "ShowPointNormal",
-                    pointCloudID = selectedSceneNode.ID,
-                    pointIndex = selectedPointIndex
+                    Command = "ShowPointNormal",
+                    PointCloudID = selectedSceneNode.ID,
+                    PointIndex = selectedPointIndex
                 };
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                 HeliumNative.He_ManagedToNative(command);
@@ -377,9 +377,9 @@ namespace Neon
             {
                 var commandData = new
                 {
-                    command = "ShowPointNormalDeviation",
-                    pointCloudID = selectedSceneNode.ID,
-                    pointIndex = selectedPointIndex
+                    Command = "ShowPointNormalDeviation",
+                    PointCloudID = selectedSceneNode.ID,
+                    PointIndex = selectedPointIndex
                 };
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                 HeliumNative.He_ManagedToNative(command);
@@ -392,8 +392,8 @@ namespace Neon
             {
                 var commandData = new
                 {
-                    command = "ClonePointCloud",
-                    pointCloudID = selectedSceneNode.ID
+                    Command = "ClonePointCloud",
+                    PointCloudID = selectedSceneNode.ID
                 };
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                 HeliumNative.He_ManagedToNative(command);
@@ -408,8 +408,8 @@ namespace Neon
             {
                 var commandData = new
                 {
-                    command = "ShowPointCloudNormals",
-                    pointCloudID = selectedSceneNode.ID
+                    Command = "ShowPointCloudNormals",
+                    PointCloudID = selectedSceneNode.ID
                 };
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                 HeliumNative.He_ManagedToNative(command);
@@ -422,8 +422,8 @@ namespace Neon
             {
                 var commandData = new
                 {
-                    command = "ShowSparseGrid",
-                    pointCloudID = selectedSceneNode.ID
+                    Command = "ShowSparseGrid",
+                    PointCloudID = selectedSceneNode.ID
                 };
 
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
@@ -438,8 +438,8 @@ namespace Neon
             {
                 var commandData = new
                 {
-                    command = "ShowSparseDataBlocks",
-                    pointCloudID = selectedSceneNode.ID
+                    Command = "ShowSparseDataBlocks",
+                    PointCloudID = selectedSceneNode.ID
                 };
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                 HeliumNative.He_ManagedToNative(command);
@@ -454,10 +454,10 @@ namespace Neon
             {
                 var commandData = new
                 {
-                    command = "PerformClustering",
-                    pointCloudID = selectedSceneNode.ID,
-                    searchRadius = 0.15f,
-                    angleThreshold = 0.9f
+                    Command = "PerformClustering",
+                    PointCloudID = selectedSceneNode.ID,
+                    SearchRadius = 0.15f,
+                    AngleThreshold = 0.9f
                 };
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                 HeliumNative.He_ManagedToNative(command);
@@ -489,12 +489,12 @@ namespace Neon
                 {
                     var commandData = new
                     {
-                        command = "PerformSOR",
-                        pointCloudID = parameters.PointCloudID,
-                        kNeighbors = parameters.KNeighbors,
-                        stdDevMulThresh = parameters.StdDevMulThresh,
-                        deletePoints = parameters.DeletePoints,
-                        visualizationMode = parameters.visualizationMode.ToString()
+                        Command = "PerformSOR",
+                        PointCloudID = parameters.PointCloudID,
+                        KNeighbors = parameters.KNeighbors,
+                        StdDevMulThresh = parameters.StdDevMulThresh,
+                        DeletePoints = parameters.DeletePoints,
+                        VisualizationMode = parameters.VisualizationMode
                     };
 
                     var options = new System.Text.Json.JsonSerializerOptions();
@@ -505,7 +505,7 @@ namespace Neon
 
                     HeliumNative.He_ManagedToNative(command);
 
-                    ShowNotification($"Applied SOR (K={parameters.KNeighbors}, StdDev={parameters.StdDevMulThresh}, Vis={parameters.visualizationMode})");
+                    ShowNotification($"Applied SOR (K={parameters.KNeighbors}, StdDev={parameters.StdDevMulThresh}, Vis={parameters.VisualizationMode})");
                 };
 
                 _sorDialog.Closed += (s, args) => { _sorDialog = null; };
@@ -542,12 +542,12 @@ namespace Neon
                 {
                     var commandData = new
                     {
-                        command = "PerformROR",
-                        pointCloudID = parameters.PointCloudID,
-                        radius = parameters.Radius,
-                        minNeighborsInRadius = parameters.MinNeighborsInRadius,
-                        deletePoints = parameters.DeletePoints,
-                        visualizationMode = parameters.visualizationMode.ToString()
+                        Command = "PerformROR",
+                        PointCloudID = parameters.PointCloudID,
+                        Radius = parameters.Radius,
+                        MinNeighborsInRadius = parameters.MinNeighborsInRadius,
+                        DeletePoints = parameters.DeletePoints,
+                        VisualizationMode = parameters.VisualizationMode
                     };
 
                     var options = new System.Text.Json.JsonSerializerOptions();
@@ -558,7 +558,7 @@ namespace Neon
 
                     HeliumNative.He_ManagedToNative(command);
 
-                    ShowNotification($"Applied ROR (R={parameters.Radius}, MinN={parameters.MinNeighborsInRadius}, Vis={parameters.visualizationMode})");
+                    ShowNotification($"Applied ROR (R={parameters.Radius}, MinN={parameters.MinNeighborsInRadius}, Vis={parameters.VisualizationMode})");
                 };
 
                 _rorDialog.Closed += (s, args) => { _rorDialog = null; };
@@ -595,12 +595,12 @@ namespace Neon
                 {
                     var commandData = new
                     {
-                        command = "PerformCurvatureAnalysis",
-                        pointCloudID = parameters.PointCloudID,
-                        kNeighbors = parameters.KNeighbors,
-                        curvatureThreshold = parameters.CurvatureThreshold,
-                        deletePoints = parameters.DeletePoints,
-                        visualizationMode = parameters.visualizationMode.ToString() // "Gradient", "Binary" 등 문자열로 변환
+                        Command = "PerformCurvatureAnalysis",
+                        PointCloudID = parameters.PointCloudID,
+                        KNeighbors = parameters.KNeighbors,
+                        CurvatureThreshold = parameters.CurvatureThreshold,
+                        DeletePoints = parameters.DeletePoints,
+                        VisualizationMode = parameters.VisualizationMode
                     };
 
                     var options = new System.Text.Json.JsonSerializerOptions();
@@ -609,7 +609,7 @@ namespace Neon
 
                     string command = System.Text.Json.JsonSerializer.Serialize(commandData, options);
 
-                    ShowNotification($"Applied Curvature Analysis (ID: {parameters.PointCloudID}, K={parameters.KNeighbors}, CurvatureThresh={parameters.CurvatureThreshold}, Vis={parameters.visualizationMode})");
+                    ShowNotification($"Applied Curvature Analysis (ID: {parameters.PointCloudID}, K={parameters.KNeighbors}, CurvatureThresh={parameters.CurvatureThreshold}, Vis={parameters.VisualizationMode})");
 
                     HeliumNative.He_ManagedToNative(command);
                 };
@@ -649,11 +649,11 @@ namespace Neon
                 {
                     var commandData = new
                     {
-                        command = "PerformNormalDeviationAnalysis",
-                        pointCloudID = parameters.PointCloudID,
-                        radius = parameters.Radius,
-                        deviationThreshold = parameters.DeviationThreshold,
-                        visualizationMode = parameters.visualizationMode.ToString()
+                        Command = "PerformNormalDeviationAnalysis",
+                        PointCloudID = parameters.PointCloudID,
+                        Radius = parameters.Radius,
+                        DeviationThreshold = parameters.DeviationThreshold,
+                        VisualizationMode = parameters.VisualizationMode
                     };
                     var options = new System.Text.Json.JsonSerializerOptions();
                     options.Converters.Add(new FloatJsonConverter());
@@ -663,7 +663,7 @@ namespace Neon
 
                     HeliumNative.He_ManagedToNative(command);
 
-                    ShowNotification($"Applied Normal Deviation Analysis (ID: {parameters.PointCloudID}, Radius={parameters.Radius}, DeviationThresh={parameters.DeviationThreshold}, Vis={parameters.visualizationMode})");
+                    ShowNotification($"Applied Normal Deviation Analysis (ID: {parameters.PointCloudID}, Radius={parameters.Radius}, DeviationThresh={parameters.DeviationThreshold}, Vis={parameters.VisualizationMode})");
                 };
 
                 _normalDeviationAnalysisParameterDialog.Closed += (s, args) => { _normalDeviationAnalysisParameterDialog = null; };
@@ -710,9 +710,9 @@ namespace Neon
 
                     var commandData = new
                     {
-                        command = "PerformCompositeFilter",
-                        pointCloudID = selectedSceneNode.ID, // 예시
-                        pipeline = pipelineList
+                        Command = "PerformCompositeFilter",
+                        PointCloudID = selectedSceneNode.ID, // 예시
+                        Pipeline = pipelineList
                     };
 
                     var options = new System.Text.Json.JsonSerializerOptions();
@@ -754,10 +754,10 @@ namespace Neon
                 {
                     var commandData = new
                     {
-                        command = "PerformNodeEditorResult",
-                        pointCloudID = selectedSceneNode.ID,
-                        radius = radius,
-                        visualizationMode = isGradient ? "Gradient" : "Binary"
+                        Command = "PerformNodeEditorResult",
+                        PointCloudID = selectedSceneNode.ID,
+                        Radius = radius,
+                        VisualizationMode = isGradient ? "Gradient" : "Binary"
                     };
                     string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                     HeliumNative.He_ManagedToNative(command);
@@ -774,7 +774,7 @@ namespace Neon
         {
             var commandData = new
             {
-                command = "ClearAllVisualDebugging"
+                Command = "ClearAllVisualDebugging"
             };
             string command = System.Text.Json.JsonSerializer.Serialize(commandData);
             HeliumNative.He_ManagedToNative(command);
@@ -783,7 +783,7 @@ namespace Neon
         {
             var commandData = new
             {
-                command = "ToggleGrid"
+                Command = "ToggleGrid"
             };
             string command = System.Text.Json.JsonSerializer.Serialize(commandData);
             HeliumNative.He_ManagedToNative(command);
@@ -793,7 +793,7 @@ namespace Neon
         {
             var commandData = new
             {
-                command = "ToggleAxisGizmo"
+                Command = "ToggleAxisGizmo"
             };
             string command = System.Text.Json.JsonSerializer.Serialize(commandData);
             HeliumNative.He_ManagedToNative(command);
@@ -803,7 +803,7 @@ namespace Neon
         {
             var commandData = new
             {
-                command = "ToggleCenterGizmo"
+                Command = "ToggleCenterGizmo"
             };
             string command = System.Text.Json.JsonSerializer.Serialize(commandData);
             HeliumNative.He_ManagedToNative(command);
@@ -829,8 +829,8 @@ namespace Neon
             {
                 var commandData = new
                 {
-                    command = "SelectPointCloud",
-                    pointCloudID = sceneNode.ID
+                    Command = "SelectPointCloud",
+                    PointCloudID = sceneNode.ID
                 };
 
                 string command = System.Text.Json.JsonSerializer.Serialize(commandData);
@@ -852,9 +852,9 @@ namespace Neon
 
                     var commandData = new
                     {
-                        command = "SetPointCloudVisibility",
-                        pointCloudID = sceneNode.ID,
-                        isVisible = isVisible
+                        Command = "SetPointCloudVisibility",
+                        PointCloudID = sceneNode.ID,
+                        IsVisible = isVisible
                     };
                     var command = System.Text.Json.JsonSerializer.Serialize(commandData);
                     HeliumNative.He_ManagedToNative(command);
@@ -868,8 +868,8 @@ namespace Neon
                     {
                         var commandData = new
                         {
-                            command = "SelectPointCloud",
-                            pointCloudID = sceneNode.ID
+                            Command = "SelectPointCloud",
+                            PointCloudID = sceneNode.ID
                         };
                         string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                         HeliumNative.He_ManagedToNative(command);
@@ -895,8 +895,8 @@ namespace Neon
                 {
                     var commandData = new
                     {
-                        command = "DeletePointCloud",
-                        pointCloudID = sceneNode.ID
+                        Command = "DeletePointCloud",
+                        PointCloudID = sceneNode.ID
                     };
                     string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                     HeliumNative.He_ManagedToNative(command);
@@ -933,8 +933,8 @@ namespace Neon
                         {
                             var commandData = new
                             {
-                                command = "SelectPointCloud",
-                                pointCloudID = sceneNode.ID
+                                Command = "SelectPointCloud",
+                                PointCloudID = sceneNode.ID
                             };
                             string command = System.Text.Json.JsonSerializer.Serialize(commandData);
                             HeliumNative.He_ManagedToNative(command);
@@ -952,7 +952,7 @@ namespace Neon
 
             var commandData = new
             {
-                command = "TogglePointClouds",
+                Command = "TogglePointClouds",
                 pointCloudVisibleInfoList = pointCloudVisibleInfoList
             };
             var command = System.Text.Json.JsonSerializer.Serialize(commandData);

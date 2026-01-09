@@ -20,12 +20,12 @@ std::vector<uint8_t> CurvatureAnalysis::Process(const PointCloudProcessorParamet
 	int pointCloudID = -1;
 	int kNeighbors = 30;
 	float curvatureThreshold = 1.0f;
-	bool binaryVisualizationMode = false;
+	int visualizationMode = 0;
 
 	pointCloudID = parameters.GetParameter<int>("PointCloudID", pointCloudID);
 	kNeighbors = parameters.GetParameter<int>("KNeighbors", kNeighbors);
 	curvatureThreshold = parameters.GetParameter<float>("CurvatureThreshold", curvatureThreshold);
-	binaryVisualizationMode = parameters.GetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
+	visualizationMode = parameters.GetParameter<int>("VisualizationMode", visualizationMode);
 
 	std::vector<uint8_t> outlierMarking;
 
@@ -134,21 +134,20 @@ std::vector<uint8_t> CurvatureAnalysis::Process(const PointCloudProcessorParamet
 			}
 			else
 			{
-				if (binaryVisualizationMode)
+				if ((int)PointCloudVisualizationMode::Binary == visualizationMode)
 				{
 					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
 					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
 				}
-				else
+				else if ((int)PointCloudVisualizationMode::Gradient == visualizationMode)
 				{
-					// Gradient Mode
 					colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxVal);
 					colorRGBA.w() = 0.8f;
 					colorRGB = colorRGBA.head<3>();
 				}
+				
+				VD::AddSphere("Curvature", positions[i], colorRGB, 0.05f, colorRGBA);
 			}
-
-			VD::AddSphere("Curvature", positions[i], colorRGB, 0.05f, colorRGBA);
 		}
 		InfoLog("", "[Curvature] Analysis Done. Threshold: %.3f, Outliers Marked: %d", maxVal, outlierCount);
 	}

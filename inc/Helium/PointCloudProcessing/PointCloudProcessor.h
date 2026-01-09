@@ -5,6 +5,13 @@
 #include <string>
 #include <vector>
 
+enum class PointCloudVisualizationMode
+{
+	None,
+	Gradient,
+	Binary
+};
+
 class PointCloudProcessorParameters
 {
 public:

@@ -90,7 +90,7 @@ namespace Neon.ViewModels
                     break;
             }
 
-            Parameters.visualizationMode = PointCloudVisualizationMode.None;
+            Parameters.VisualizationMode = PointCloudVisualizationMode.None;
         }
 
         private void OpenParameterDialog()

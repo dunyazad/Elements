@@ -19,12 +19,12 @@ std::vector<uint8_t> NormalDeviation::Process(const PointCloudProcessorParameter
 	int pointCloudID = -1;
 	float radius = 0.1f;
 	float deviationThreshold = 45.0f;
-	bool binaryVisualizationMode = false;
+	int visualizationMode = 0;
 
 	pointCloudID = parameters.GetParameter<int>("PointCloudID", pointCloudID);
 	radius = parameters.GetParameter<float>("Radius", radius);
 	deviationThreshold = parameters.GetParameter<float>("DeviationThreshold", deviationThreshold);
-	binaryVisualizationMode = parameters.GetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
+	visualizationMode = parameters.GetParameter<int>("VisualizationMode", visualizationMode);
 
 	std::vector<uint8_t> outlierMarking;
 
@@ -128,20 +128,20 @@ std::vector<uint8_t> NormalDeviation::Process(const PointCloudProcessorParameter
 			}
 			else
 			{
-				if (binaryVisualizationMode)
+				if (visualizationMode == (int)PointCloudVisualizationMode::Binary)
 				{
 					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
 					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
 				}
-				else
+				else if (visualizationMode == (int)PointCloudVisualizationMode::Gradient)
 				{
 					colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxAngle);
 					colorRGBA.w() = 0.8f;
 					colorRGB = colorRGBA.head<3>();
 				}
+				
+				VD::AddSphere("NormalDeviation", positions[i], colorRGB, 0.05f, colorRGBA);
 			}
-
-			VD::AddSphere("NormalDeviation", positions[i], colorRGB, 0.05f, colorRGBA);
 		}
 		InfoLog("", "[NormalDeviation] Analysis Done. Threshold: %.1f deg, Outliers Marked: %d", maxAngle, outlierCount);
 	}
