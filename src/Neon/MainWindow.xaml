@@ -162,18 +162,18 @@
                     </MenuItem>
                     
                     <MenuItem Header="PointCloud">
+                        <MenuItem Header="Clone" Click="Menu_PointCloud_Clone_Click"/>
+                        <Separator/>
                         <MenuItem Header="Show Sparse Grid" Click="Menu_PointCloud_ShowSparseGrid_Click"/>
                         <MenuItem Header="Show Sparse DataBlocks" Click="Menu_PointCloud_ShowSparseDataBlocks_Click"/>
+                        <MenuItem Header="Show Normals" Click="Menu_PointCloud_ShowNormals_Click"/>
                         <Separator/>
-                        <MenuItem Header="Clone" Click="Menu_PointCloud_Clone_Click"/>
                         <MenuItem Header="Clustering" Click="Menu_PointCloud_Clustering_Click"/>
                         <MenuItem Header="SOR" Click="Menu_PointCloud_SOR_Click"/>
                         <MenuItem Header="ROR" Click="Menu_PointCloud_ROR_Click"/>
                         <MenuItem Header="Curvature Analysis" Click="Menu_PointCloud_Curvature_Analysis_Click"/>
                         <MenuItem Header="Normal Deviation Analysis" Click="Menu_PointCloud_Normal_Deviation_Analysis_Click"/>
-                        <MenuItem Header="Show Normals" Click="Menu_PointCloud_ShowNormals_Click"/>
-                        <Separator/>
-                        <MenuItem Header="Reset Layout"/>
+                        <MenuItem Header="Composite Outlier Filter" Click="Menu_PointCloud_Composite_Outlier_Filter_Click"/>
                     </MenuItem>
 
                     <MenuItem Header="VD">

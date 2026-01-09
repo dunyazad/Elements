@@ -184,6 +184,7 @@ public:
     void SetPointCloudVisibility(int pointCloudID, bool visible);
     void ClonePointCloud(int pointCloudID);
     void DeletePointCloud(int pointCloudID);
+    void RenamePointCloud(int pointCloudID, const std::string& newName);
 
 	void PerformClustering(int pointCloudID, float searchRadius, float angleThreshold);
     void PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, bool binaryVisualizationMode);

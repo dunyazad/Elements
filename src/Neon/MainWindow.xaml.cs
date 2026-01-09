@@ -383,6 +383,37 @@ namespace Neon
                 HeliumNative.He_ManagedToNative(command);
             }
         }
+
+        private void Menu_PointCloud_Clone_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                var commandData = new
+                {
+                    command = "ClonePointCloud",
+                    pointCloudID = selectedSceneNode.ID
+                };
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ManagedToNative(command);
+            }
+        }
+
+        // Separator
+
+        private void Menu_PointCloud_ShowNormals_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                var commandData = new
+                {
+                    command = "ShowPointCloudNormals",
+                    pointCloudID = selectedSceneNode.ID
+                };
+                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                HeliumNative.He_ManagedToNative(command);
+            }
+        }
+
         private void Menu_PointCloud_ShowSparseGrid_Click(object sender, RoutedEventArgs e)
         {
             if (selectedSceneNode != null)
@@ -413,19 +444,7 @@ namespace Neon
             }
         }
 
-        private void Menu_PointCloud_Clone_Click(object sender, RoutedEventArgs e)
-        {
-            if (selectedSceneNode != null)
-            {
-                var commandData = new
-                {
-                    command = "ClonePointCloud",
-                    pointCloudID = selectedSceneNode.ID
-                };
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
-                HeliumNative.He_ManagedToNative(command);
-            }
-        }
+        // Separator
 
         private void Menu_PointCloud_Clustering_Click(object sender, RoutedEventArgs e)
         {
@@ -621,18 +640,9 @@ namespace Neon
             }
         }
 
-        private void Menu_PointCloud_ShowNormals_Click(object sender, RoutedEventArgs e)
+        private void Menu_PointCloud_Composite_Outlier_Filter_Click(object sender, RoutedEventArgs e)
         {
-            if (selectedSceneNode != null)
-            {
-                var commandData = new
-                {
-                    command = "ShowPointCloudNormals",
-                    pointCloudID = selectedSceneNode.ID
-                };
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
-                HeliumNative.He_ManagedToNative(command);
-            }
+
         }
 
         private void Menu_VD_ClearAll_Click(object sender, RoutedEventArgs e)

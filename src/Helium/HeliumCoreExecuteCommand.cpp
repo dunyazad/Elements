@@ -179,6 +179,15 @@ void HeliumCore::DeletePointCloud(int pointCloudID)
 	Helium.NativeToManaged(j.dump().c_str());
 }
 
+void HeliumCore::RenamePointCloud(int pointCloudID, const std::string& newName)
+{
+	auto pointCloud = GetPointCloud(pointCloudID);
+	if (pointCloud)
+	{
+		pointCloud->SetName(newName);
+	}
+}
+
 void HeliumCore::PerformClustering(int pointCloudID, float searchRadius, float angleThreshold)
 {
 	TS(Clustering_Parallel);
@@ -405,7 +414,6 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 				pointMeanDistances[i] = 0.0f;
 		});
 
-	// 2. 통계 계산
 	double totalSum = 0.0;
 	double totalSqSum = 0.0;
 	for (float d : pointMeanDistances)
@@ -418,13 +426,11 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 	double variance = (totalSqSum / numberOfPoints) - (globalMean * globalMean);
 	float globalStdDev = std::sqrtf(std::max(0.0f, (float)variance));
 
-	// ★ 임계값 계산 (이 값이 시각화의 기준이 됨)
 	float distanceThreshold = globalMean + stdDevMulThresh * globalStdDev;
 
 	InfoLog("", "[SOR] Mean: %.4f, StdDev: %.4f, Threshold: %.4f (k=%d, mul=%.1f)",
 		globalMean, globalStdDev, distanceThreshold, kNeighbors, stdDevMulThresh);
 
-	// 3. Outlier 판별
 	int outlierCount = 0;
 	for (size_t i = 0; i < numberOfPoints; ++i)
 	{
@@ -491,37 +497,27 @@ void HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThr
 			Eigen::Vector4f colorRGBA;
 			float radius = 0.05f;
 
-			if (pointMeanDistances[i] > distanceThreshold)
+			if (outlierMarking[i] == 1)
 			{
-				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
-				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f }; // 불투명
+				colorRGB = { 1.0f, 0.0f, 0.0f };
+				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
 				radius = 0.08f;
 			}
 			else
 			{
 				if (binaryVisualizationMode)
 				{
-					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
-					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f }; // 투명하게
+					colorRGB = { 0.0f, 1.0f, 0.0f };
+					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
 				}
 				else
 				{
-					// Gradient: 0.0(Blue) ~ Threshold(Green/Yellow)
-					// Color::GetHeatMapColor는 0(Blue)->0.5(Green)->1(Red) 이므로
-					// 여기서는 0.0 ~ 0.5 사이의 값으로 매핑해서 Blue->Green 느낌을 냄
-					// 혹은 그냥 전체 레인지 사용하되, 1.0(Red)는 위에서 이미 걸러졌으므로 Green까지만 감.
-
-					// 정규화 (0 ~ 1)
 					float t = std::clamp(pointMeanDistances[i] / visMaxDist, 0.0f, 1.0f);
-
-					// t가 1에 가까울수록(Threshold에 가까울수록) Green, 0이면 Blue
 					Eigen::Vector3f c;
 					if (t < 0.5f) {
-						// Blue -> Cyan
 						c = Eigen::Vector3f(0.0f, t * 2.0f, 1.0f);
 					}
 					else {
-						// Cyan -> Green
 						c = Eigen::Vector3f(0.0f, 1.0f, 1.0f - (t - 0.5f) * 2.0f);
 					}
 
@@ -630,14 +626,12 @@ void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRa
 		}
 	}
 
-	// 3. 시각화 (Visual Debugging)
 	{
 		VD::Clear("ROR");
 
 		const auto& positions = currentPointCloud->GetPositions();
 		size_t displayCount = currentPointCloud->Size();
 
-		// Inlier들의 시각화를 위해 "충분히 안전한 개수"를 설정 (Min의 3배 정도)
 		float maxSafeCount = (float)minNeighborsInRadius * 3.0f;
 
 		for (size_t i = 0; i < displayCount; ++i)
@@ -647,14 +641,12 @@ void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRa
 			float radiusVal = 0.05f;
 			int count = neighborCounts[i];
 
-			// Outlier (기준 미달) -> 빨간색 강조
-			if (count < minNeighborsInRadius)
+			if (outlierMarking[i] == 1)
 			{
 				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
 				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
 				radiusVal = 0.08f;
 			}
-			// Inlier (기준 충족) -> Blue/Green
 			else
 			{
 				if (binaryVisualizationMode)
@@ -664,10 +656,7 @@ void HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRa
 				}
 				else
 				{
-					// Gradient: Min(턱걸이, Green) -> MaxSafe(안전, Blue)
 					float t = std::clamp((float)(count - minNeighborsInRadius) / (maxSafeCount - minNeighborsInRadius), 0.0f, 1.0f);
-
-					// t=0 (Green) -> t=1 (Blue)
 					colorRGB = Eigen::Vector3f(0.0f, 1.0f - t, t);
 					colorRGBA = { colorRGB.x(), colorRGB.y(), colorRGB.z(), 0.6f };
 				}
@@ -737,7 +726,6 @@ void HeliumCore::PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, floa
 			Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> solver(covariance);
 			Eigen::Vector3f eigenValues = solver.eigenvalues();
 
-			// 3. Surface Variation (Curvature 근사값)
 			float sumEigen = eigenValues[0] + eigenValues[1] + eigenValues[2];
 			if (sumEigen > 1e-9f)
 			{
@@ -751,13 +739,26 @@ void HeliumCore::PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, floa
 
 	currentPointCloud->SetAttribute<std::vector<float>>("Curvature", curvatureValues);
 
+	std::vector<uint8_t> outlierMarking(numberOfPoints, 0);
+	float maxVal = 0.1f * curvatureThreshold;
+
+	int outlierCount = 0;
+	for (size_t i = 0; i < numberOfPoints; ++i)
+	{
+		if (curvatureValues[i] > maxVal)
+		{
+			outlierMarking[i] = 1;
+			outlierCount++;
+		}
+	}
+
+	currentPointCloud->SetAttribute<std::vector<uint8_t>>("Curvature_OutlierMarking", outlierMarking);
+
 	TE(Curvature_Analysis);
 
 	{
 		VD::Clear("Curvature");
 		const auto& positions = currentPointCloud->GetPositions();
-
-		float maxVal = 0.1f * curvatureThreshold;
 
 		for (size_t i = 0; i < numberOfPoints; ++i)
 		{
@@ -765,30 +766,30 @@ void HeliumCore::PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, floa
 			Eigen::Vector3f colorRGB;
 			Eigen::Vector4f colorRGBA;
 
-			if (binaryVisualizationMode)
+			if (outlierMarking[i] == 1)
 			{
-				if (val > maxVal)
-				{
-					colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
-					colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-				}
-				else
-				{
-					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
-					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f }; // 투명하게
-				}
+				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
+				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
 			}
 			else
 			{
-				// [Gradient Mode] 0(Flat, Blue) -> maxVal(Curved, Red)
-				colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxVal);
-				colorRGBA.w() = 0.8f;
-				colorRGB = colorRGBA.head<3>();
+				if (binaryVisualizationMode)
+				{
+					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
+					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
+				}
+				else
+				{
+					// Gradient Mode
+					colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxVal);
+					colorRGBA.w() = 0.8f;
+					colorRGB = colorRGBA.head<3>();
+				}
 			}
 
 			VD::AddSphere("Curvature", positions[i], colorRGB, 0.05f, colorRGBA);
 		}
-		InfoLog("", "[Curvature] Analysis Done. CurvatureThreshold: %.2f", curvatureThreshold);
+		InfoLog("", "[Curvature] Analysis Done. Threshold: %.3f, Outliers Marked: %d", maxVal, outlierCount);
 	}
 }
 
@@ -855,7 +856,6 @@ void HeliumCore::PerformNormalDeviationAnalysis(int pointCloudID, float radius, 
 
 			if (validCount > 0)
 			{
-				// Radian to Degree
 				deviationValues[i] = (float)((sumAngle / validCount) * (180.0 / 3.14159265359));
 			}
 			else
@@ -866,14 +866,26 @@ void HeliumCore::PerformNormalDeviationAnalysis(int pointCloudID, float radius, 
 
 	currentPointCloud->SetAttribute<std::vector<float>>("NormalDeviation", deviationValues);
 
+	std::vector<uint8_t> outlierMarking(numberOfPoints, 0);
+	float maxAngle = deviationThreshold; // 임계값 (Degree)
+
+	int outlierCount = 0;
+	for (size_t i = 0; i < numberOfPoints; ++i)
+	{
+		if (deviationValues[i] > maxAngle)
+		{
+			outlierMarking[i] = 1;
+			outlierCount++;
+		}
+	}
+
+	currentPointCloud->SetAttribute<std::vector<uint8_t>>("NormalDeviation_OutlierMarking", outlierMarking);
+
 	TE(Normal_Deviation);
 
 	{
 		VD::Clear("NormalDeviation");
 		const auto& positions = currentPointCloud->GetPositions();
-
-		// deviationThreshold은 "최대 각도(Degree)"를 의미
-		float maxAngle = deviationThreshold;
 
 		for (size_t i = 0; i < numberOfPoints; ++i)
 		{
@@ -881,30 +893,29 @@ void HeliumCore::PerformNormalDeviationAnalysis(int pointCloudID, float radius, 
 			Eigen::Vector3f colorRGB;
 			Eigen::Vector4f colorRGBA;
 
-			if (binaryVisualizationMode)
+			if (outlierMarking[i] == 1)
 			{
-				if (val > maxAngle)
-				{
-					colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
-					colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-				}
-				else
+				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
+				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
+			}
+			else
+			{
+				if (binaryVisualizationMode)
 				{
 					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
 					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
 				}
-			}
-			else
-			{
-				// [Gradient Mode] 0도(Blue) -> maxAngle도(Red)
-				colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxAngle);
-				colorRGBA.w() = 0.8f;
-				colorRGB = colorRGBA.head<3>();
+				else
+				{
+					colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxAngle);
+					colorRGBA.w() = 0.8f;
+					colorRGB = colorRGBA.head<3>();
+				}
 			}
 
 			VD::AddSphere("NormalDeviation", positions[i], colorRGB, 0.05f, colorRGBA);
 		}
-		InfoLog("", "[NormalDeviation] Analysis Done. MaxAngle: %.1f", maxAngle);
+		InfoLog("", "[NormalDeviation] Analysis Done. Threshold: %.1f deg, Outliers Marked: %d", maxAngle, outlierCount);
 	}
 }
 
@@ -1024,6 +1035,15 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 						{
 							int pointCloudID = j["pointCloudID"];
 							DeletePointCloud(pointCloudID);
+						}
+					}
+					else if (cmd == "RenamePointCloud")
+					{
+						if (j.contains("pointCloudID") && j.contains("newName"))
+						{
+							int pointCloudID = j["pointCloudID"];
+							std::string newName = j["newName"];
+							RenamePointCloud(pointCloudID, newName);
 						}
 					}
 					else if (cmd == "ShowSparseGrid")

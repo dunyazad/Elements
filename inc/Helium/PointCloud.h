@@ -53,7 +53,9 @@ public:
 
 	inline int GetID() const { return id; }
 	inline const std::string& GetName() const { return name; }
+	inline void SetName(const std::string& name) { this->name = name; }
 	inline const std::string& GetFileName() const { return fileName; }
+	inline void SetFileName(const std::string& fileName) { this->fileName = fileName; }
 
 	inline size_t Size() const { return positions.size(); }
 
