@@ -10,3 +10,6 @@
 [submodule "External/RxTx"]
 	path = External/RxTx
 	url = https://github.com/dunyazad/RxTx.git
+[submodule "External/NodeNetwork"]
+	path = External/NodeNetwork
+	url = https://github.com/Wouterdek/NodeNetwork.git
