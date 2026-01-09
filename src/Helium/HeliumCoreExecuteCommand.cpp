@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include <execution>
+#include <sstream>
 
 #include <glad/glad.h>
 #include <nlohmann/json.hpp>
@@ -639,7 +640,155 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 
 							PerformNormalDeviationAnalysis(pointCloudID, radius, deviationThreshold, binaryVisualizationMode);
 						}
+					}
+					else if (cmd == "PerformCompositeFilter")
+					{
+						if (j.contains("pointCloudID") && j.contains("pipeline"))
+						{
+							int pointCloudID = j["pointCloudID"];
+							auto pointCloud = GetPointCloud(pointCloudID);
+
+							if (pointCloud != nullptr)
+							{
+								size_t numPoints = pointCloud->Size();
+
+								// Final mask to store the composite result
+								// Initial state depends on the first operation, but usually starts false
+								std::vector<bool> finalMask(numPoints, false);
+								bool isFirstStep = true;
+
+								const auto& pipeline = j["pipeline"];
+
+								for (const auto& step : pipeline)
+								{
+									std::string op = step.value("Operation", "Union"); // Union, Intersection, Difference
+									std::string type = step.value("FilterType", "");
+
+									if(false == step.contains("Parameters"))
+										continue;
+
+									const auto& parameters = step["Parameters"];
+
+									std::vector<uint8_t> outlierMarking;
+									bool validStep = false;
+
+									PointCloudProcessorParameters params;
+									params.SetParameter<int>("PointCloudID", pointCloudID);
+
+									if (type == "SOR Filter")
+									{
+										int kNeighbors = parameters.value("KNeighbors", 50);
+										float stdDevMulThresh = parameters.value("StdDevMulThresh", 1.0f);
+
+										params.SetParameter<int>("KNeighbors", kNeighbors);
+										params.SetParameter<float>("StdDevMulThresh", stdDevMulThresh);
+
+										SOR processor;
+										outlierMarking = processor.Process(params);
+										validStep = true;
+									}
+									else if (type == "ROR Filter")
+									{
+										float radius = parameters.value("Radius", 0.5f);
+										int minNeighbors = parameters.value("MinNeighborsInRadius", 5);
+
+										params.SetParameter<float>("Radius", radius);
+										params.SetParameter<int>("MinNeighborsInRadius", minNeighbors);
+
+										ROR processor;
+										outlierMarking = processor.Process(params);
+										validStep = true;
+									}
+									else if (type == "Curvature Analysis")
+									{
+										int kNeighbors = parameters.value("KNeighbors", 30);
+										float curvatureThreshold = parameters.value("CurvatureThreshold", 0.1f);
+										// Assuming we select points with curvature > threshold (or < depending on logic)
+										// Here assuming logic: Select High Curvature
+										params.SetParameter<int>("KNeighbors", kNeighbors);
+										params.SetParameter<float>("CurvatureThreshold", curvatureThreshold);
+
+										CurvatureAnalysis processor;
+										outlierMarking = processor.Process(params);
+										validStep = true;
+									}
+									else if (type == "Normal Deviation Analysis")
+									{
+										float radius = parameters.value("Radius", 0.1f);
+										float deviationThreshold = parameters.value("DeviationThreshold", 30.0f);
+
+										params.SetParameter<float>("Radius", radius);
+										params.SetParameter<float>("DeviationThreshold", deviationThreshold);
+
+										NormalDeviation processor;
+										outlierMarking = processor.Process(params);
+										validStep = true;
+									}
+
+									if (validStep)
+									{
+										// Convert indices to boolean mask for current step
+										std::vector<bool> stepMask(numPoints, false);
+#pragma omp parallel for
+										for (int i = 0; i < (int)outlierMarking.size(); ++i)
+										{
+											if (outlierMarking[i] >= 0 && outlierMarking[i] < numPoints)
+												stepMask[outlierMarking[i]] = true;
+										}
+
+										if (isFirstStep)
+										{
+											finalMask = stepMask;
+											isFirstStep = false;
+										}
+										else
+										{
+											if (op == "Union")
+											{
+#pragma omp parallel for
+												for (int i = 0; i < (int)numPoints; ++i)
+													finalMask[i] = finalMask[i] || stepMask[i];
+											}
+											else if (op == "Intersection")
+											{
+#pragma omp parallel for
+												for (int i = 0; i < (int)numPoints; ++i)
+													finalMask[i] = finalMask[i] && stepMask[i];
+											}
+											else if (op == "Subtraction")
+											{
+#pragma omp parallel for
+												for (int i = 0; i < (int)numPoints; ++i)
+													finalMask[i] = finalMask[i] && !stepMask[i];
+											}
+										}
+									}
+								}
+
+								// Visualization: Highlight selected points
+								VD::Clear("CompositeResult");
+								const auto& positions = pointCloud->GetPositions();
+								const auto& normals = pointCloud->GetNormals();
+
+								// Collect selected indices for sending back or other processing if needed
+								// For now, just visualize
+								int selectedCount = 0;
+								for (size_t i = 0; i < numPoints; ++i)
+								{
+									if (finalMask[i])
+									{
+										VD::AddSphere("CompositeResult", positions[i], normals[i], 0.025f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
+										selectedCount++;
+									}
+								}
+
+								// Optionally: Select these points in the cloud
+								// pointCloud->SetSelectedIndices(...);
+
+								InfoLog("", "Composite Filter applied. Selected %d points.", selectedCount);
+							}
 						}
+					}
 					else if (cmd == "ToggleGrid")
 					{
 						auto entity = GetEntityByName("Grid");

@@ -124,7 +124,7 @@ namespace Neon
         private RorParameterDialog? _rorDialog = null;
         private CurvatureAnalysisParameterDialog? _curvatureDialog = null;
         private NormalDeviationAnalysisParameterDialog? _normalDeviationAnalysisParameterDialog = null;
-        private CompositeOutlierFilterDialog? _compositeOutlierFilterDialog = null;
+        private CompositeFilterDialog? _compositeFilterDialog = null;
         private NodeEditorDialog? _nodeEditorDialog = null;
 
         public MainWindow()
@@ -483,21 +483,29 @@ namespace Neon
                 _sorDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
                 _sorDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
 
-                _sorDialog.ApplyAction = (kNeighbors, stdDevMul, isGradient) =>
+                _sorDialog.Parameters.PointCloudID = selectedSceneNode!.ID;
+
+                _sorDialog.AnalyzeAction = (parameters) =>
                 {
                     var commandData = new
                     {
                         command = "PerformSOR",
-                        pointCloudID = selectedSceneNode.ID,
-                        kNeighbors = kNeighbors,
-                        stdDevMulThresh = stdDevMul,
-                        deletePoints = false,
-                        visualizationMode = isGradient ? "Gradient" : "Binary",
+                        pointCloudID = parameters.PointCloudID,
+                        kNeighbors = parameters.KNeighbors,
+                        stdDevMulThresh = parameters.StdDevMulThresh,
+                        deletePoints = parameters.DeletePoints,
+                        visualizationMode = parameters.visualizationMode.ToString()
                     };
-                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+
+                    var options = new System.Text.Json.JsonSerializerOptions();
+                    options.Converters.Add(new FloatJsonConverter());
+                    options.Converters.Add(new DoubleJsonConverter());
+
+                    string command = System.Text.Json.JsonSerializer.Serialize(commandData, options);
+
                     HeliumNative.He_ManagedToNative(command);
 
-                    ShowNotification($"Applied SOR (K={kNeighbors}, Vis={(isGradient ? "Gradient" : "Binary")})");
+                    ShowNotification($"Applied SOR (K={parameters.KNeighbors}, StdDev={parameters.StdDevMulThresh}, Vis={parameters.visualizationMode})");
                 };
 
                 _sorDialog.Closed += (s, args) => { _sorDialog = null; };
@@ -528,21 +536,29 @@ namespace Neon
                 _rorDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
                 _rorDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
 
-                _rorDialog.ApplyAction = (radius, minNeighbors, isGradient) =>
+                _rorDialog.Parameters.PointCloudID = selectedSceneNode!.ID;
+
+                _rorDialog.AnalyzeAction = (parameters) =>
                 {
                     var commandData = new
                     {
                         command = "PerformROR",
-                        pointCloudID = selectedSceneNode.ID,
-                        radius = radius,
-                        minNeighborsInRadius = minNeighbors,
-                        deletePoints = false,
-                        visualizationMode = isGradient ? "Gradient" : "Binary",
+                        pointCloudID = parameters.PointCloudID,
+                        radius = parameters.Radius,
+                        minNeighborsInRadius = parameters.MinNeighborsInRadius,
+                        deletePoints = parameters.DeletePoints,
+                        visualizationMode = parameters.visualizationMode.ToString()
                     };
-                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+
+                    var options = new System.Text.Json.JsonSerializerOptions();
+                    options.Converters.Add(new FloatJsonConverter());
+                    options.Converters.Add(new DoubleJsonConverter());
+
+                    string command = System.Text.Json.JsonSerializer.Serialize(commandData, options);
+
                     HeliumNative.He_ManagedToNative(command);
 
-                    ShowNotification($"Applied ROR (R={radius}, Vis={(isGradient ? "Gradient" : "Binary")})");
+                    ShowNotification($"Applied ROR (R={parameters.Radius}, MinN={parameters.MinNeighborsInRadius}, Vis={parameters.visualizationMode})");
                 };
 
                 _rorDialog.Closed += (s, args) => { _rorDialog = null; };
@@ -573,23 +589,33 @@ namespace Neon
                 _curvatureDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
                 _curvatureDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
 
-                _curvatureDialog.ApplyAction = (kNeighbors, curvatureThreshold, isGradient) =>
+                _curvatureDialog.Parameters.PointCloudID = selectedSceneNode.ID;
+
+                _curvatureDialog.AnalyzeAction = (parameters) =>
                 {
                     var commandData = new
                     {
                         command = "PerformCurvatureAnalysis",
-                        pointCloudID = selectedSceneNode.ID,
-                        kNeighbors = kNeighbors,
-                        curvatureThreshold = curvatureThreshold,
-                        visualizationMode = isGradient ? "Gradient" : "Binary"
+                        pointCloudID = parameters.PointCloudID,
+                        kNeighbors = parameters.KNeighbors,
+                        curvatureThreshold = parameters.CurvatureThreshold,
+                        deletePoints = parameters.DeletePoints,
+                        visualizationMode = parameters.visualizationMode.ToString() // "Gradient", "Binary" 등 문자열로 변환
                     };
-                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
-                    HeliumNative.He_ManagedToNative(command);
 
-                    ShowNotification($"Curvature Analysis (K={kNeighbors}, Threshold={curvatureThreshold}, Vis={(isGradient ? "Gradient" : "Binary")})");
+                    var options = new System.Text.Json.JsonSerializerOptions();
+                    options.Converters.Add(new FloatJsonConverter());
+                    options.Converters.Add(new DoubleJsonConverter());
+
+                    string command = System.Text.Json.JsonSerializer.Serialize(commandData, options);
+
+                    ShowNotification($"Applied Curvature Analysis (ID: {parameters.PointCloudID}, K={parameters.KNeighbors}, CurvatureThresh={parameters.CurvatureThreshold}, Vis={parameters.visualizationMode})");
+
+                    HeliumNative.He_ManagedToNative(command);
                 };
 
                 _curvatureDialog.Closed += (s, args) => { _curvatureDialog = null; };
+
                 _curvatureDialog.Show();
             }
             else
@@ -610,30 +636,38 @@ namespace Neon
 
                 _normalDeviationAnalysisParameterDialog = new NormalDeviationAnalysisParameterDialog();
                 _normalDeviationAnalysisParameterDialog.Owner = this;
-                _normalDeviationAnalysisParameterDialog.WindowStartupLocation = WindowStartupLocation.Manual;
+                _normalDeviationAnalysisParameterDialog.Parameters.PointCloudID = selectedSceneNode.ID;
 
                 double dialogWidth = 380;
                 double estimatedHeight = 300;
                 _normalDeviationAnalysisParameterDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
                 _normalDeviationAnalysisParameterDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
 
-                _normalDeviationAnalysisParameterDialog.ApplyAction = (radius, deviationThreshold, isGradient) =>
+                _normalDeviationAnalysisParameterDialog.Parameters.PointCloudID = selectedSceneNode!.ID;
+
+                _normalDeviationAnalysisParameterDialog.AnalyzeAction = (parameters) =>
                 {
                     var commandData = new
                     {
                         command = "PerformNormalDeviationAnalysis",
-                        pointCloudID = selectedSceneNode.ID,
-                        radius = radius,
-                        deviationThreshold = deviationThreshold,
-                        visualizationMode = isGradient ? "Gradient" : "Binary"
+                        pointCloudID = parameters.PointCloudID,
+                        radius = parameters.Radius,
+                        deviationThreshold = parameters.DeviationThreshold,
+                        visualizationMode = parameters.visualizationMode.ToString()
                     };
-                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                    var options = new System.Text.Json.JsonSerializerOptions();
+                    options.Converters.Add(new FloatJsonConverter());
+                    options.Converters.Add(new DoubleJsonConverter());
+
+                    string command = System.Text.Json.JsonSerializer.Serialize(commandData, options);
+
                     HeliumNative.He_ManagedToNative(command);
 
-                    ShowNotification($"Normal Deviation (R={radius}, MaxDeviation={deviationThreshold}, Vis={(isGradient ? "Gradient" : "Binary")})");
+                    ShowNotification($"Applied Normal Deviation Analysis (ID: {parameters.PointCloudID}, Radius={parameters.Radius}, DeviationThresh={parameters.DeviationThreshold}, Vis={parameters.visualizationMode})");
                 };
 
                 _normalDeviationAnalysisParameterDialog.Closed += (s, args) => { _normalDeviationAnalysisParameterDialog = null; };
+
                 _normalDeviationAnalysisParameterDialog.Show();
             }
             else
@@ -642,38 +676,59 @@ namespace Neon
             }
         }
 
-        private void Menu_PointCloud_Composite_Outlier_Filter_Click(object sender, RoutedEventArgs e)
+        private void Menu_PointCloud_Composite_Filter_Click(object sender, RoutedEventArgs e)
         {
             if (selectedSceneNode != null)
             {
-                if (_compositeOutlierFilterDialog != null)
+                if (_compositeFilterDialog != null)
                 {
-                    _compositeOutlierFilterDialog.Activate();
+                    _compositeFilterDialog.Activate();
                     return;
                 }
 
-                _compositeOutlierFilterDialog = new CompositeOutlierFilterDialog();
-                _compositeOutlierFilterDialog.Owner = this;
-                _compositeOutlierFilterDialog.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+                _compositeFilterDialog = new CompositeFilterDialog();
+                _compositeFilterDialog.Owner = this;
+                _compositeFilterDialog.WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
-                _compositeOutlierFilterDialog.ApplyAction = (a, b, c, d, e, f) =>
+                //_compositeFilterDialog.Parameters.PointCloudID = selectedSceneNode!.ID;
+
+                _compositeFilterDialog.ApplyAction = (vm) =>
                 {
+                    var steps = vm.Steps;
+
+                    var pipelineList = new System.Collections.Generic.List<object>();
+
+                    foreach (var step in steps)
+                    {
+                        pipelineList.Add(new
+                        {
+                            Operation = step.SelectedOperation,
+                            FilterType = step.SelectedType,
+                            Parameters = step.Parameters
+                        });
+                    }
+
                     var commandData = new
                     {
-                        command = "PerformCompositeOutlierFilter",
-                        pointCloudID = selectedSceneNode.ID,
-                        //radius = radius,
-                        //temperature = temp,
-                        //visualizationMode = isGradient ? "Gradient" : "Binary"
+                        command = "PerformCompositeFilter",
+                        pointCloudID = selectedSceneNode.ID, // 예시
+                        pipeline = pipelineList
                     };
-                    //string command = System.Text.Json.JsonSerializer.Serialize(commandData);
-                    //HeliumNative.He_ManagedToNative(command);
 
-                    //ShowNotification($"Composite Outlier Filter (R={radius}, Temp={temp}, Vis={(isGradient ? "Gradient" : "Binary")})");
+                    var options = new System.Text.Json.JsonSerializerOptions();
+                    options.Converters.Add(new FloatJsonConverter());
+                    options.Converters.Add(new DoubleJsonConverter());
+
+                    string command = System.Text.Json.JsonSerializer.Serialize(commandData, options);
+
+                    HeliumNative.He_ManagedToNative(command);
+
+                    ShowNotification($"Applied Composite Filter ({pipelineList.Count} steps)");
                 };
 
-                _compositeOutlierFilterDialog.Closed += (s, args) => { _compositeOutlierFilterDialog = null; };
-                _compositeOutlierFilterDialog.Show();
+                _compositeFilterDialog.Closed += (s, args) => { _compositeFilterDialog = null; };
+
+                _compositeFilterDialog.Show();
             }
             else
             {

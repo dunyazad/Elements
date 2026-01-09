@@ -28,6 +28,9 @@ std::vector<uint8_t> SOR::Process(const PointCloudProcessorParameters& parameter
 	deletePoints = parameters.GetParameter<bool>("DeletePoints", deletePoints);
 	binaryVisualizationMode = parameters.GetParameter<bool>("BinaryVisualizationMode", binaryVisualizationMode);
 
+	InfoLog("", "Starting SOR Filter (k=%d, mul=%.1f, delete=%s)", 
+		kNeighbors, stdDevMulThresh, deletePoints ? "true" : "false");
+
 	std::vector<uint8_t> outlierMarking;
 
 	auto currentPointCloud = Helium.GetPointCloud(pointCloudID);

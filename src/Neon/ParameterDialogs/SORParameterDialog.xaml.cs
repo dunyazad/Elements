@@ -1,54 +1,60 @@
 ﻿using System;
-using System.Globalization;
 using System.Windows;
 
 namespace Neon
 {
     public partial class SorParameterDialog : Window
     {
-        private static int _lastK = 50;
-        private static float _lastMul = 3.0f;
-        private static bool _lastIsGradient = true;
+        public PointCloudProcessorParametersSOR Parameters { get; set; } = new PointCloudProcessorParametersSOR();
 
-        // 인자 3개: (K, StdDev, IsGradient)
-        public Action<int, float, bool>? ApplyAction { get; set; }
+        public Action<PointCloudProcessorParametersSOR>? AnalyzeAction { get; set; }
 
         public SorParameterDialog()
         {
             InitializeComponent();
 
-            SliderK.Value = _lastK;
-            SliderStdDev.Value = _lastMul;
+            Loaded += (s, e) => InitializeUI();
+        }
 
-            if (_lastIsGradient)
-                RadioGradient.IsChecked = true;
-            else
-                RadioBinary.IsChecked = true;
+        private void InitializeUI()
+        {
+            CmbColorMode.ItemsSource = Enum.GetValues(typeof(PointCloudVisualizationMode));
+            CmbColorMode.SelectedItem = Parameters.visualizationMode;
+
+            if (SliderK != null)
+            {
+                SliderK.Value = Parameters.KNeighbors;
+            }
+
+            if (SliderStdDev != null)
+            {
+                SliderStdDev.Value = Parameters.StdDevMulThresh;
+            }
         }
 
         private void Apply_Click(object sender, RoutedEventArgs e)
         {
-            if (int.TryParse(TxtKNeighbors.Text, out int k) &&
-                float.TryParse(TxtStdDevMul.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out float mul))
+            try
             {
-                bool isGradient = RadioGradient.IsChecked == true;
+                Parameters.KNeighbors = (int)SliderK.Value;
+                Parameters.StdDevMulThresh = (float)SliderStdDev.Value;
 
-                _lastK = k;
-                _lastMul = mul;
-                _lastIsGradient = isGradient;
+                if (CmbColorMode.SelectedItem is PointCloudVisualizationMode mode)
+                {
+                    Parameters.visualizationMode = mode;
+                }
 
-                // 3개 인자 전달
-                ApplyAction?.Invoke(k, mul, isGradient);
+                AnalyzeAction?.Invoke(Parameters);
             }
-            else
+            catch (Exception ex)
             {
-                MessageBox.Show("Invalid input values.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"오류가 발생했습니다: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
-            Close();
+            this.Close();
         }
     }
 }

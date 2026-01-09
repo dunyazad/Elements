@@ -1,52 +1,60 @@
 ﻿using System;
-using System.Globalization;
 using System.Windows;
 
 namespace Neon
 {
     public partial class RorParameterDialog : Window
     {
-        private static float _lastRadius = 0.3f;
-        private static int _lastMinN = 24;
-        private static bool _lastIsGradient = true;
+        public PointCloudProcessorParametersROR Parameters { get; set; } = new PointCloudProcessorParametersROR();
 
-        public Action<float, int, bool>? ApplyAction { get; set; }
+        public Action<PointCloudProcessorParametersROR>? AnalyzeAction { get; set; }
 
         public RorParameterDialog()
         {
             InitializeComponent();
 
-            SliderRadius.Value = _lastRadius;
-            SliderMinNeighbors.Value = _lastMinN;
+            Loaded += (s, e) => InitializeUI();
+        }
 
-            if (_lastIsGradient)
-                RadioGradient.IsChecked = true;
-            else
-                RadioBinary.IsChecked = true;
+        private void InitializeUI()
+        {
+            CmbColorMode.ItemsSource = Enum.GetValues(typeof(PointCloudVisualizationMode));
+            CmbColorMode.SelectedItem = Parameters.visualizationMode;
+
+            if (SliderRadius != null)
+            {
+                SliderRadius.Value = Parameters.Radius;
+            }
+
+            if (SliderMinNeighbors != null)
+            {
+                SliderMinNeighbors.Value = Parameters.MinNeighborsInRadius;
+            }
         }
 
         private void Apply_Click(object sender, RoutedEventArgs e)
         {
-            if (float.TryParse(TxtRadius.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out float r) &&
-                int.TryParse(TxtMinNeighbors.Text, out int n))
+            try
             {
-                bool isGradient = RadioGradient.IsChecked == true;
+                Parameters.Radius = (float)SliderRadius.Value;
+                Parameters.MinNeighborsInRadius = (int)SliderMinNeighbors.Value;
 
-                _lastRadius = r;
-                _lastMinN = n;
-                _lastIsGradient = isGradient;
+                if (CmbColorMode.SelectedItem is PointCloudVisualizationMode mode)
+                {
+                    Parameters.visualizationMode = mode;
+                }
 
-                ApplyAction?.Invoke(r, n, isGradient);
+                AnalyzeAction?.Invoke(Parameters);
             }
-            else
+            catch (Exception ex)
             {
-                MessageBox.Show("Invalid input values.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"오류가 발생했습니다: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
-            Close();
+            this.Close();
         }
     }
 }

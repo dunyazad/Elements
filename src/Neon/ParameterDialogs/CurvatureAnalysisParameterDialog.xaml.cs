@@ -1,54 +1,60 @@
 ﻿using System;
-using System.Globalization;
 using System.Windows;
 
 namespace Neon
 {
     public partial class CurvatureAnalysisParameterDialog : Window
     {
-        private static int _lastK = 30;
-        private static float _lastThreshold = 1.0f; // [변경] Scale -> Threshold
-        private static bool _lastIsGradient = true;
-
-        // Action: (K, Threshold, IsGradient)
-        public Action<int, float, bool>? ApplyAction { get; set; }
+        public PointCloudProcessorParametersCurvatureAnalysis Parameters { get; set; } = new PointCloudProcessorParametersCurvatureAnalysis();
 
         public CurvatureAnalysisParameterDialog()
         {
             InitializeComponent();
 
-            SliderK.Value = _lastK;
-            SliderThreshold.Value = _lastThreshold; // [변경]
-
-            if (_lastIsGradient)
-                RadioGradient.IsChecked = true;
-            else
-                RadioBinary.IsChecked = true;
+            Loaded += (s, e) => InitializeUI();
         }
+
+        private void InitializeUI()
+        {
+            CmbColorMode.ItemsSource = Enum.GetValues(typeof(PointCloudVisualizationMode));
+            CmbColorMode.SelectedItem = Parameters.visualizationMode;
+
+            if (SliderK != null)
+            {
+                SliderK.Value = Parameters.KNeighbors;
+            }
+
+            if (SliderThreshold != null)
+            {
+                SliderThreshold.Value = Parameters.CurvatureThreshold;
+            }
+        }
+
+        public Action<PointCloudProcessorParametersCurvatureAnalysis>? AnalyzeAction { get; set; }
 
         private void Apply_Click(object sender, RoutedEventArgs e)
         {
-            // [변경] TxtThreshold 참조
-            if (int.TryParse(TxtK.Text, out int k) &&
-                float.TryParse(TxtThreshold.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out float threshold))
+            try
             {
-                bool isGradient = RadioGradient.IsChecked == true;
+                Parameters.KNeighbors = (int)SliderK.Value;
+                Parameters.CurvatureThreshold = (float)SliderThreshold.Value;
 
-                _lastK = k;
-                _lastThreshold = threshold;
-                _lastIsGradient = isGradient;
+                if (CmbColorMode.SelectedItem is PointCloudVisualizationMode mode)
+                {
+                    Parameters.visualizationMode = mode;
+                }
 
-                ApplyAction?.Invoke(k, threshold, isGradient);
+                AnalyzeAction?.Invoke(Parameters);
             }
-            else
+            catch (Exception ex)
             {
-                MessageBox.Show("Invalid input values.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"설정 적용 중 오류가 발생했습니다: {ex.Message}", "오류", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
-            Close();
+            this.Close();
         }
     }
 }

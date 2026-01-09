@@ -145,4 +145,6 @@ std::vector<uint8_t> NormalDeviation::Process(const PointCloudProcessorParameter
 		}
 		InfoLog("", "[NormalDeviation] Analysis Done. Threshold: %.1f deg, Outliers Marked: %d", maxAngle, outlierCount);
 	}
+
+	return outlierMarking;
 }

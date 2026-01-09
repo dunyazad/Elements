@@ -18,8 +18,8 @@ CurvatureAnalysis::CurvatureAnalysis()
 std::vector<uint8_t> CurvatureAnalysis::Process(const PointCloudProcessorParameters& parameters)
 {
 	int pointCloudID = -1;
-	int kNeighbors = 0;
-	float curvatureThreshold = 0.0f;
+	int kNeighbors = 30;
+	float curvatureThreshold = 1.0f;
 	bool binaryVisualizationMode = false;
 
 	pointCloudID = parameters.GetParameter<int>("PointCloudID", pointCloudID);

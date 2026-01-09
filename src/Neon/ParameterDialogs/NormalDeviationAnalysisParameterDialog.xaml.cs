@@ -1,53 +1,60 @@
 ﻿using System;
-using System.Globalization;
 using System.Windows;
 
 namespace Neon
 {
     public partial class NormalDeviationAnalysisParameterDialog : Window
     {
-        private static float _lastRadius = 0.1f;
-        private static float _lastThreshold = 45.0f;
-        private static bool _lastIsGradient = true;
-
-        // Action: (Radius, Threshold, IsGradient)
-        public Action<float, float, bool>? ApplyAction { get; set; }
+        public PointCloudProcessorParametersNormalDeviation Parameters { get; set; } = new PointCloudProcessorParametersNormalDeviation();
 
         public NormalDeviationAnalysisParameterDialog()
         {
             InitializeComponent();
 
-            SliderRadius.Value = _lastRadius;
-            SliderThreshold.Value = _lastThreshold;
-
-            if (_lastIsGradient)
-                RadioGradient.IsChecked = true;
-            else
-                RadioBinary.IsChecked = true;
+            Loaded += (s, e) => InitializeUI();
         }
+
+        private void InitializeUI()
+        {
+            CmbColorMode.ItemsSource = Enum.GetValues(typeof(PointCloudVisualizationMode));
+            CmbColorMode.SelectedItem = Parameters.visualizationMode;
+
+            if (SliderRadius != null)
+            {
+                SliderRadius.Value = Parameters.Radius;
+            }
+
+            if (SliderThreshold != null)
+            {
+                SliderThreshold.Value = Parameters.DeviationThreshold;
+            }
+        }
+
+        public Action<PointCloudProcessorParametersNormalDeviation>? AnalyzeAction { get; set; }
 
         private void Apply_Click(object sender, RoutedEventArgs e)
         {
-            if (float.TryParse(TxtRadius.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out float r) &&
-                float.TryParse(TxtThreshold.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out float threshold))
+            try
             {
-                bool isGradient = RadioGradient.IsChecked == true;
+                Parameters.Radius = (float)SliderRadius.Value;
+                Parameters.DeviationThreshold = (float)SliderThreshold.Value;
 
-                _lastRadius = r;
-                _lastThreshold = threshold;
-                _lastIsGradient = isGradient;
+                if (CmbColorMode.SelectedItem is PointCloudVisualizationMode mode)
+                {
+                    Parameters.visualizationMode = mode;
+                }
 
-                ApplyAction?.Invoke(r, threshold, isGradient);
+                AnalyzeAction?.Invoke(Parameters);
             }
-            else
+            catch (Exception ex)
             {
-                MessageBox.Show("Invalid input values.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"오류가 발생했습니다: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
-            Close();
+            this.Close();
         }
     }
 }
