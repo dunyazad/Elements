@@ -116,7 +116,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External\Eigen;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -134,7 +134,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External\Eigen;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>

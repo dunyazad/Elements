@@ -79,8 +79,10 @@ public:
     inline IGraphicsBackend* GetGraphicsBackend() { return backend.get(); }
 
     EventSystem* GetEventSystem() { return eventSystem.get(); }
+	GUISystem* GetGUISystem() { return guiSystem.get(); }
     InputSystem* GetInputSystem() { return inputSystem.get(); }
     ImmediateModeRenderSystem* GetImmediateModeRenderSystem() { return immediateModeRenderSystem.get(); }
+	RenderSystem* GetRenderSystem() { return renderSystem.get(); }
 
     Entity CreateEntity(const std::string& name);
     Entity GetEntityByName(const std::string& name);
@@ -236,6 +238,7 @@ private:
     Dispatcher dispatcher;
 
     std::unique_ptr<EventSystem> eventSystem;
+    std::unique_ptr<GUISystem> guiSystem;
     std::unique_ptr<InputSystem> inputSystem;
     std::unique_ptr<RenderSystem> renderSystem;
     std::unique_ptr<ImmediateModeRenderSystem> immediateModeRenderSystem;

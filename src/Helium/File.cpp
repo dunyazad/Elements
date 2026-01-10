@@ -106,7 +106,13 @@ void File::Read(char* buffer, int length) const
 	(*fileStream).read(buffer, length);
 }
 
-std::string File::ReadAll() const
+#include "pch.h"
+#include <Helium/File.h>
+#include <filesystem>
+
+// ... (이전 함수들은 동일하므로 생략하거나 기존 유지) ...
+
+std::string File::ReadAllString() const
 {
 	if (nullptr == fileStream || !(*fileStream).is_open())
 	{
@@ -129,6 +135,33 @@ std::string File::ReadAll() const
 	content.resize(static_cast<size_t>(length));
 
 	(*fileStream).read(&content[0], length);
+
+	return content;
+}
+
+std::vector<unsigned char> File::ReadAllBytes() const
+{
+	if (nullptr == fileStream || !(*fileStream).is_open())
+	{
+		return {};
+	}
+
+	(*fileStream).clear();
+	(*fileStream).seekg(0, std::ios::end);
+
+	std::streamsize length = (*fileStream).tellg();
+
+	(*fileStream).seekg(0, std::ios::beg);
+
+	if (length <= 0)
+	{
+		return {};
+	}
+
+	std::vector<unsigned char> content(static_cast<size_t>(length));
+
+	// vector<unsigned char> 데이터를 char*로 캐스팅하여 읽기
+	(*fileStream).read(reinterpret_cast<char*>(content.data()), length);
 
 	return content;
 }

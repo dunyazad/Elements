@@ -16,6 +16,8 @@ std::vector<std::function<void()>> commandQueue;
 
 bool He_Initialize(HWND hwnd, int backendType)
 {
+	//He_CreateConsole();
+
 	return Helium.Initialize(hwnd, backendType);
 }
 

@@ -13,3 +13,6 @@
 [submodule "External/NodeNetwork"]
 	path = External/NodeNetwork
 	url = https://github.com/Wouterdek/NodeNetwork.git
+[submodule "External/stb"]
+	path = External/stb
+	url = https://github.com/nothings/stb.git

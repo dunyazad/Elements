@@ -14,6 +14,7 @@
 #include <Helium/HeliumEvents.h>
 
 #include <Helium/Systems/EventSystem.h>
+#include <Helium/Systems/GUISystem.h>
 #include <Helium/Systems/InputSystem.h>
 #include <Helium/Systems/RenderSystem.h>
 #include <Helium/Systems/ImmediateModeRenderSystem.h>
@@ -57,6 +58,9 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
 
     eventSystem = std::make_unique<EventSystem>(this);
     eventSystem->Initialize();
+
+	guiSystem = std::make_unique<GUISystem>(this);
+	guiSystem->Initialize();
 
     inputSystem = std::make_unique<InputSystem>(this);
     inputSystem->Initialize();
@@ -117,6 +121,8 @@ void HeliumCore::Update(float dt)
 
     if (eventSystem) eventSystem->Update(dt);
 
+    if (guiSystem) guiSystem->Update(dt);
+
     if (inputSystem) inputSystem->Update(dt);
 
     if (renderSystem) renderSystem->Update(dt);
@@ -160,6 +166,11 @@ void HeliumCore::Render()
         glEnable(GL_DEPTH_TEST);
     }
 
+    if(guiSystem)
+    {
+        guiSystem->Render();
+	}
+
     if (backend) backend->Render();
 }
 
@@ -170,6 +181,11 @@ void HeliumCore::Resize(int width, int height)
     {
         auto& camera = entites.get<Camera>(entity);
 		camera.GetPerspectiveSettings().SetAspectRatio(static_cast<float>(width) / static_cast<float>(height));
+    }
+
+    if (guiSystem)
+    {
+		guiSystem->Resize(width, height);
     }
 
     if (backend) backend->Resize(width, height);
@@ -210,6 +226,12 @@ void HeliumCore::Shutdown()
     {
         inputSystem->Shutdown();
         inputSystem.reset();
+    }
+
+    if (guiSystem)
+    {
+        guiSystem->Shutdown();
+        guiSystem.reset();
     }
 
     if (eventSystem)
@@ -254,8 +276,8 @@ Shader* HeliumCore::CreateShader(const std::string& name, const std::string& vsC
 
 Shader* HeliumCore::CreateShader(const std::string& name, const File& vsFile, const File& fsFile)
 {
-	auto vsCode = vsFile.ReadAll();
-	auto fsCode = fsFile.ReadAll();
+	auto vsCode = vsFile.ReadAllString();
+	auto fsCode = fsFile.ReadAllString();
     Shader* shader = new Shader(name, vsCode, fsCode);
     shaders[name] = shader;
 	return shader;

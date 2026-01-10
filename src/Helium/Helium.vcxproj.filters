@@ -189,6 +189,9 @@
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudProcessor.h">
       <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Systems\GUISystem.h">
+      <Filter>헤더 파일\Helium\Systems</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -292,6 +295,9 @@
     </ClCompile>
     <ClCompile Include="PointCloudProcessing\NormalDeviation.cpp">
       <Filter>소스 파일\PointCloudProcessing</Filter>
+    </ClCompile>
+    <ClCompile Include="System\GUISystem.cpp">
+      <Filter>소스 파일\Systems</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

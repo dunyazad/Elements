@@ -2,6 +2,7 @@
 
 #include <string>
 #include <fstream>
+#include <vector>
 
 class File
 {
@@ -21,10 +22,11 @@ public:
 	bool GetLine(std::string& line);
 
 	void Read(char* buffer, int length) const;
-	std::string ReadAll() const;
+
+	std::string ReadAllString() const;
+	std::vector<unsigned char> ReadAllBytes() const;
 
 	void Write(char* buffer, int length);
-
 
 	std::fstream& operator << (bool data);
 	std::fstream& operator << (short data);
