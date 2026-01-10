@@ -138,19 +138,6 @@ void HeliumCore::Render()
         callback();
     }
 
-    Shader* shader = GetShader("DefaultQuad");
-    if (shader)
-    {
-        shader->Bind();
-
-        if (backend)
-        {
-            backend->DrawScreenQuad();
-        }
-
-        shader->Unbind();
-    }
-
     if (backend) backend->Clear(clearColor.x(), clearColor.y(), clearColor.z(), clearColor.w());
 
     if (renderSystem)

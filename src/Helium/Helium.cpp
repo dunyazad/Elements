@@ -11,6 +11,9 @@
 #include <Helium/HeliumCore.h>
 #include <Helium/PointCloud.h>
 
+std::mutex commandMutex;
+std::vector<std::function<void()>> commandQueue;
+
 bool He_Initialize(HWND hwnd, int backendType)
 {
 	return Helium.Initialize(hwnd, backendType);
@@ -18,11 +21,21 @@ bool He_Initialize(HWND hwnd, int backendType)
 
 void He_Resize(int width, int height)
 {
-	Helium.Resize(width, height);
+	std::lock_guard<std::mutex> lock(commandMutex);
+	commandQueue.emplace_back([=]() {
+		Helium.Resize(width, height);
+	});
 }
 
 HELIUM_API void He_Update(float dt)
 {
+	std::lock_guard<std::mutex> lock(commandMutex);
+	for (auto& command : commandQueue)
+	{
+		command();
+	}
+	commandQueue.clear();
+
 	Helium.Update(dt);
 }
 
