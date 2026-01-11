@@ -192,6 +192,9 @@
     <ClInclude Include="..\..\inc\Helium\Systems\GUISystem.h">
       <Filter>헤더 파일\Helium\Systems</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PFOR.h">
+      <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -298,6 +301,9 @@
     </ClCompile>
     <ClCompile Include="System\GUISystem.cpp">
       <Filter>소스 파일\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="PointCloudProcessing\PFOR.cpp">
+      <Filter>소스 파일\PointCloudProcessing</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

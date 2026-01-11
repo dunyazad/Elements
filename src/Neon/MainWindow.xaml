@@ -171,6 +171,7 @@
                         <MenuItem Header="ROR" Click="Menu_PointCloud_ROR_Click"/>
                         <MenuItem Header="Curvature Analysis" Click="Menu_PointCloud_Curvature_Analysis_Click"/>
                         <MenuItem Header="Normal Deviation Analysis" Click="Menu_PointCloud_Normal_Deviation_Analysis_Click"/>
+                        <MenuItem Header="PFOR" Click="Menu_PointCloud_PFOR_Click"/>
                         <MenuItem Header="Composite Filter" Click="Menu_PointCloud_Composite_Filter_Click"/>
                         <MenuItem Header="Node Editor" Click="Menu_PointCloud_Node_Editor_Click"/>
                     </MenuItem>

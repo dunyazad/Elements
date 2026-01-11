@@ -121,6 +121,7 @@ namespace Neon
         private RorParameterDialog? _rorDialog = null;
         private CurvatureAnalysisParameterDialog? _curvatureDialog = null;
         private NormalDeviationAnalysisParameterDialog? _normalDeviationAnalysisParameterDialog = null;
+        private PFORParameterDialog? _pforDialog = null;
         private CompositeFilterDialog? _compositeFilterDialog = null;
         private NodeEditorDialog? _nodeEditorDialog = null;
 
@@ -630,6 +631,56 @@ namespace Neon
 
                 _normalDeviationAnalysisParameterDialog.Closed += (s, args) => { _normalDeviationAnalysisParameterDialog = null; };
                 _normalDeviationAnalysisParameterDialog.Show();
+            }
+            else
+            {
+                ShowNotification("No Point Cloud Selected.");
+            }
+        }
+
+
+        private void Menu_PointCloud_PFOR_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                if (_pforDialog != null)
+                {
+                    _pforDialog.Activate();
+                    return;
+                }
+
+                _pforDialog = new PFORParameterDialog();
+                _pforDialog.Owner = this;
+                _pforDialog.WindowStartupLocation = WindowStartupLocation.Manual;
+
+                double dialogWidth = 380;
+                double estimatedHeight = 300;
+                _pforDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
+                _pforDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
+
+                if (_pforDialog.Parameters is PointCloudProcessorParametersPlaneFitOutlierRemoval pforParams)
+                {
+                    pforParams.PointCloudID = selectedSceneNode.ID;
+                }
+
+                _pforDialog.AnalyzeAction = (parameters) =>
+                {
+                    var commandData = new
+                    {
+                        Command = "PerformPFOR",
+                        PointCloudID = parameters.PointCloudID,
+                        KNeighbors = parameters.KNeighbors,
+                        DistanceThreshold = parameters.DistanceThreshold,
+                        DeletePoints = parameters.DeletePoints,
+                        VisualizationMode = parameters.VisualizationMode
+                    };
+                    string command = JsonSerializer.Serialize(commandData, _jsonOptions);
+                    HeliumNative.He_ManagedToNative(command);
+                    ShowNotification($"Applied PFOR (K={parameters.KNeighbors}, Dist={parameters.DistanceThreshold}, Vis={parameters.VisualizationMode})");
+                };
+
+                _pforDialog.Closed += (s, args) => { _pforDialog = null; };
+                _pforDialog.Show();
             }
             else
             {

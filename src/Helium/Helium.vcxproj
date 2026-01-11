@@ -117,6 +117,7 @@
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\AtomicDisjointSet.h" />
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\CurvatureAnalysis.h" />
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\NormalDeviation.h" />
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PFOR.h" />
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudProcessing.h" />
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudProcessor.h" />
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\ROR.h" />
@@ -173,6 +174,7 @@
     <ClCompile Include="PointCloudProcessing\AtomicDisjointSet.cpp" />
     <ClCompile Include="PointCloudProcessing\CurvatureAnalysis.cpp" />
     <ClCompile Include="PointCloudProcessing\NormalDeviation.cpp" />
+    <ClCompile Include="PointCloudProcessing\PFOR.cpp" />
     <ClCompile Include="PointCloudProcessing\ROR.cpp" />
     <ClCompile Include="PointCloudProcessing\SOR.cpp" />
     <ClCompile Include="SpatialPartitionings\SparseDataBlock.cpp" />

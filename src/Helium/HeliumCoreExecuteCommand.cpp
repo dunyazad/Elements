@@ -409,6 +409,18 @@ std::vector<uint8_t> HeliumCore::PerformNormalDeviationAnalysis(int pointCloudID
 	return processor.Process(parameters);
 }
 
+std::vector<uint8_t> HeliumCore::PerformPFOR(int pointCloudID, int kNeighbors, float distanceThreshold, PointCloudVisualizationMode visualizationMode)
+{
+	PointCloudProcessorParameters parameters;
+	parameters.SetParameter<int>("PointCloudID", pointCloudID);
+	parameters.SetParameter<int>("KNeighbors", kNeighbors);
+	parameters.SetParameter<float>("DistanceThreshold", distanceThreshold);
+	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
+
+	PFOR processor;
+	return processor.Process(parameters);
+}
+
 void HeliumCore::ProcessManagedToNativeEvents()
 {
 	std::lock_guard<std::mutex> lock(managedToNativeEventQueueMutex);
@@ -633,6 +645,18 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 							int visualizationMode = j.value("VisualizationMode", 0);
 
 							PerformNormalDeviationAnalysis(pointCloudID, radius, deviationThreshold, (PointCloudVisualizationMode)visualizationMode);
+						}
+					}
+					else if (cmd == "PerformPFOR")
+					{
+						if (j.contains("PointCloudID"))
+						{
+							int pointCloudID = j["PointCloudID"];
+							int kNeighbors = j.value("KNeighbors", 30);
+							float distanceThreshold = j.value("DistanceThreshold", 0.1f);
+							int visualizationMode = j.value("VisualizationMode", 0);
+					
+							PerformPFOR(pointCloudID, kNeighbors, distanceThreshold, (PointCloudVisualizationMode)visualizationMode);
 						}
 					}
 					else if (cmd == "PerformCompositeFilter")
