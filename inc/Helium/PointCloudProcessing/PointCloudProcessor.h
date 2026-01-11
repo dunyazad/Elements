@@ -47,7 +47,8 @@ public:
 		SOR,
 		ROR,
 		CurvatureAnalysis,
-		NormalDeviation
+		NormalDeviation,
+		PFOR
 	};
 
 	virtual ~PointCloudProcessor() = default;

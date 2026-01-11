@@ -194,6 +194,7 @@ public:
     std::vector<uint8_t> PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, PointCloudVisualizationMode visualizationMode);
     std::vector<uint8_t> PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, PointCloudVisualizationMode visualizationMode);
     std::vector<uint8_t> PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, PointCloudVisualizationMode visualizationMode);
+    std::vector<uint8_t> PerformPFOR(int pointCloudID, int kNeighbors, float distanceThreshold, PointCloudVisualizationMode visualizationMode);
 
     void ProcessManagedToNativeEvents();
     void EnqueueManagedToNativeEvent(std::function<void()> event);
