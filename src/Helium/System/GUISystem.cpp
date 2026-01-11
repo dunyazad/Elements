@@ -169,7 +169,7 @@ void GUISystem::Update(float dt)
 
 void GUISystem::Render()
 {
-    RenderText((const char*)u8"Helium Engine! - 한글 테스트", 10.0f, 30.0f, 1.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
+    RenderText((const char*)u8"u8 한글 테스트", 10.0f, 40.0f, 2.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
 }
 
 void GUISystem::RenderText(const std::string& text, float x, float y, float scale, const Eigen::Vector4f& color)
@@ -200,11 +200,12 @@ void GUISystem::RenderText(const std::string& text, float x, float y, float scal
     glBindTexture(GL_TEXTURE_2D, textureID);
     glBindVertexArray(VAO);
 
-    // [수정 5] UTF-8 디코딩 및 인덱스 계산
     std::vector<uint32_t> codepoints = DecodeUTF8(text);
+
     float currentX = x;
     float currentY = y;
-    const int TEX_WIDTH = 4096; // Initialize와 동일하게
+
+    const int TEX_WIDTH = 4096;
     const int TEX_HEIGHT = 4096;
 
     for (uint32_t cp : codepoints)
@@ -212,31 +213,39 @@ void GUISystem::RenderText(const std::string& text, float x, float y, float scal
         stbtt_aligned_quad q;
         int charIndex = -1;
 
-        // 인덱스 찾기 (charData 배열 내 위치)
         if (cp >= 32 && cp < 32 + 96) {
-            charIndex = cp - 32; // ASCII
+            charIndex = cp - 32;
         }
         else if (cp >= 0xAC00 && cp <= 0xD7A3) {
-            charIndex = 96 + (cp - 0xAC00); // 한글 (ASCII 96개 뒤에 있음)
+            charIndex = 96 + (cp - 0xAC00);
         }
 
-        if (charIndex == -1) continue; // 지원하지 않는 문자
+        if (charIndex == -1) continue;
 
-        stbtt_GetPackedQuad(charData.data(), TEX_WIDTH, TEX_HEIGHT, charIndex, &currentX, &currentY, &q, 1);
+        float x_offset = 0.0f;
+        float y_offset = 0.0f;
+        stbtt_GetPackedQuad(charData.data(), TEX_WIDTH, TEX_HEIGHT, charIndex, &x_offset, &y_offset, &q, 0);
+
+        float x0 = currentX + (q.x0 * scale);
+        float x1 = currentX + (q.x1 * scale);
+        float y0 = currentY + (q.y0 * scale);
+        float y1 = currentY + (q.y1 * scale);
 
         float vertices[6][4] = {
-            { q.x0, q.y0, q.s0, q.t0 },
-            { q.x1, q.y0, q.s1, q.t0 },
-            { q.x1, q.y1, q.s1, q.t1 },
+            { x0, y0, q.s0, q.t0 },
+            { x1, y0, q.s1, q.t0 },
+            { x1, y1, q.s1, q.t1 },
 
-            { q.x0, q.y0, q.s0, q.t0 },
-            { q.x1, q.y1, q.s1, q.t1 },
-            { q.x0, q.y1, q.s0, q.t1 }
+            { x0, y0, q.s0, q.t0 },
+            { x1, y1, q.s1, q.t1 },
+            { x0, y1, q.s0, q.t1 }
         };
 
         glBindBuffer(GL_ARRAY_BUFFER, VBO);
         glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
         glDrawArrays(GL_TRIANGLES, 0, 6);
+
+        currentX += (x_offset * scale);
     }
 
     glBindVertexArray(0);
