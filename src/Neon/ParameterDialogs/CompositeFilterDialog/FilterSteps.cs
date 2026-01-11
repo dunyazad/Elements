@@ -1,13 +1,21 @@
 using System;
 using System.Collections.ObjectModel;
-using System.Linq; // SingleOrDefault 사용을 위해
+using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 
-namespace Neon.ViewModels
+namespace Neon.ParameterDialogs.CompositeFilterDialog
 {
     public class FilterStep : BaseViewModel
     {
+        // For XAML CheckBox binding
+        private bool _isChecked;
+        public bool IsChecked
+        {
+            get => _isChecked;
+            set { _isChecked = value; OnPropertyChanged(); }
+        }
+
         public static ObservableCollection<string> FilterTypes { get; } = new ObservableCollection<string>
         {
             "SOR Filter",
@@ -34,7 +42,6 @@ namespace Neon.ViewModels
                 {
                     _selectedType = value;
                     OnPropertyChanged();
-
                     UpdateDefaultParameters();
                 }
             }
@@ -47,7 +54,8 @@ namespace Neon.ViewModels
             set { _selectedOperation = value; OnPropertyChanged(); }
         }
 
-        private PointCloudProcessorParameters _parameters = new PointCloudProcessorParameters();
+        // Assuming PointCloudProcessorParameters and derived classes exist in your project
+        private PointCloudProcessorParameters _parameters;
         public PointCloudProcessorParameters Parameters
         {
             get => _parameters;
@@ -60,6 +68,7 @@ namespace Neon.ViewModels
         {
             _selectedType = type;
             _selectedOperation = operation;
+            _parameters = new PointCloudProcessorParameters(); // Default init to avoid null
 
             UpdateDefaultParameters();
 
@@ -68,6 +77,7 @@ namespace Neon.ViewModels
 
         public void UpdateDefaultParameters()
         {
+            // Logic to instantiate specific parameter classes
             switch (_selectedType)
             {
                 case "SOR Filter":
@@ -90,13 +100,17 @@ namespace Neon.ViewModels
                     break;
             }
 
-            Parameters.VisualizationMode = PointCloudVisualizationMode.None;
+            if (Parameters != null)
+            {
+                Parameters.VisualizationMode = PointCloudVisualizationMode.None;
+            }
         }
 
         private void OpenParameterDialog()
         {
             Window? dlg = null;
 
+            // Logic to open specific dialogs based on Type
             switch (_selectedType)
             {
                 case "SOR Filter":
@@ -134,6 +148,7 @@ namespace Neon.ViewModels
 
             if (dlg != null)
             {
+                // Set owner to the active window to ensure modal behavior
                 dlg.Owner = Application.Current.Windows.OfType<Window>().SingleOrDefault(x => x.IsActive);
 
                 if (dlg.ShowDialog() == true)

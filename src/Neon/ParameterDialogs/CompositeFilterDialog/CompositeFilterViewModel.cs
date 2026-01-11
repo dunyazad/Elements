@@ -1,42 +1,11 @@
+using Neon.Nodes;
 using System;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Windows;
 using System.Windows.Input;
 
-namespace Neon.ViewModels
+namespace Neon.ParameterDialogs.CompositeFilterDialog
 {
-    public class BaseViewModel : INotifyPropertyChanged
-    {
-        public event PropertyChangedEventHandler? PropertyChanged;
-        protected void OnPropertyChanged([CallerMemberName] string? name = null)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-        }
-    }
-
-    public class RelayCommand : ICommand
-    {
-        private readonly Action<object?> _execute;
-        private readonly Predicate<object?>? _canExecute;
-
-        public RelayCommand(Action<object?> execute, Predicate<object?>? canExecute = null)
-        {
-            _execute = execute;
-            _canExecute = canExecute;
-        }
-
-        public bool CanExecute(object? parameter) => _canExecute == null || _canExecute(parameter);
-        public void Execute(object? parameter) => _execute(parameter);
-        public event EventHandler? CanExecuteChanged
-        {
-            add { CommandManager.RequerySuggested += value; }
-            remove { CommandManager.RequerySuggested -= value; }
-        }
-    }
-
     public class CompositeFilterViewModel : BaseViewModel
     {
         public ObservableCollection<FilterStep> Steps { get; } = new ObservableCollection<FilterStep>();
@@ -61,10 +30,11 @@ namespace Neon.ViewModels
         public CompositeFilterViewModel()
         {
             AddCommand = new RelayCommand(_ => AddStep());
-            RemoveCommand = new RelayCommand(_ => RemoveStep(), _ => SelectedStep != null);
+            RemoveCommand = new RelayCommand(_ => RemoveStep(), _ => CanRemoveStep());
             MoveUpCommand = new RelayCommand(_ => MoveUp(), _ => CanMoveUp());
             MoveDownCommand = new RelayCommand(_ => MoveDown(), _ => CanMoveDown());
 
+            // Initial Default Steps
             Steps.Add(new FilterStep("SOR Filter"));
             Steps.Add(new FilterStep("ROR Filter"));
         }
@@ -78,11 +48,28 @@ namespace Neon.ViewModels
 
         private void RemoveStep()
         {
+            // 1. Remove checked items if any
+            var checkedItems = Steps.Where(s => s.IsChecked).ToList();
+            if (checkedItems.Any())
+            {
+                foreach (var item in checkedItems)
+                {
+                    Steps.Remove(item);
+                }
+                return;
+            }
+
+            // 2. Otherwise remove selected item
             if (SelectedStep != null)
             {
                 Steps.Remove(SelectedStep);
                 SelectedStep = null;
             }
+        }
+
+        private bool CanRemoveStep()
+        {
+            return SelectedStep != null || Steps.Any(s => s.IsChecked);
         }
 
         private void MoveUp()

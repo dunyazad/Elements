@@ -169,7 +169,7 @@ void GUISystem::Update(float dt)
 
 void GUISystem::Render()
 {
-    RenderText((const char*)u8"u8 한글 테스트", 10.0f, 40.0f, 2.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
+    //RenderText((const char*)u8"u8 한글 테스트", 10.0f, 40.0f, 2.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
 }
 
 void GUISystem::RenderText(const std::string& text, float x, float y, float scale, const Eigen::Vector4f& color)

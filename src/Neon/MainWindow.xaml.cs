@@ -4,17 +4,16 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Drawing;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Xml.Linq;
-using static HeliumNative;
 
 namespace Neon
 {
@@ -29,9 +28,7 @@ namespace Neon
         public required string Name { get; set; } = string.Empty;
         public required string FullPath { get; set; } = string.Empty;
 
-        // 기본값을 true로 설정하여 생성 시 체크된 상태로 만듦
         private bool _isVisible = true;
-
         public bool IsVisible
         {
             get => _isVisible;
@@ -85,7 +82,7 @@ namespace Neon
 
         public ObservableCollection<SceneNode> SceneItems { get; set; }
 
-        private HeliumLogDelegate _logDelegate;
+        private HeliumNative.HeliumLogDelegate _logDelegate;
         private bool _autoScroll = true;
 
         private HeliumNative.NativeToManagedDelegate _nativeToManagedDelegate;
@@ -100,8 +97,7 @@ namespace Neon
         private int selectedPointCloudID = -1;
         private int selectedPointIndex = -1;
 
-        public ObservableCollection<NotificationItem> Notifications { get; set; }
-        = new ObservableCollection<NotificationItem>();
+        public ObservableCollection<NotificationItem> Notifications { get; set; } = new ObservableCollection<NotificationItem>();
 
         private readonly Stopwatch _uiStopwatch = new Stopwatch();
         private long _lastUiTicks = 0;
@@ -120,6 +116,7 @@ namespace Neon
             }
         }
 
+        // Dialogs
         private SorParameterDialog? _sorDialog = null;
         private RorParameterDialog? _rorDialog = null;
         private CurvatureAnalysisParameterDialog? _curvatureDialog = null;
@@ -127,13 +124,20 @@ namespace Neon
         private CompositeFilterDialog? _compositeFilterDialog = null;
         private NodeEditorDialog? _nodeEditorDialog = null;
 
+        // Shared Json Options
+        private readonly JsonSerializerOptions _jsonOptions;
+
         public MainWindow()
         {
             InitializeComponent();
             this.DataContext = this;
 
             SceneItems = new ObservableCollection<SceneNode>();
-            this.DataContext = this;
+
+            // Initialize JSON Options once
+            _jsonOptions = new JsonSerializerOptions();
+            _jsonOptions.Converters.Add(new HeliumNative.FloatJsonConverter());
+            _jsonOptions.Converters.Add(new HeliumNative.DoubleJsonConverter());
 
             ComponentDispatcher.ThreadFilterMessage += ComponentDispatcher_ThreadFilterMessage;
 
@@ -142,7 +146,6 @@ namespace Neon
 
             _logDelegate = OnHeliumLog;
             HeliumNative.He_SetLogCallback(_logDelegate);
-            //NeonLogger.Log("system", "Application started");
 
             _nativeToManagedDelegate = OnNativeToManagedMessage;
             HeliumNative.He_SetNativeToManagedCallback(_nativeToManagedDelegate);
@@ -155,20 +158,20 @@ namespace Neon
 
             this.WindowState = WindowState.Maximized;
 
-            Menu_File_Open_Click(this, new RoutedEventArgs());
+            // Auto load for testing
+            // Menu_File_Open_Click(this, new RoutedEventArgs()); 
         }
 
         private void OnUpdateUI(object? sender, EventArgs e)
         {
-            // 1. UI 스레드 델타 타임 및 FPS 계산
+            // 1. Calculate Delta Time & FPS
             long currentTicks = _uiStopwatch.ElapsedTicks;
             double dt = (double)(currentTicks - _lastUiTicks) / Stopwatch.Frequency;
             _lastUiTicks = currentTicks;
 
-            // 0으로 나누기 방지
             double fps = (dt > 0.0) ? (1.0 / dt) : 60.0;
 
-            // 2. 현재 선택된 클라우드 정보 가져오기
+            // 2. Get Selected Point Cloud Info
             string selectedName = "None";
             int pointCount = 0;
             int clusterCount = 0;
@@ -176,36 +179,25 @@ namespace Neon
             if (selectedSceneNode != null)
             {
                 selectedName = selectedSceneNode.Name;
-
-                // [TODO] 실제 엔진에서 포인트 개수를 가져오는 함수가 있다면 연결하세요.
-                // 예: pointCount = HeliumNative.He_GetPointCount(selectedSceneNode.ID);
-                // 현재는 예시로 ID * 1000 등을 넣거나 임시 값을 넣습니다.
-                pointCount = 1024000; // 가짜 데이터 (1M Points)
+                // [TODO] Retrieve actual point count from engine using ID
+                pointCount = 1024000;
             }
 
-            // 3. 상태 텍스트 갱신 (화면 왼쪽 위)
-            // C# 6.0 이상 문자열 보간 ($"...") 사용
-            HeliumStatusText = $"FPS: {fps:0}\n" +                    // 소수점 없이 정수로
-                               $"Points: {pointCount:N0}\n" +         // 천단위 콤마 (N0)
-                               $"Object: {selectedName}\n" +          // 선택된 객체 이름
-                               $"Clusters: {clusterCount}\n" +        // 클러스터 개수
-                               $"Mode: Edit";                         // 현재 모드 (고정값 예시)
+            // 3. Update Status Text
+            HeliumStatusText = $"FPS: {fps:0}\n" +
+                               $"Points: {pointCount:N0}\n" +
+                               $"Object: {selectedName}\n" +
+                               $"Clusters: {clusterCount}\n" +
+                               $"Mode: Edit";
         }
 
         public async void ShowNotification(string message, int durationMS = 3000)
         {
-            // C++ 등 다른 스레드에서 호출될 경우를 대비해 Dispatcher 사용
             await Application.Current.Dispatcher.InvokeAsync(async () =>
             {
                 var item = new NotificationItem { Text = message };
-
-                // (1) 리스트에 추가 (화면에 즉시 표시됨)
                 Notifications.Add(item);
-
-                // (2) 지정된 시간만큼 대기 (비동기라 UI 안 멈춤)
                 await Task.Delay(durationMS);
-
-                // (3) 시간이 지나면 리스트에서 제거 (화면에서 사라짐)
                 Notifications.Remove(item);
             });
         }
@@ -213,34 +205,23 @@ namespace Neon
         #region System Message Processing
         private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            // Check for Ctrl key combination
             if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
             {
                 switch (e.Key)
                 {
                     case Key.O:
-                        {
-                            Menu_File_Open_Click(sender, e);
-                            e.Handled = true; // Mark event as handled so it doesn't bubble up
-                            break;
-                        }
+                        Menu_File_Open_Click(sender, e);
+                        e.Handled = true;
+                        break;
                 }
             }
             else
             {
                 switch (e.Key)
                 {
-                    //case Key.Escape:
-                    //    {
-                    //        e.Handled = true;
-                    //        this.Close();
-                    //        break;
-                    //    }
                     case Key.T:
-                        {
-                            ShowNotification($"Event Triggered at {DateTime.Now:ss.fff}");
-                            break;
-                        }
+                        ShowNotification($"Event Triggered at {DateTime.Now:ss.fff}");
+                        break;
                 }
             }
         }
@@ -269,11 +250,9 @@ namespace Neon
                     NativeMethods.GetCursorPos(out cursorPos);
                     NativeMethods.ScreenToClient(heliumHwnd, ref cursorPos);
 
-                    // C++의 GET_X_LPARAM 매크로 대응을 위한 좌표 패킹
                     finalLParam = (IntPtr)((cursorPos.Y << 16) | (cursorPos.X & 0xFFFF));
                 }
 
-                // 5. 엔진 전송
                 HeliumNative.He_ProcessMessage((uint)msg.message, msg.wParam, finalLParam);
             }
         }
@@ -282,10 +261,8 @@ namespace Neon
         {
             if (HeliumHostControl == null || !HeliumHostControl.IsLoaded) return false;
 
-            // WPF 좌표계 기준 마우스 위치
             System.Windows.Point pos = Mouse.GetPosition(HeliumHostControl);
 
-            // 컨트롤 영역 안에 있는지 확인
             return (pos.X >= 0 && pos.X < HeliumHostControl.ActualWidth &&
                     pos.Y >= 0 && pos.Y < HeliumHostControl.ActualHeight);
         }
@@ -341,7 +318,7 @@ namespace Neon
                     FileNames = filenames
                 };
 
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                 HeliumNative.He_ManagedToNative(command);
 
                 for (int i = 0; i < filenames.Length; i++)
@@ -366,7 +343,7 @@ namespace Neon
                     PointCloudID = selectedSceneNode.ID,
                     PointIndex = selectedPointIndex
                 };
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                 HeliumNative.He_ManagedToNative(command);
             }
         }
@@ -381,7 +358,7 @@ namespace Neon
                     PointCloudID = selectedSceneNode.ID,
                     PointIndex = selectedPointIndex
                 };
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                 HeliumNative.He_ManagedToNative(command);
             }
         }
@@ -395,12 +372,10 @@ namespace Neon
                     Command = "ClonePointCloud",
                     PointCloudID = selectedSceneNode.ID
                 };
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                 HeliumNative.He_ManagedToNative(command);
             }
         }
-
-        // Separator
 
         private void Menu_PointCloud_ShowNormals_Click(object sender, RoutedEventArgs e)
         {
@@ -411,7 +386,7 @@ namespace Neon
                     Command = "ShowPointCloudNormals",
                     PointCloudID = selectedSceneNode.ID
                 };
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                 HeliumNative.He_ManagedToNative(command);
             }
         }
@@ -425,9 +400,7 @@ namespace Neon
                     Command = "ShowSparseGrid",
                     PointCloudID = selectedSceneNode.ID
                 };
-
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
-
+                string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                 HeliumNative.He_ManagedToNative(command);
             }
         }
@@ -441,12 +414,10 @@ namespace Neon
                     Command = "ShowSparseDataBlocks",
                     PointCloudID = selectedSceneNode.ID
                 };
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                 HeliumNative.He_ManagedToNative(command);
             }
         }
-
-        // Separator
 
         private void Menu_PointCloud_Clustering_Click(object sender, RoutedEventArgs e)
         {
@@ -459,7 +430,7 @@ namespace Neon
                     SearchRadius = 0.15f,
                     AngleThreshold = 0.9f
                 };
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                 HeliumNative.He_ManagedToNative(command);
             }
         }
@@ -483,7 +454,10 @@ namespace Neon
                 _sorDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
                 _sorDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
 
-                _sorDialog.Parameters.PointCloudID = selectedSceneNode!.ID;
+                if (_sorDialog.Parameters is PointCloudProcessorParametersSOR sorParams)
+                {
+                    sorParams.PointCloudID = selectedSceneNode.ID;
+                }
 
                 _sorDialog.AnalyzeAction = (parameters) =>
                 {
@@ -497,12 +471,7 @@ namespace Neon
                         VisualizationMode = parameters.VisualizationMode
                     };
 
-                    var options = new System.Text.Json.JsonSerializerOptions();
-                    options.Converters.Add(new FloatJsonConverter());
-                    options.Converters.Add(new DoubleJsonConverter());
-
-                    string command = System.Text.Json.JsonSerializer.Serialize(commandData, options);
-
+                    string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                     HeliumNative.He_ManagedToNative(command);
 
                     ShowNotification($"Applied SOR (K={parameters.KNeighbors}, StdDev={parameters.StdDevMulThresh}, Vis={parameters.VisualizationMode})");
@@ -536,7 +505,10 @@ namespace Neon
                 _rorDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
                 _rorDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
 
-                _rorDialog.Parameters.PointCloudID = selectedSceneNode!.ID;
+                if (_rorDialog.Parameters is PointCloudProcessorParametersROR rorParams)
+                {
+                    rorParams.PointCloudID = selectedSceneNode.ID;
+                }
 
                 _rorDialog.AnalyzeAction = (parameters) =>
                 {
@@ -550,12 +522,7 @@ namespace Neon
                         VisualizationMode = parameters.VisualizationMode
                     };
 
-                    var options = new System.Text.Json.JsonSerializerOptions();
-                    options.Converters.Add(new FloatJsonConverter());
-                    options.Converters.Add(new DoubleJsonConverter());
-
-                    string command = System.Text.Json.JsonSerializer.Serialize(commandData, options);
-
+                    string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                     HeliumNative.He_ManagedToNative(command);
 
                     ShowNotification($"Applied ROR (R={parameters.Radius}, MinN={parameters.MinNeighborsInRadius}, Vis={parameters.VisualizationMode})");
@@ -589,7 +556,10 @@ namespace Neon
                 _curvatureDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
                 _curvatureDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
 
-                _curvatureDialog.Parameters.PointCloudID = selectedSceneNode.ID;
+                if (_curvatureDialog.Parameters is PointCloudProcessorParametersCurvatureAnalysis curvParams)
+                {
+                    curvParams.PointCloudID = selectedSceneNode.ID;
+                }
 
                 _curvatureDialog.AnalyzeAction = (parameters) =>
                 {
@@ -603,19 +573,13 @@ namespace Neon
                         VisualizationMode = parameters.VisualizationMode
                     };
 
-                    var options = new System.Text.Json.JsonSerializerOptions();
-                    options.Converters.Add(new FloatJsonConverter());
-                    options.Converters.Add(new DoubleJsonConverter());
-
-                    string command = System.Text.Json.JsonSerializer.Serialize(commandData, options);
-
-                    ShowNotification($"Applied Curvature Analysis (ID: {parameters.PointCloudID}, K={parameters.KNeighbors}, CurvatureThresh={parameters.CurvatureThreshold}, Vis={parameters.VisualizationMode})");
-
+                    string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                     HeliumNative.He_ManagedToNative(command);
+
+                    ShowNotification($"Applied Curvature Analysis (ID: {parameters.PointCloudID}, K={parameters.KNeighbors}, Vis={parameters.VisualizationMode})");
                 };
 
                 _curvatureDialog.Closed += (s, args) => { _curvatureDialog = null; };
-
                 _curvatureDialog.Show();
             }
             else
@@ -636,14 +600,16 @@ namespace Neon
 
                 _normalDeviationAnalysisParameterDialog = new NormalDeviationAnalysisParameterDialog();
                 _normalDeviationAnalysisParameterDialog.Owner = this;
-                _normalDeviationAnalysisParameterDialog.Parameters.PointCloudID = selectedSceneNode.ID;
 
                 double dialogWidth = 380;
                 double estimatedHeight = 300;
                 _normalDeviationAnalysisParameterDialog.Left = (this.Left + this.ActualWidth) - dialogWidth - 20;
                 _normalDeviationAnalysisParameterDialog.Top = (this.Top + (this.ActualHeight / 2)) - (estimatedHeight / 2);
 
-                _normalDeviationAnalysisParameterDialog.Parameters.PointCloudID = selectedSceneNode!.ID;
+                if (_normalDeviationAnalysisParameterDialog.Parameters is PointCloudProcessorParametersNormalDeviation normParams)
+                {
+                    normParams.PointCloudID = selectedSceneNode.ID;
+                }
 
                 _normalDeviationAnalysisParameterDialog.AnalyzeAction = (parameters) =>
                 {
@@ -655,19 +621,14 @@ namespace Neon
                         DeviationThreshold = parameters.DeviationThreshold,
                         VisualizationMode = parameters.VisualizationMode
                     };
-                    var options = new System.Text.Json.JsonSerializerOptions();
-                    options.Converters.Add(new FloatJsonConverter());
-                    options.Converters.Add(new DoubleJsonConverter());
 
-                    string command = System.Text.Json.JsonSerializer.Serialize(commandData, options);
-
+                    string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                     HeliumNative.He_ManagedToNative(command);
 
-                    ShowNotification($"Applied Normal Deviation Analysis (ID: {parameters.PointCloudID}, Radius={parameters.Radius}, DeviationThresh={parameters.DeviationThreshold}, Vis={parameters.VisualizationMode})");
+                    ShowNotification($"Applied Normal Deviation Analysis (ID: {parameters.PointCloudID}, R={parameters.Radius}, Vis={parameters.VisualizationMode})");
                 };
 
                 _normalDeviationAnalysisParameterDialog.Closed += (s, args) => { _normalDeviationAnalysisParameterDialog = null; };
-
                 _normalDeviationAnalysisParameterDialog.Show();
             }
             else
@@ -690,13 +651,10 @@ namespace Neon
                 _compositeFilterDialog.Owner = this;
                 _compositeFilterDialog.WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
-                //_compositeFilterDialog.Parameters.PointCloudID = selectedSceneNode!.ID;
-
                 _compositeFilterDialog.ApplyAction = (vm) =>
                 {
                     var steps = vm.Steps;
-
-                    var pipelineList = new System.Collections.Generic.List<object>();
+                    var pipelineList = new List<object>();
 
                     foreach (var step in steps)
                     {
@@ -704,30 +662,25 @@ namespace Neon
                         {
                             Operation = step.SelectedOperation,
                             FilterType = step.SelectedType,
-                            Parameters = step.Parameters
+                            // Cast to object to ensure derived class properties are serialized
+                            Parameters = (object)step.Parameters
                         });
                     }
 
                     var commandData = new
                     {
                         Command = "PerformCompositeFilter",
-                        PointCloudID = selectedSceneNode.ID, // 예시
+                        PointCloudID = selectedSceneNode.ID,
                         Pipeline = pipelineList
                     };
 
-                    var options = new System.Text.Json.JsonSerializerOptions();
-                    options.Converters.Add(new FloatJsonConverter());
-                    options.Converters.Add(new DoubleJsonConverter());
-
-                    string command = System.Text.Json.JsonSerializer.Serialize(commandData, options);
-
+                    string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                     HeliumNative.He_ManagedToNative(command);
 
                     ShowNotification($"Applied Composite Filter ({pipelineList.Count} steps)");
                 };
 
                 _compositeFilterDialog.Closed += (s, args) => { _compositeFilterDialog = null; };
-
                 _compositeFilterDialog.Show();
             }
             else
@@ -759,10 +712,10 @@ namespace Neon
                         Radius = radius,
                         VisualizationMode = isGradient ? "Gradient" : "Binary"
                     };
-                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                    string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                     HeliumNative.He_ManagedToNative(command);
 
-                    ShowNotification($"Normal Deviation (R={radius}, Vis={(isGradient ? "Gradient" : "Binary")})");
+                    ShowNotification($"Node Editor Result (R={radius}, Vis={(isGradient ? "Gradient" : "Binary")})");
                 };
 
                 _nodeEditorDialog.Closed += (s, args) => { _nodeEditorDialog = null; };
@@ -772,40 +725,29 @@ namespace Neon
 
         private void Menu_VD_ClearAll_Click(object sender, RoutedEventArgs e)
         {
-            var commandData = new
-            {
-                Command = "ClearAllVisualDebugging"
-            };
-            string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+            var commandData = new { Command = "ClearAllVisualDebugging" };
+            string command = JsonSerializer.Serialize(commandData, _jsonOptions);
             HeliumNative.He_ManagedToNative(command);
         }
+
         private void Menu_View_ToggleGrid_Click(object sender, RoutedEventArgs e)
         {
-            var commandData = new
-            {
-                Command = "ToggleGrid"
-            };
-            string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+            var commandData = new { Command = "ToggleGrid" };
+            string command = JsonSerializer.Serialize(commandData, _jsonOptions);
             HeliumNative.He_ManagedToNative(command);
         }
 
         private void Menu_View_ToggleAxisGizmo_Click(object sender, RoutedEventArgs e)
         {
-            var commandData = new
-            {
-                Command = "ToggleAxisGizmo"
-            };
-            string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+            var commandData = new { Command = "ToggleAxisGizmo" };
+            string command = JsonSerializer.Serialize(commandData, _jsonOptions);
             HeliumNative.He_ManagedToNative(command);
         }
 
         private void Menu_View_ToggleCenterGizmo_Click(object sender, RoutedEventArgs e)
         {
-            var commandData = new
-            {
-                Command = "ToggleCenterGizmo"
-            };
-            string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+            var commandData = new { Command = "ToggleCenterGizmo" };
+            string command = JsonSerializer.Serialize(commandData, _jsonOptions);
             HeliumNative.He_ManagedToNative(command);
         }
 
@@ -833,12 +775,11 @@ namespace Neon
                     PointCloudID = sceneNode.ID
                 };
 
-                string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                 HeliumNative.He_ManagedToNative(command);
 
                 selectedSceneNode = sceneNode;
-
-                selectedPointIndex = sceneNode.ID;
+                selectedPointIndex = sceneNode.ID; // Assuming 1:1 mapping for test
             }
         }
 
@@ -846,37 +787,32 @@ namespace Neon
         {
             if (sender is CheckBox checkBox && checkBox.DataContext is SceneNode sceneNode)
             {
-                {
-                    bool isVisible = checkBox.IsChecked ?? false;
-                    sceneNode.IsVisible = isVisible;
+                bool isVisible = checkBox.IsChecked ?? false;
+                sceneNode.IsVisible = isVisible;
 
-                    var commandData = new
+                var commandData = new
+                {
+                    Command = "SetPointCloudVisibility",
+                    PointCloudID = sceneNode.ID,
+                    IsVisible = isVisible
+                };
+                var command = JsonSerializer.Serialize(commandData, _jsonOptions);
+                HeliumNative.He_ManagedToNative(command);
+
+                // Auto select on visibility change logic
+                selectedSceneNode = sceneNode;
+                selectedPointCloudID = sceneNode.ID;
+
+                Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    var selectCmdData = new
                     {
-                        Command = "SetPointCloudVisibility",
-                        PointCloudID = sceneNode.ID,
-                        IsVisible = isVisible
+                        Command = "SelectPointCloud",
+                        PointCloudID = sceneNode.ID
                     };
-                    var command = System.Text.Json.JsonSerializer.Serialize(commandData);
-                    HeliumNative.He_ManagedToNative(command);
-                }
-
-                {
-                    selectedSceneNode = sceneNode;
-                    selectedPointCloudID = sceneNode.ID;
-
-                    Application.Current.Dispatcher.InvokeAsync(() =>
-                    {
-                        var commandData = new
-                        {
-                            Command = "SelectPointCloud",
-                            PointCloudID = sceneNode.ID
-                        };
-                        string command = System.Text.Json.JsonSerializer.Serialize(commandData);
-                        HeliumNative.He_ManagedToNative(command);
-                    });
-                }
-
-                //NeonLogger.Log("", $"PointCloud Visibility Changed: {sceneNode.Name} (ID: {sceneNode.ID}) to {(isVisible ? "Visible" : "Hidden")}");
+                    string selectCmd = JsonSerializer.Serialize(selectCmdData, _jsonOptions);
+                    HeliumNative.He_ManagedToNative(selectCmd);
+                });
             }
         }
 
@@ -898,7 +834,7 @@ namespace Neon
                         Command = "DeletePointCloud",
                         PointCloudID = sceneNode.ID
                     };
-                    string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                    string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                     HeliumNative.He_ManagedToNative(command);
                 }
                 e.Handled = true;
@@ -909,18 +845,15 @@ namespace Neon
         {
             if (exclusive)
             {
-                SceneItems.ToList().ForEach(sceneItem =>
+                foreach (var sceneItem in SceneItems)
                 {
-                    if (null != sceneItem)
-                    {
-                        sceneItem.IsVisible = !sceneItem.IsVisible;
-                    }
-                });
+                    sceneItem.IsVisible = false;
+                }
             }
 
-            if (order < SceneItems.ToList().Count)
+            if (order < SceneItems.Count)
             {
-                SceneNode sceneNode = SceneItems.ToList().ElementAt(order);
+                SceneNode sceneNode = SceneItems[order];
                 if (sceneNode != null)
                 {
                     sceneNode.IsVisible = !sceneNode.IsVisible;
@@ -936,46 +869,41 @@ namespace Neon
                                 Command = "SelectPointCloud",
                                 PointCloudID = sceneNode.ID
                             };
-                            string command = System.Text.Json.JsonSerializer.Serialize(commandData);
+                            string command = JsonSerializer.Serialize(commandData, _jsonOptions);
                             HeliumNative.He_ManagedToNative(command);
                         });
                     }
                 }
             }
 
-            var pointCloudVisibleInfoList = new List<object>(); // 혹은 구체적인 struct 사용
-            foreach (var sceneItem in SceneItems)
-            {
-                // Tuple 대신 익명 객체 사용
-                pointCloudVisibleInfoList.Add(new { pointCloudID = sceneItem.ID, visible = sceneItem.IsVisible });
-            }
+            var pointCloudVisibleInfoList = SceneItems.Select(item => new { pointCloudID = item.ID, visible = item.IsVisible }).ToList();
 
-            var commandData = new
+            var finalCommandData = new
             {
                 Command = "TogglePointClouds",
                 pointCloudVisibleInfoList = pointCloudVisibleInfoList
             };
-            var command = System.Text.Json.JsonSerializer.Serialize(commandData);
-            HeliumNative.He_ManagedToNative(command);
+            var finalCommand = JsonSerializer.Serialize(finalCommandData, _jsonOptions);
+            HeliumNative.He_ManagedToNative(finalCommand);
         }
         #endregion
 
         #region Logging
         private sealed class LogItem
-    {
-        public string Text { get; }
-        public Brush Foreground { get; }
-
-        public LogItem(string text, Brush foreground)
         {
-            Text = text;
-            Foreground = foreground;
-        }
+            public string Text { get; }
+            public Brush Foreground { get; }
 
-        public override string ToString()
-        {
-            return Text;
-        }
+            public LogItem(string text, Brush foreground)
+            {
+                Text = text;
+                Foreground = foreground;
+            }
+
+            public override string ToString()
+            {
+                return Text;
+            }
         }
 
         private void OnHeliumLog(NeonLogger.LogLevel level, string? key, string value)
@@ -1092,52 +1020,55 @@ namespace Neon
                         {
                             case "Notification":
                                 {
-                                    root.TryGetProperty("Parameters", out JsonElement paramsElement);
-                                    root = paramsElement;
-                                    string message = root.GetProperty("Message").GetString() ?? string.Empty;
-                                    int durationMS = root.GetProperty("DurationMS").GetInt32();
-                                    ShowNotification(message, durationMS);
+                                    if (root.TryGetProperty("Parameters", out JsonElement paramsElement))
+                                    {
+                                        string message = paramsElement.GetProperty("Message").GetString() ?? string.Empty;
+                                        int durationMS = paramsElement.GetProperty("DurationMS").GetInt32();
+                                        ShowNotification(message, durationMS);
+                                    }
                                     break;
                                 }
 
                             case "TogglePointCloud":
                                 {
-                                    root.TryGetProperty("Parameters", out JsonElement paramsElement);
-                                    root = paramsElement;
-                                    int order = root.GetProperty("Order").GetInt32();
-                                    bool exclusive = root.GetProperty("Exclusive").GetBoolean();
-                                    SceneTree_TogglePointClouds(order, exclusive);
+                                    if (root.TryGetProperty("Parameters", out JsonElement paramsElement))
+                                    {
+                                        int order = paramsElement.GetProperty("Order").GetInt32();
+                                        bool exclusive = paramsElement.GetProperty("Exclusive").GetBoolean();
+                                        SceneTree_TogglePointClouds(order, exclusive);
+                                    }
                                     break;
                                 }
 
                             case "PointCloudLoaded":
                                 {
-                                    root.TryGetProperty("Parameters", out JsonElement paramsElement);
-                                    root = paramsElement;
-
-                                    int pointCloudID = root.GetProperty("PointCloudID").GetInt32();
-                                    string fileName = root.GetProperty("FileName").GetString() ?? string.Empty;
-                                    string name = root.GetProperty("Name").GetString() ?? string.Empty;
-                                    OnPointCloudLoaded(pointCloudID, fileName, name);
+                                    if (root.TryGetProperty("Parameters", out JsonElement paramsElement))
+                                    {
+                                        int pointCloudID = paramsElement.GetProperty("PointCloudID").GetInt32();
+                                        string fileName = paramsElement.GetProperty("FileName").GetString() ?? string.Empty;
+                                        string name = paramsElement.GetProperty("Name").GetString() ?? string.Empty;
+                                        OnPointCloudLoaded(pointCloudID, fileName, name);
+                                    }
                                     break;
                                 }
                             case "PointCloudCloned":
                                 {
-                                    root.TryGetProperty("Parameters", out JsonElement paramsElement);
-                                    root = paramsElement;
-
-                                    int pointCloudID = root.GetProperty("PointCloudID").GetInt32();
-                                    string fileName = root.GetProperty("FileName").GetString() ?? string.Empty;
-                                    string name = root.GetProperty("Name").GetString() ?? string.Empty;
-                                    OnPointCloudCloned(pointCloudID, fileName, name);
+                                    if (root.TryGetProperty("Parameters", out JsonElement paramsElement))
+                                    {
+                                        int pointCloudID = paramsElement.GetProperty("PointCloudID").GetInt32();
+                                        string fileName = paramsElement.GetProperty("FileName").GetString() ?? string.Empty;
+                                        string name = paramsElement.GetProperty("Name").GetString() ?? string.Empty;
+                                        OnPointCloudCloned(pointCloudID, fileName, name);
+                                    }
                                     break;
                                 }
                             case "PointCloudDeleted":
                                 {
-                                    root.TryGetProperty("Parameters", out JsonElement paramsElement);
-                                    root = paramsElement;
-                                    int pointCloudID = root.GetProperty("PointCloudID").GetInt32();
-                                    OnPointCloudDeleted(pointCloudID);
+                                    if (root.TryGetProperty("Parameters", out JsonElement paramsElement))
+                                    {
+                                        int pointCloudID = paramsElement.GetProperty("PointCloudID").GetInt32();
+                                        OnPointCloudDeleted(pointCloudID);
+                                    }
                                     break;
                                 }
                             default:
@@ -1169,22 +1100,13 @@ namespace Neon
                     FullPath = fileName
                 };
 
-                bool exists = false;
-                foreach (var item in SceneItems)
-                {
-                    if (item.ID == pointCloudID)
-                    {
-                        exists = true;
-                        break;
-                    }
-                }
-
-                if (!exists)
+                if (!SceneItems.Any(item => item.ID == pointCloudID))
                 {
                     SceneItems.Add(node);
                 }
-                node.IsSelected = true;
 
+                // Select the new node
+                node.IsSelected = true;
                 selectedPointCloudID = pointCloudID;
 
                 ShowNotification($"Point Cloud Loaded: {name} (ID: {pointCloudID})");
@@ -1202,25 +1124,15 @@ namespace Neon
                     FullPath = fileName
                 };
 
-                bool exists = false;
-                foreach (var item in SceneItems)
-                {
-                    if (item.ID == pointCloudID)
-                    {
-                        exists = true;
-                        break;
-                    }
-                }
-
-                if (!exists)
+                if (!SceneItems.Any(item => item.ID == pointCloudID))
                 {
                     SceneItems.Add(node);
                 }
-                node.IsSelected = true;
 
+                node.IsSelected = true;
                 selectedPointCloudID = pointCloudID;
 
-                ShowNotification($"Point Cloud Loaded: {name} (ID: {pointCloudID})");
+                ShowNotification($"Point Cloud Cloned: {name} (ID: {pointCloudID})");
             });
         }
 
@@ -1228,26 +1140,16 @@ namespace Neon
         {
             Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                SceneNode? nodeToRemove = null;
-                foreach (var item in SceneItems)
-                {
-                    if (item.ID == pointCloudID)
-                    {
-                        nodeToRemove = item;
-                        break;
-                    }
-                }
+                var nodeToRemove = SceneItems.FirstOrDefault(item => item.ID == pointCloudID);
                 if (nodeToRemove != null)
                 {
                     string name = nodeToRemove.Name;
                     if (selectedSceneNode == nodeToRemove)
                     {
                         selectedSceneNode = null!;
-                        name = nodeToRemove.Name;
                     }
 
                     SceneItems.Remove(nodeToRemove);
-
                     ShowNotification($"Point Cloud Deleted: {name} (ID: {pointCloudID})");
                 }
             });

@@ -1,8 +1,47 @@
 ﻿using System;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 internal static class HeliumNative
 {
+    public class FloatJsonConverter : JsonConverter<float>
+    {
+        public override float Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                if (float.TryParse(reader.GetString(), out float value))
+                    return value;
+            }
+            return reader.GetSingle();
+        }
+
+        public override void Write(Utf8JsonWriter writer, float value, JsonSerializerOptions options)
+        {
+            // Write as number, or handle precision if needed
+            writer.WriteNumberValue(value);
+        }
+    }
+
+    public class DoubleJsonConverter : JsonConverter<double>
+    {
+        public override double Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                if (double.TryParse(reader.GetString(), out double value))
+                    return value;
+            }
+            return reader.GetDouble();
+        }
+
+        public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options)
+        {
+            writer.WriteNumberValue(value);
+        }
+    }
+
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern bool He_Initialize(IntPtr hwnd, int backendType);
 

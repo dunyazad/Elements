@@ -128,7 +128,6 @@
                 <RowDefinition x:Name="MainLogRow" Height="224" MinHeight="24" />
             </Grid.RowDefinitions>
 
-            <!--TitleBar-->
             <Grid Grid.Row="0" Background="#333">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -146,7 +145,6 @@
                 </StackPanel>
             </Grid>
 
-            <!--MenuBar-->
             <Grid Grid.Row="1" Background="#2D2D30">
                 <Menu Background="Transparent" 
                       VerticalAlignment="Center" 
@@ -160,7 +158,7 @@
                         <MenuItem Header="Show Point Normal" Click="Menu_Point_ShowPointNormal_Click"/>
                         <MenuItem Header="Show Point Normal Deviation" Click="Menu_Point_ShowPointNormalDeviation_Click"/>
                     </MenuItem>
-                    
+
                     <MenuItem Header="PointCloud">
                         <MenuItem Header="Clone" Click="Menu_PointCloud_Clone_Click"/>
                         <Separator/>
@@ -196,7 +194,6 @@
                 </Menu>
             </Grid>
 
-            <!--HeliumControl-->
             <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="216.01" MaxWidth="400"/>
@@ -281,21 +278,21 @@
                                         </Grid.ColumnDefinitions>
 
                                         <CheckBox Grid.Column="0"
-                      IsChecked="{Binding IsVisible}" 
-                      Click="SceneItemCheckBox_Click"
-                      VerticalAlignment="Center" 
-                      Margin="0,0,6,0"/>
+                              IsChecked="{Binding IsVisible}" 
+                              Click="SceneItemCheckBox_Click"
+                              VerticalAlignment="Center" 
+                              Margin="0,0,6,0"/>
 
                                         <TextBlock Grid.Column="1"
-                       Text="☁" 
-                       Foreground="#4CAF50" 
-                       Margin="0,0,4,0" 
-                       VerticalAlignment="Center"/>
+                           Text="☁" 
+                           Foreground="#4CAF50" 
+                           Margin="0,0,4,0" 
+                           VerticalAlignment="Center"/>
 
                                         <TextBlock Grid.Column="2"
-                       Text="{Binding Name}" 
-                       VerticalAlignment="Center"
-                       Margin="0,0,10,0"/>
+                           Text="{Binding Name}" 
+                           VerticalAlignment="Center"
+                           Margin="0,0,10,0"/>
 
                                         <Button Grid.Column="3"
                     Content="✕"
@@ -342,29 +339,29 @@
 
                     <local:HeliumHost x:Name="HeliumHostControl"/>
 
-                    <Popup IsOpen="True"
-       PlacementTarget="{Binding ElementName=HeliumHostControl}"
-       Placement="Relative"
-       AllowsTransparency="True"
-       StaysOpen="True"
-       IsHitTestVisible="False"
-       Width="{Binding ActualWidth, ElementName=HeliumHostControl}"
-       Height="{Binding ActualHeight, ElementName=HeliumHostControl}">
+                    <Popup IsOpen="{Binding IsActive, Mode=OneWay, RelativeSource={RelativeSource AncestorType=Window}}"
+                           PlacementTarget="{Binding ElementName=HeliumHostControl}"
+                           Placement="Relative"
+                           AllowsTransparency="True"
+                           StaysOpen="True"
+                           IsHitTestVisible="False"
+                           Width="{Binding ActualWidth, ElementName=HeliumHostControl}"
+                           Height="{Binding ActualHeight, ElementName=HeliumHostControl}">
 
                         <Grid>
 
                             <Border VerticalAlignment="Top" 
-                HorizontalAlignment="Left" 
-                Margin="10"
-                Padding="8"
-                Background="#66000000"
-                CornerRadius="4">
+                                    HorizontalAlignment="Left" 
+                                    Margin="10"
+                                    Padding="8"
+                                    Background="#66000000"
+                                    CornerRadius="4">
 
                                 <TextBlock Text="{Binding HeliumStatusText}" 
-                       Foreground="#00FF00" 
-                       FontFamily="Consolas"
-                       FontSize="12"
-                       FontWeight="Bold">
+                                           Foreground="#00FF00" 
+                                           FontFamily="Consolas"
+                                           FontSize="12"
+                                           FontWeight="Bold">
                                     <TextBlock.Effect>
                                         <DropShadowEffect ShadowDepth="1" BlurRadius="2" Color="Black"/>
                                     </TextBlock.Effect>
@@ -372,9 +369,9 @@
                             </Border>
 
                             <ItemsControl ItemsSource="{Binding Notifications}"
-                      VerticalAlignment="Bottom"
-                      HorizontalAlignment="Right"
-                      Margin="0,0,20,20">
+                                          VerticalAlignment="Bottom"
+                                          HorizontalAlignment="Right"
+                                          Margin="0,0,20,20">
 
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -385,14 +382,14 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border Background="#99000000" 
-                            CornerRadius="5" 
-                            Margin="0,5,0,0" 
-                            Padding="15,10">
+                                                CornerRadius="5" 
+                                                Margin="0,5,0,0" 
+                                                Padding="15,10">
 
                                             <TextBlock Text="{Binding Text}" 
-                                   Foreground="#FFCC00" 
-                                   FontWeight="SemiBold" 
-                                   FontSize="14">
+                                                       Foreground="#FFCC00" 
+                                                       FontWeight="SemiBold" 
+                                                       FontSize="14">
                                                 <TextBlock.Effect>
                                                     <DropShadowEffect ShadowDepth="0" BlurRadius="2" Color="Black"/>
                                                 </TextBlock.Effect>
@@ -411,10 +408,9 @@
                           Height="5" 
                           HorizontalAlignment="Stretch" 
                           VerticalAlignment="Center"
-                          Background="#444"
+                          Background="#444" 
                           ResizeBehavior="PreviousAndNext"/>
 
-            <!--LogPanel-->
             <Grid Grid.Row="4">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="30" />
@@ -429,16 +425,16 @@
                         </Grid.ColumnDefinitions>
 
                         <ToggleButton x:Name="LogToggle"
-              Grid.Column="0"
-              Content="Log"
-              IsChecked="True"
-              Checked="LogToggle_Checked"    
-              Unchecked="LogToggle_Unchecked"
-              Click="LogToggle_Click" 
-              Background="Transparent"
-              Foreground="#AAA"
-              BorderThickness="0"
-              HorizontalAlignment="Stretch"/>
+                                      Grid.Column="0"
+                                      Content="Log"
+                                      IsChecked="True"
+                                      Checked="LogToggle_Checked"    
+                                      Unchecked="LogToggle_Unchecked"
+                                      Click="LogToggle_Click" 
+                                      Background="Transparent"
+                                      Foreground="#AAA"
+                                      BorderThickness="0"
+                                      HorizontalAlignment="Stretch"/>
                     </Grid>
                 </Border>
 
