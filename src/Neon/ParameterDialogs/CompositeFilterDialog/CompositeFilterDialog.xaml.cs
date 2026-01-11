@@ -50,7 +50,6 @@ namespace Neon.Controls
             catch (InvalidOperationException)
             {
             }
-            this.Close();
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)

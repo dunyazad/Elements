@@ -723,13 +723,17 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 
 									if (validStep)
 									{
-										// Convert indices to boolean mask for current step
+										// Convert uint8_t mask (0 or 1) to boolean mask
 										std::vector<bool> stepMask(numPoints, false);
+
 #pragma omp parallel for
-										for (int i = 0; i < (int)outlierMarking.size(); ++i)
+										for (int i = 0; i < (int)numPoints; ++i)
 										{
-											if (outlierMarking[i] >= 0 && outlierMarking[i] < numPoints)
-												stepMask[outlierMarking[i]] = true;
+											// [수정됨] 값(0/1)이 아닌 인덱스(i) 위치에 마킹해야 함
+											if (i < (int)outlierMarking.size() && outlierMarking[i] == 1)
+											{
+												stepMask[i] = true;
+											}
 										}
 
 										if (isFirstStep)
@@ -739,19 +743,19 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 										}
 										else
 										{
-											if (op == "Union")
+											if (op == "Union") // 합집합 (OR)
 											{
 #pragma omp parallel for
 												for (int i = 0; i < (int)numPoints; ++i)
 													finalMask[i] = finalMask[i] || stepMask[i];
 											}
-											else if (op == "Intersection")
+											else if (op == "Intersection") // 교집합 (AND)
 											{
 #pragma omp parallel for
 												for (int i = 0; i < (int)numPoints; ++i)
 													finalMask[i] = finalMask[i] && stepMask[i];
 											}
-											else if (op == "Subtraction")
+											else if (op == "Subtraction") // 차집합 (A - B)
 											{
 #pragma omp parallel for
 												for (int i = 0; i < (int)numPoints; ++i)
@@ -773,7 +777,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 								{
 									if (finalMask[i])
 									{
-										VD::AddSphere("CompositeResult", positions[i], normals[i], 0.025f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
+										VD::AddSphere("CompositeResult", positions[i], normals[i], 0.126f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
 										selectedCount++;
 									}
 								}

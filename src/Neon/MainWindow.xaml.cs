@@ -136,8 +136,8 @@ namespace Neon
 
             // Initialize JSON Options once
             _jsonOptions = new JsonSerializerOptions();
-            _jsonOptions.Converters.Add(new HeliumNative.FloatJsonConverter());
-            _jsonOptions.Converters.Add(new HeliumNative.DoubleJsonConverter());
+            _jsonOptions.Converters.Add(new FloatJsonConverter());
+            _jsonOptions.Converters.Add(new DoubleJsonConverter());
 
             ComponentDispatcher.ThreadFilterMessage += ComponentDispatcher_ThreadFilterMessage;
 
@@ -159,7 +159,7 @@ namespace Neon
             this.WindowState = WindowState.Maximized;
 
             // Auto load for testing
-            // Menu_File_Open_Click(this, new RoutedEventArgs()); 
+            Menu_File_Open_Click(this, new RoutedEventArgs()); 
         }
 
         private void OnUpdateUI(object? sender, EventArgs e)
