@@ -119,36 +119,46 @@ std::vector<uint8_t> PFOR::Process(const PointCloudProcessorParameters& paramete
 
 		if (visualizationMode != (int)PointCloudVisualizationMode::None)
 		{
+			const auto& positions = currentPointCloud->GetPositions();
+			const auto& colors = currentPointCloud->GetColors();
 			float visMaxDist = distanceThreshold;
 
 			for (size_t i = 0; i < numberOfPoints; ++i)
 			{
-				Eigen::Vector3f colorRGB;
-				Eigen::Vector4f colorRGBA;
-				float radius = 0.05f;
+				const bool isOutlier = (outlierMarking[i] == 1);
 
-				if (outlierMarking[i] == 1)
+				if (visualizationMode == (int)PointCloudVisualizationMode::OutlierFiltered && isOutlier)
 				{
-					colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
-					colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-					radius = 0.08f;
+					continue;
+				}
+
+				Eigen::Vector4f colorRGBA = colors[i];
+				float radius;
+				
+				if (isOutlier)
+				{
+					colorRGBA = Color::red();
+					radius = 0.06f;
 				}
 				else
 				{
-					if ((int)PointCloudVisualizationMode::Binary == visualizationMode)
+					radius = 0.05f;
+
+					if (visualizationMode == (int)PointCloudVisualizationMode::Binary)
 					{
-						colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
-						colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
+						colorRGBA = Color::green(0.2f);
 					}
-					else if ((int)PointCloudVisualizationMode::Gradient == visualizationMode)
+					else if (visualizationMode == (int)PointCloudVisualizationMode::Gradient)
 					{
-						colorRGBA = Color::GetHeatMapColor(distToPlane[i], 0.0f, visMaxDist);
-						colorRGB = colorRGBA.head<3>();
-						colorRGBA[3] = 0.6f;
+						colorRGBA = Color::GetHeatMapColor(distToPlane[i], 0.0f, visMaxDist, 0.6f);
+					}
+					else
+					{
+						colorRGBA = Color::white();
 					}
 				}
 
-				VD::AddSphere("PFOR", positions[i], colorRGB, radius, colorRGBA);
+				VD::AddSphere("PFOR", positions[i], colorRGBA.head<3>(), radius, colorRGBA);
 			}
 		}
 	}

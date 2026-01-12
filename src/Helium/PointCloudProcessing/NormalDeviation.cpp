@@ -97,7 +97,7 @@ std::vector<uint8_t> NormalDeviation::Process(const PointCloudProcessorParameter
 			}
 		});
 
-	float maxAngle = deviationThreshold; // �Ӱ谪 (Degree)
+	float maxAngle = deviationThreshold;
 
 	int outlierCount = 0;
 	for (size_t i = 0; i < numberOfPoints; ++i)
@@ -113,36 +113,44 @@ std::vector<uint8_t> NormalDeviation::Process(const PointCloudProcessorParameter
 
 	{
 		VD::Clear("NormalDeviation");
-		const auto& positions = currentPointCloud->GetPositions();
 
-		for (size_t i = 0; i < numberOfPoints; ++i)
+		if (visualizationMode != (int)PointCloudVisualizationMode::None)
 		{
-			float val = deviationValues[i];
-			Eigen::Vector3f colorRGB;
-			Eigen::Vector4f colorRGBA;
+			const auto& positions = currentPointCloud->GetPositions();
+			const auto& colors = currentPointCloud->GetColors();
 
-			if (outlierMarking[i] == 1)
+			for (size_t i = 0; i < numberOfPoints; ++i)
 			{
-				colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
-				colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-			}
-			else
-			{
-				if (visualizationMode == (int)PointCloudVisualizationMode::Binary)
+				const bool isOutlier = (outlierMarking[i] == 1);
+
+				if (visualizationMode == (int)PointCloudVisualizationMode::OutlierFiltered && isOutlier)
 				{
-					colorRGB = { 0.0f, 1.0f, 0.0f }; // Green
-					colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
+					continue;
 				}
-				else if (visualizationMode == (int)PointCloudVisualizationMode::Gradient)
+
+				Eigen::Vector4f colorRGBA = colors[i];
+
+				if (isOutlier)
 				{
-					colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxAngle);
-					colorRGBA.w() = 0.8f;
-					colorRGB = colorRGBA.head<3>();
+					colorRGBA = Color::red();
 				}
-				
-				VD::AddSphere("NormalDeviation", positions[i], colorRGB, 0.05f, colorRGBA);
+				else
+				{
+					if (visualizationMode == (int)PointCloudVisualizationMode::Binary)
+					{
+						colorRGBA = Color::green(0.2f);
+					}
+					else if (visualizationMode == (int)PointCloudVisualizationMode::Gradient)
+					{
+						float val = deviationValues[i];
+						colorRGBA = Color::GetHeatMapColor(val, 0.0f, maxAngle, 0.6f);
+					}
+				}
+
+				VD::AddSphere("NormalDeviation", positions[i], colorRGBA.head<3>(), 0.05f, colorRGBA);
 			}
 		}
+
 		InfoLog("", "[NormalDeviation] Analysis Done. Threshold: %.1f deg, Outliers Marked: %d", maxAngle, outlierCount);
 	}
 

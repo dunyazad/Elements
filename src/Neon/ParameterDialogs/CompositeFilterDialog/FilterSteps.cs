@@ -22,6 +22,7 @@ namespace Neon.ParameterDialogs.CompositeFilterDialog
             "ROR Filter",
             "Curvature Analysis",
             "Normal Deviation Analysis",
+            "FPOR Filter",
             "Clustering"
         };
 
@@ -92,6 +93,9 @@ namespace Neon.ParameterDialogs.CompositeFilterDialog
                 case "Normal Deviation Analysis":
                     Parameters = new PointCloudProcessorParametersNormalDeviation();
                     break;
+                case "FPOR Filter":
+                    Parameters = new PointCloudProcessorParametersPlaneFitOutlierRemoval();
+                    break;
                 case "Clustering":
                     Parameters = new PointCloudProcessorParametersClustering();
                     break;
@@ -139,6 +143,13 @@ namespace Neon.ParameterDialogs.CompositeFilterDialog
                     if (Parameters is PointCloudProcessorParametersNormalDeviation normParams)
                         normDlg.Parameters = normParams;
                     dlg = normDlg;
+                    break;
+
+                case "FPOR Filter":
+                    var pforDlg = new PFORParameterDialog();
+                    if (Parameters is PointCloudProcessorParametersPlaneFitOutlierRemoval pforParams)
+                        pforDlg.Parameters = pforParams;
+                    dlg = pforDlg;
                     break;
 
                 case "Clustering":

@@ -5,16 +5,6 @@ using System.Windows.Input;
 
 namespace Neon
 {
-    // Parameter Data Class
-    public class PointCloudProcessorParametersPlaneFitOutlierRemoval : PointCloudProcessorParameters
-    {
-        public int KNeighbors { get; set; } = 30;
-        public float DistanceThreshold { get; set; } = 0.085f;
-        public PointCloudVisualizationMode VisualizationMode { get; set; } = PointCloudVisualizationMode.Gradient;
-        public bool DeletePoints { get; set; } = false;
-    }
-
-    // Code Behind
     public partial class PFORParameterDialog : Window
     {
         public PointCloudProcessorParametersPlaneFitOutlierRemoval Parameters { get; set; } = new PointCloudProcessorParametersPlaneFitOutlierRemoval();

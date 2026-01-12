@@ -9,6 +9,7 @@
 
 #include <entt/entt.hpp>
 
+#include <Helium/Color.hpp>
 #include <Helium/File.h>
 #include <Helium/Backend/GraphicsBackend.h>
 #include <Helium/Components/Components.h>

@@ -670,8 +670,6 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 							{
 								size_t numPoints = pointCloud->Size();
 
-								// Final mask to store the composite result
-								// Initial state depends on the first operation, but usually starts false
 								std::vector<bool> finalMask(numPoints, false);
 								bool isFirstStep = true;
 
@@ -723,8 +721,6 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 									{
 										int kNeighbors = parameters.value("KNeighbors", 30);
 										float curvatureThreshold = parameters.value("CurvatureThreshold", 0.1f);
-										// Assuming we select points with curvature > threshold (or < depending on logic)
-										// Here assuming logic: Select High Curvature
 										params.SetParameter<int>("KNeighbors", kNeighbors);
 										params.SetParameter<float>("CurvatureThreshold", curvatureThreshold);
 
@@ -747,13 +743,11 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 
 									if (validStep)
 									{
-										// Convert uint8_t mask (0 or 1) to boolean mask
 										std::vector<bool> stepMask(numPoints, false);
 
 #pragma omp parallel for
 										for (int i = 0; i < (int)numPoints; ++i)
 										{
-											// [수정됨] 값(0/1)이 아닌 인덱스(i) 위치에 마킹해야 함
 											if (i < (int)outlierMarking.size() && outlierMarking[i] == 1)
 											{
 												stepMask[i] = true;
@@ -767,19 +761,19 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 										}
 										else
 										{
-											if (op == "Union") // 합집합 (OR)
+											if (op == "Union")
 											{
 #pragma omp parallel for
 												for (int i = 0; i < (int)numPoints; ++i)
 													finalMask[i] = finalMask[i] || stepMask[i];
 											}
-											else if (op == "Intersection") // 교집합 (AND)
+											else if (op == "Intersection")
 											{
 #pragma omp parallel for
 												for (int i = 0; i < (int)numPoints; ++i)
 													finalMask[i] = finalMask[i] && stepMask[i];
 											}
-											else if (op == "Subtraction") // 차집합 (A - B)
+											else if (op == "Subtraction")
 											{
 #pragma omp parallel for
 												for (int i = 0; i < (int)numPoints; ++i)
@@ -789,13 +783,10 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 									}
 								}
 
-								// Visualization: Highlight selected points
 								VD::Clear("CompositeResult");
 								const auto& positions = pointCloud->GetPositions();
 								const auto& normals = pointCloud->GetNormals();
 
-								// Collect selected indices for sending back or other processing if needed
-								// For now, just visualize
 								int selectedCount = 0;
 								for (size_t i = 0; i < numPoints; ++i)
 								{
@@ -805,9 +796,6 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 										selectedCount++;
 									}
 								}
-
-								// Optionally: Select these points in the cloud
-								// pointCloud->SetSelectedIndices(...);
 
 								InfoLog("", "Composite Filter applied. Selected %d points.", selectedCount);
 							}

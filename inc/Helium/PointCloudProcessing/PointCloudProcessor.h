@@ -9,7 +9,8 @@ enum class PointCloudVisualizationMode
 {
 	None,
 	Gradient,
-	Binary
+	Binary,
+	OutlierFiltered
 };
 
 class PointCloudProcessorParameters

@@ -88,40 +88,44 @@ std::vector<uint8_t> ROR::Process(const PointCloudProcessorParameters& parameter
 		if (visualizationMode != (int)PointCloudVisualizationMode::None)
 		{
 			const auto& positions = currentPointCloud->GetPositions();
-			size_t displayCount = currentPointCloud->Size();
+			const auto& colors = currentPointCloud->GetColors();
 
+			size_t displayCount = currentPointCloud->Size();
 			float maxSafeCount = (float)minNeighborsInRadius * 3.0f;
 
 			for (size_t i = 0; i < displayCount; ++i)
 			{
-				Eigen::Vector3f colorRGB;
-				Eigen::Vector4f colorRGBA;
-				float radiusVal = 0.05f;
-				int count = neighborCounts[i];
+				const bool isOutlier = (outlierMarking[i] == 1);
 
-				if (outlierMarking[i] == 1)
+				if (visualizationMode == (int)PointCloudVisualizationMode::OutlierFiltered && isOutlier)
 				{
-					colorRGB = { 1.0f, 0.0f, 0.0f }; // Red
-					colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-					radiusVal = 0.08f;
+					continue;
+				}
+
+				Eigen::Vector4f colorRGBA = colors[i];
+				float radiusVal;
+
+				if (isOutlier)
+				{
+					colorRGBA = Color::red();
+					radiusVal = 0.06f;
 				}
 				else
 				{
-					if ((int)PointCloudVisualizationMode::Binary == visualizationMode)
-					{
-						colorRGB = { 0.0f, 1.0f, 0.0f };
-						colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
-					}
-					else if ((int)PointCloudVisualizationMode::Gradient == visualizationMode)
-					{
-						colorRGBA = Color::GetHeatMapColor((float)count, (float)minNeighborsInRadius, maxSafeCount);
-						colorRGB = colorRGBA.head<3>();
+					radiusVal = 0.05f;
 
-						colorRGBA[3] = 0.6f;
+					if (visualizationMode == (int)PointCloudVisualizationMode::Binary)
+					{
+						colorRGBA = Color::green(0.2f);
+					}
+					else if (visualizationMode == (int)PointCloudVisualizationMode::Gradient)
+					{
+						int count = neighborCounts[i];
+						colorRGBA = Color::GetHeatMapColor((float)count, (float)minNeighborsInRadius, maxSafeCount, 0.6f);
 					}
 				}
-				
-				VD::AddSphere("ROR", positions[i], colorRGB, radiusVal, colorRGBA);
+
+				VD::AddSphere("ROR", positions[i], colorRGBA.head<3>(), radiusVal, colorRGBA);
 			}
 		}
 	}

@@ -127,39 +127,41 @@ std::vector<uint8_t> SOR::Process(const PointCloudProcessorParameters& parameter
 		if (visualizationMode != (int)PointCloudVisualizationMode::None)
 		{
 			const auto& positions = currentPointCloud->GetPositions();
+			const auto& colors = currentPointCloud->GetColors();
 
 			float visMaxDist = distanceThreshold;
 			if (visMaxDist < 1e-6f) visMaxDist = 1.0f;
 
 			for (size_t i = 0; i < numberOfPoints; ++i)
 			{
-				Eigen::Vector3f colorRGB;
-				Eigen::Vector4f colorRGBA;
+				const bool isOutlier = (outlierMarking[i] == 1);
+
+				if (visualizationMode == (int)PointCloudVisualizationMode::OutlierFiltered && isOutlier)
+				{
+					continue;
+				}
+
+				Eigen::Vector4f colorRGBA = colors[i];
 				float radius = 0.05f;
 
-				if (outlierMarking[i] == 1)
+				if (isOutlier)
 				{
-					colorRGB = { 1.0f, 0.0f, 0.0f };
-					colorRGBA = { 1.0f, 0.0f, 0.0f, 1.0f };
-					radius = 0.08f;
+					colorRGBA = Color::red();
+					radius = 0.06f;
 				}
 				else
 				{
-					if ((int)PointCloudVisualizationMode::Binary == visualizationMode)
+					if (visualizationMode == (int)PointCloudVisualizationMode::Binary)
 					{
-						colorRGB = { 0.0f, 1.0f, 0.0f };
-						colorRGBA = { 0.0f, 1.0f, 0.0f, 0.2f };
+						colorRGBA = Color::green(0.2f);
 					}
-					else if ((int)PointCloudVisualizationMode::Gradient == visualizationMode)
+					else if (visualizationMode == (int)PointCloudVisualizationMode::Gradient)
 					{
-						colorRGBA = Color::GetHeatMapColor(pointMeanDistances[i], 0.0f, visMaxDist);
-						colorRGB = colorRGBA.head<3>();
-
-						colorRGBA[3] = 0.6f;
+						colorRGBA = Color::GetHeatMapColor(pointMeanDistances[i], 0.0f, visMaxDist, 0.6f);
 					}
 				}
 
-				VD::AddSphere("SOR", positions[i], colorRGB, radius, colorRGBA);
+				VD::AddSphere("SOR", positions[i], colorRGBA.head<3>(), radius, colorRGBA);
 			}
 		}
 	}

@@ -10,7 +10,8 @@ namespace Neon
     {
         None,
         Gradient,
-        Binary
+        Binary,
+        OutlierFiltered
     }
     
     public class PointCloudProcessorParameters
@@ -42,6 +43,12 @@ namespace Neon
     {
         public float Radius { get; set; } = 0.1f;
         public float DeviationThreshold { get; set; } = 45.0f;
+    }
+
+    public class PointCloudProcessorParametersPlaneFitOutlierRemoval : PointCloudProcessorParameters
+    {
+        public int KNeighbors { get; set; } = 30;
+        public float DistanceThreshold { get; set; } = 0.085f;
     }
 
     public class PointCloudProcessorParametersClustering : PointCloudProcessorParameters
