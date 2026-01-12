@@ -2,6 +2,7 @@
 #include <Helium/Systems/GUISystem.h>
 #include <Helium/HeliumCore.h>
 #include <glad/glad.h>
+#include <sstream>
 #include <vector>
 
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -116,7 +117,7 @@ void GUISystem::Update(float dt)
         stbtt_pack_range ranges[2] = { 0 };
 
         // Range 0: ASCII
-        ranges[0].font_size = 24.0f;
+        ranges[0].font_size = 14.0f;
         ranges[0].first_unicode_codepoint_in_range = 32;
         ranges[0].num_chars = 96;
         ranges[0].chardata_for_range = charData.data(); // [수정] 벡터의 포인터 전달
@@ -124,7 +125,7 @@ void GUISystem::Update(float dt)
         ranges[0].v_oversample = 1;
 
         // Range 1: 한글
-        ranges[1].font_size = 24.0f;
+        ranges[1].font_size = 14.0f;
         ranges[1].first_unicode_codepoint_in_range = 0xAC00;
         ranges[1].num_chars = 11172;
         // [수정] 벡터 포인터 오프셋 (ASCII 96개 뒤부터 저장)
@@ -169,7 +170,16 @@ void GUISystem::Update(float dt)
 
 void GUISystem::Render()
 {
+	static auto lastTime = std::chrono::high_resolution_clock::now();
+	auto currentTime = std::chrono::high_resolution_clock::now();
+	auto deltaTime = std::chrono::high_resolution_clock::now() - lastTime;
+	lastTime = currentTime;
+
+    std::stringstream ss;
+	ss << "FPS: " << (1.0f / std::chrono::duration<float>(deltaTime).count());
+    
     //RenderText((const char*)u8"u8 한글 테스트", 10.0f, 40.0f, 2.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
+	RenderText(ss.str(), 10.0f, 30.0f, 2.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
 }
 
 void GUISystem::RenderText(const std::string& text, float x, float y, float scale, const Eigen::Vector4f& color)

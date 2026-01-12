@@ -1,18 +1,20 @@
-﻿// Hydrogen.cpp : 애플리케이션에 대한 진입점을 정의합니다.
-//
-
-#include "framework.h"
+﻿#include "framework.h"
 #include "Hydrogen.h"
-#include <atomic> // [필수] 스레드 간 동기화를 위해 추가
+#include <atomic>
+#include <thread>
+
+// [추가] DPI 인식을 위한 헤더 및 라이브러리 링크
+#include <ShellScalingApi.h>
+#pragma comment(lib, "Shcore.lib")
 
 #define MAX_LOADSTRING 100
 
 // 전역 변수:
-HINSTANCE hInst;                                // 현재 인스턴스입니다.
-WCHAR szTitle[MAX_LOADSTRING];                  // 제목 표시줄 텍스트입니다.
-WCHAR szWindowClass[MAX_LOADSTRING];            // 기본 창 클래스 이름입니다.
+HINSTANCE hInst;
+WCHAR szTitle[MAX_LOADSTRING];
+WCHAR szWindowClass[MAX_LOADSTRING];
 
-// [수정] 리사이즈 동기화를 위한 원자적 변수 추가
+// 리사이즈 동기화를 위한 원자적 변수
 std::atomic<bool> g_isRendering = true;
 std::atomic<bool> g_resizeRequested = false;
 std::atomic<int> g_resizeWidth = 0;
@@ -20,7 +22,7 @@ std::atomic<int> g_resizeHeight = 0;
 
 std::thread g_renderingThread;
 
-// 이 코드 모듈에 포함된 함수의 선언을 전달합니다:
+// 함수 선언
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -33,6 +35,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 {
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
+
+    // [수정] 고해상도 모니터에서 흐릿하게 보이는 현상 방지 (DPI 인식 설정)
+    // 윈도우 생성 전에 호출해야 합니다.
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
     LoadStringW(hInstance, IDC_HYDROGEN, szWindowClass, MAX_LOADSTRING);
@@ -63,7 +69,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
         while (g_isRendering)
         {
-            // 2. [수정] 리사이즈 요청이 있으면 렌더링 스레드 안에서 처리
+            // 2. 리사이즈 요청 처리
             if (g_resizeRequested)
             {
                 g_resizeRequested = false;
@@ -105,7 +111,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 ATOM MyRegisterClass(HINSTANCE hInstance)
 {
     WNDCLASSEXW wcex;
+
     wcex.cbSize = sizeof(WNDCLASSEX);
+
     wcex.style = CS_HREDRAW | CS_VREDRAW;
     wcex.lpfnWndProc = WndProc;
     wcex.cbClsExtra = 0;
@@ -124,6 +132,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
     hInst = hInstance;
+
     HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
 
@@ -140,7 +149,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    // [수정] 입력 메시지를 여기서 확실하게 전달
+    // 입력 메시지 처리
     switch (message)
     {
     case WM_KEYDOWN:
@@ -185,9 +194,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         HDC hdc = BeginPaint(hWnd, &ps);
         EndPaint(hWnd, &ps);
     }
-    break; // [주의] break 추가
+    break;
     case WM_SIZE:
-        // [수정] 직접 호출하지 않고 플래그만 설정
+        // 리사이즈 요청
         g_resizeWidth = LOWORD(lParam);
         g_resizeHeight = HIWORD(lParam);
         g_resizeRequested = true;
