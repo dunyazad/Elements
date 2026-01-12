@@ -8,9 +8,11 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb/stb_truetype.h>
 
-// [수정 1] 한글(11,172자) + ASCII(96자)를 담을 충분한 공간 확보
-// 11268개 이상의 배열이 필요합니다. 넉넉하게 잡습니다.
-stbtt_packedchar charData[12000];
+// [수정] std::vector로 선언 (컴파일러 인식과 일치시킴)
+std::vector<stbtt_packedchar> charData;
+
+// 기본 폰트 크기
+const float BASE_FONT_SIZE = 32.0f;
 
 const std::string guiVS = R"(
 #version 330 core
@@ -42,14 +44,13 @@ void main()
 }
 )";
 
-// [수정 2] UTF-8 문자열을 유니코드(uint32_t)로 변환하는 함수 추가
 std::vector<uint32_t> DecodeUTF8(const std::string& text)
 {
     std::vector<uint32_t> codepoints;
     for (size_t i = 0; i < text.length();)
     {
         unsigned char c = text[i];
-        if ((c & 0x80) == 0) // 1 byte (ASCII)
+        if ((c & 0x80) == 0) // 1 byte
         {
             codepoints.push_back(c);
             i += 1;
@@ -59,7 +60,7 @@ std::vector<uint32_t> DecodeUTF8(const std::string& text)
             codepoints.push_back(((c & 0x1F) << 6) | (text[i + 1] & 0x3F));
             i += 2;
         }
-        else if ((c & 0xF0) == 0xE0) // 3 bytes (한글)
+        else if ((c & 0xF0) == 0xE0) // 3 bytes
         {
             codepoints.push_back(((c & 0x0F) << 12) | ((text[i + 1] & 0x3F) << 6) | (text[i + 2] & 0x3F));
             i += 3;
@@ -92,17 +93,14 @@ void GUISystem::Update(float dt)
 {
     if (false == initialized)
     {
-        // 1. 폰트 파일 로드
         auto fontFile = File("../../res/Fonts/NanumGothic/NanumGothic.ttf", true);
         auto ttf_buffer = fontFile.ReadAllBytes();
         if (ttf_buffer.empty()) return;
 
-        // 2. 비트맵 생성 (4k)
         const int TEX_WIDTH = 4096;
         const int TEX_HEIGHT = 4096;
         unsigned char* bitmap = new unsigned char[TEX_WIDTH * TEX_HEIGHT];
 
-        // 3. 폰트 베이킹 준비
         stbtt_pack_context pc;
         if (!stbtt_PackBegin(&pc, bitmap, TEX_WIDTH, TEX_HEIGHT, 0, 1, NULL))
         {
@@ -110,25 +108,27 @@ void GUISystem::Update(float dt)
             return;
         }
 
-        // [중요] 멤버 변수 벡터 크기 확보 (ASCII 96 + 한글 11172 = 11268)
+        // [수정] 벡터 크기 확보 및 0으로 초기화
         charData.resize(12000);
+        // [수정] .data()를 사용하여 실제 메모리 주소 전달 (컴파일 에러 해결)
+        memset(charData.data(), 0, charData.size() * sizeof(stbtt_packedchar));
 
-        // 구조체 초기화 (쓰레기값 방지)
         stbtt_pack_range ranges[2] = { 0 };
 
         // Range 0: ASCII
-        ranges[0].font_size = 14.0f;
+        ranges[0].font_size = BASE_FONT_SIZE;
         ranges[0].first_unicode_codepoint_in_range = 32;
         ranges[0].num_chars = 96;
-        ranges[0].chardata_for_range = charData.data(); // [수정] 벡터의 포인터 전달
+        // [수정] .data() 사용
+        ranges[0].chardata_for_range = charData.data();
         ranges[0].h_oversample = 1;
         ranges[0].v_oversample = 1;
 
         // Range 1: 한글
-        ranges[1].font_size = 14.0f;
+        ranges[1].font_size = BASE_FONT_SIZE;
         ranges[1].first_unicode_codepoint_in_range = 0xAC00;
         ranges[1].num_chars = 11172;
-        // [수정] 벡터 포인터 오프셋 (ASCII 96개 뒤부터 저장)
+        // [수정] .data() 포인터에 오프셋 더하기 (vector + int는 불가능하므로)
         ranges[1].chardata_for_range = charData.data() + 96;
         ranges[1].h_oversample = 1;
         ranges[1].v_oversample = 1;
@@ -136,7 +136,6 @@ void GUISystem::Update(float dt)
         stbtt_PackFontRanges(&pc, ttf_buffer.data(), 0, ranges, 2);
         stbtt_PackEnd(&pc);
 
-        // 4. OpenGL 텍스처 생성
         glGenTextures(1, &textureID);
         glBindTexture(GL_TEXTURE_2D, textureID);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, TEX_WIDTH, TEX_HEIGHT, 0, GL_RED, GL_UNSIGNED_BYTE, bitmap);
@@ -148,9 +147,8 @@ void GUISystem::Update(float dt)
 
         delete[] bitmap;
 
-        // 5. VAO/VBO 생성
         glGenVertexArrays(1, &VAO);
-        glGenBuffers(1, &VBO);  
+        glGenBuffers(1, &VBO);
         glBindVertexArray(VAO);
         glBindBuffer(GL_ARRAY_BUFFER, VBO);
         glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 6 * 4, NULL, GL_DYNAMIC_DRAW);
@@ -161,7 +159,6 @@ void GUISystem::Update(float dt)
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
 
-        // 6. 쉐이더 생성
         textShader = Helium.CreateShader("GUIShader", guiVS, guiFS);
 
         initialized = true;
@@ -170,31 +167,50 @@ void GUISystem::Update(float dt)
 
 void GUISystem::Render()
 {
-	static auto lastTime = std::chrono::high_resolution_clock::now();
-	auto currentTime = std::chrono::high_resolution_clock::now();
-	auto deltaTime = std::chrono::high_resolution_clock::now() - lastTime;
-	lastTime = currentTime;
+    static auto lastTime = std::chrono::high_resolution_clock::now();
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    auto deltaTime = std::chrono::high_resolution_clock::now() - lastTime;
+    lastTime = currentTime;
+
+	// 현재 시간 표시 YYYY-MM-DD HH:MM:SS
+	std::stringstream timeSS;
+	auto timeNow = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+	tm localTime;
+	localtime_s(&localTime, &timeNow);
+    timeSS << "Time: " << (localTime.tm_year + 1900) << "-"
+        << std::setw(2) << std::setfill('0') << (localTime.tm_mon + 1) << "-"
+        << std::setw(2) << std::setfill('0') << localTime.tm_mday << " "
+        << std::setw(2) << std::setfill('0') << localTime.tm_hour << ":"
+        << std::setw(2) << std::setfill('0') << localTime.tm_min << ":"
+		<< std::setw(2) << std::setfill('0') << localTime.tm_sec;
+    
+	RenderText(timeSS.str(), 10.0f, 30.0f, 32.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
 
     std::stringstream ss;
-	ss << "FPS: " << (1.0f / std::chrono::duration<float>(deltaTime).count());
-    
-    //RenderText((const char*)u8"u8 한글 테스트", 10.0f, 40.0f, 2.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
-	RenderText(ss.str(), 10.0f, 30.0f, 2.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
+    ss << "FPS: " << (1.0f / std::chrono::duration<float>(deltaTime).count());
+    RenderText(ss.str(), 10.0f, 60.0f, 32.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
+
+    // 테스트 텍스트 (32px)
+    // RenderText("Test Code", 10.0f, 80.0f, 32.0f, { 1.0f, 1.0f, 0.0f, 1.0f });
 }
 
-void GUISystem::RenderText(const std::string& text, float x, float y, float scale, const Eigen::Vector4f& color)
+void GUISystem::RenderText(const std::string& text, float x, float y, float targetFontSize, const Eigen::Vector4f& color)
 {
     if (textShader == nullptr) return;
+
+    float scale = targetFontSize / BASE_FONT_SIZE;
 
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
+
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     float width = (float)Helium.GetWidth();
     float height = (float)Helium.GetHeight();
     Eigen::Matrix4f projection = Eigen::Matrix4f::Identity();
-    if (width > 0 && height > 0) {
+    if (width > 0 && height > 0)
+    {
         projection(0, 0) = 2.0f / width;
         projection(1, 1) = -2.0f / height;
         projection(0, 3) = -1.0f;
@@ -223,10 +239,12 @@ void GUISystem::RenderText(const std::string& text, float x, float y, float scal
         stbtt_aligned_quad q;
         int charIndex = -1;
 
-        if (cp >= 32 && cp < 32 + 96) {
+        if (cp >= 32 && cp < 32 + 96)
+        {
             charIndex = cp - 32;
         }
-        else if (cp >= 0xAC00 && cp <= 0xD7A3) {
+        else if (cp >= 0xAC00 && cp <= 0xD7A3)
+        {
             charIndex = 96 + (cp - 0xAC00);
         }
 
@@ -234,6 +252,7 @@ void GUISystem::RenderText(const std::string& text, float x, float y, float scal
 
         float x_offset = 0.0f;
         float y_offset = 0.0f;
+
         stbtt_GetPackedQuad(charData.data(), TEX_WIDTH, TEX_HEIGHT, charIndex, &x_offset, &y_offset, &q, 0);
 
         float x0 = currentX + (q.x0 * scale);
