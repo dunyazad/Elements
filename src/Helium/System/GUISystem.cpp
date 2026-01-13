@@ -4,17 +4,19 @@
 #include <glad/glad.h>
 #include <sstream>
 #include <vector>
+#include <algorithm> // For std::sort
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb/stb_truetype.h>
 
-// [수정] std::vector로 선언 (컴파일러 인식과 일치시킴)
+#include <Helium/Components/GUI/GUIComponent.h>
+
 std::vector<stbtt_packedchar> charData;
 
-// 기본 폰트 크기
+// Base font size
 const float BASE_FONT_SIZE = 32.0f;
 
-const std::string guiVS = R"(
+const std::string textVS = R"(
 #version 330 core
 layout (location = 0) in vec4 vertex; 
 out vec2 TexCoords;
@@ -28,7 +30,7 @@ void main()
 }
 )";
 
-const std::string guiFS = R"(
+const std::string textFS = R"(
 #version 330 core
 in vec2 TexCoords;
 out vec4 color;
@@ -41,6 +43,30 @@ void main()
     float alpha = texture(text, TexCoords).r;
     if(alpha < 0.1) discard;
     color = vec4(textColor.rgb, textColor.a * alpha);
+}
+)";
+
+// [Modified] Added Vertex Shader for Geometry
+const std::string geometryVS = R"(
+#version 330 core
+layout (location = 0) in vec4 vertex;
+uniform mat4 projection;
+
+void main()
+{
+    gl_Position = projection * vec4(vertex.xy, 0.0, 1.0);
+}
+)";
+
+// [Modified] Added Fragment Shader for Geometry
+const std::string geometryFS = R"(
+#version 330 core
+out vec4 FragColor;
+uniform vec4 rectColor;
+
+void main()
+{
+    FragColor = rectColor;
 }
 )";
 
@@ -108,9 +134,9 @@ void GUISystem::Update(float dt)
             return;
         }
 
-        // [수정] 벡터 크기 확보 및 0으로 초기화
+        // [Modified] Reserve vector size and initialize with 0
         charData.resize(12000);
-        // [수정] .data()를 사용하여 실제 메모리 주소 전달 (컴파일 에러 해결)
+        // [Modified] Use .data() to pass actual memory address
         memset(charData.data(), 0, charData.size() * sizeof(stbtt_packedchar));
 
         stbtt_pack_range ranges[2] = { 0 };
@@ -119,16 +145,16 @@ void GUISystem::Update(float dt)
         ranges[0].font_size = BASE_FONT_SIZE;
         ranges[0].first_unicode_codepoint_in_range = 32;
         ranges[0].num_chars = 96;
-        // [수정] .data() 사용
+        // [Modified] Use .data()
         ranges[0].chardata_for_range = charData.data();
         ranges[0].h_oversample = 1;
         ranges[0].v_oversample = 1;
 
-        // Range 1: 한글
+        // Range 1: Korean (Hangul)
         ranges[1].font_size = BASE_FONT_SIZE;
         ranges[1].first_unicode_codepoint_in_range = 0xAC00;
         ranges[1].num_chars = 11172;
-        // [수정] .data() 포인터에 오프셋 더하기 (vector + int는 불가능하므로)
+        // [Modified] Add offset to .data() pointer
         ranges[1].chardata_for_range = charData.data() + 96;
         ranges[1].h_oversample = 1;
         ranges[1].v_oversample = 1;
@@ -159,39 +185,144 @@ void GUISystem::Update(float dt)
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
 
-        textShader = Helium.CreateShader("GUIShader", guiVS, guiFS);
+        textShader = Helium.CreateShader("GUITextShader", textVS, textFS);
+        // [Modified] Create Geometry Shader
+        geometryShader = Helium.CreateShader("GUIGeometryShader", geometryVS, geometryFS);
 
         initialized = true;
+    }
+
+    auto& registry = Helium.GetRegistry();
+    for (auto& entity : registry.view<GUIRectangle>())
+    {
+        auto& r = registry.get<GUIRectangle>(entity);
+		Submit<GUIRectangle>(r.zIndex, GUICommandType::Rectangle, r);
+    }
+    for (auto& entity : registry.view<GUIText>())
+    {
+        auto& t = registry.get<GUIText>(entity);
+        Submit<GUIText>(t.zIndex, GUICommandType::Text, t);
     }
 }
 
 void GUISystem::Render()
 {
+    // 1. Sort and Execute Render Queue
+    if (!renderCommandQueue.empty())
+    {
+        // Sort by Z-Index (Lower Z first)
+        std::sort(renderCommandQueue.begin(), renderCommandQueue.end(),
+            [](const GUIRenderCommand& a, const GUIRenderCommand& b) {
+                return a.zIndex < b.zIndex;
+            });
+
+        for (const auto& cmd : renderCommandQueue)
+        {
+            switch (cmd.type)
+            {
+                case GUICommandType::Rectangle:
+                {
+                    if (auto rect = std::any_cast<GUIRectangle>(&cmd.component))
+                    {
+                        RenderRectangle(rect->x, rect->y, rect->width, rect->height, rect->color);
+                    }
+                    else
+                    {
+                        // 로그 출력 (디버깅용)
+                        // std::cerr << "Error: GUICommandType::Rectangle contains wrong type!" << std::endl;
+                    }
+                    break;
+                }
+                case GUICommandType::Text:
+                {
+                    if (auto text = std::any_cast<GUIText>(&cmd.component))
+                    {
+                        RenderText(text->text, text->x, text->y, text->fontSize, text->color);
+                    }
+                    else
+                    {
+                        // 로그 출력
+                    }
+                    break;
+                }
+            }
+        }
+        renderCommandQueue.clear();
+    }
+
+    // 2. Render Debug Info (Always on top)
     static auto lastTime = std::chrono::high_resolution_clock::now();
     auto currentTime = std::chrono::high_resolution_clock::now();
     auto deltaTime = std::chrono::high_resolution_clock::now() - lastTime;
     lastTime = currentTime;
 
-	// 현재 시간 표시 YYYY-MM-DD HH:MM:SS
-	std::stringstream timeSS;
-	auto timeNow = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	tm localTime;
-	localtime_s(&localTime, &timeNow);
+    // Current Time: YYYY-MM-DD HH:MM:SS
+    std::stringstream timeSS;
+    auto timeNow = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    tm localTime;
+    localtime_s(&localTime, &timeNow);
     timeSS << "Time: " << (localTime.tm_year + 1900) << "-"
         << std::setw(2) << std::setfill('0') << (localTime.tm_mon + 1) << "-"
         << std::setw(2) << std::setfill('0') << localTime.tm_mday << " "
         << std::setw(2) << std::setfill('0') << localTime.tm_hour << ":"
         << std::setw(2) << std::setfill('0') << localTime.tm_min << ":"
-		<< std::setw(2) << std::setfill('0') << localTime.tm_sec;
-    
-	RenderText(timeSS.str(), 10.0f, 30.0f, 32.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
+        << std::setw(2) << std::setfill('0') << localTime.tm_sec;
+
+    RenderText(timeSS.str(), 10.0f, 30.0f, 32.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
 
     std::stringstream ss;
     ss << "FPS: " << (1.0f / std::chrono::duration<float>(deltaTime).count());
     RenderText(ss.str(), 10.0f, 60.0f, 32.0f, { 1.0f, 1.0f, 1.0f, 1.0f });
+}
 
-    // 테스트 텍스트 (32px)
-    // RenderText("Test Code", 10.0f, 80.0f, 32.0f, { 1.0f, 1.0f, 0.0f, 1.0f });
+void GUISystem::RenderRectangle(float x, float y, float width, float height, const Eigen::Vector4f& color)
+{
+    if (geometryShader == nullptr) return;
+
+    // [Modified] Calculate Projection Matrix
+    float scrWidth = (float)Helium.GetWidth();
+    float scrHeight = (float)Helium.GetHeight();
+    Eigen::Matrix4f projection = Eigen::Matrix4f::Identity();
+    if (scrWidth > 0 && scrHeight > 0)
+    {
+        projection(0, 0) = 2.0f / scrWidth;
+        projection(1, 1) = -2.0f / scrHeight;
+        projection(0, 3) = -1.0f;
+        projection(1, 3) = 1.0f;
+    }
+
+    // [Modified] Disable Depth Test for 2D GUI
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    geometryShader->Bind();
+    geometryShader->SetVector4f("rectColor", color);
+    // [Modified] Pass projection matrix to shader
+    geometryShader->SetMatrix4f("projection", projection);
+
+    float vertices[6][4] = {
+        { x, y, 0.0f, 0.0f },
+        { x + width, y, 1.0f, 0.0f },
+        { x + width, y + height, 1.0f, 1.0f },
+
+        { x, y, 0.0f, 0.0f },
+        { x + width, y + height, 1.0f, 1.0f },
+        { x, y + height, 0.0f, 1.0f }
+    };
+
+    glBindVertexArray(VAO); // Ensure VAO is bound
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    // Restore states if needed
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
 }
 
 void GUISystem::RenderText(const std::string& text, float x, float y, float targetFontSize, const Eigen::Vector4f& color)
@@ -293,3 +424,4 @@ void GUISystem::Shutdown()
 void GUISystem::Resize(int width, int height)
 {
 }
+

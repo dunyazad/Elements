@@ -153,6 +153,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     switch (message)
     {
     case WM_KEYDOWN:
+        if (VK_ESCAPE == wParam)
+        {
+            PostMessage(hWnd, WM_CLOSE, 0, 0);
+        }
     case WM_KEYUP:
     case WM_SYSKEYDOWN:
     case WM_SYSKEYUP:

@@ -16,6 +16,7 @@
 #include <Helium/Systems/ImmediateModeRenderSystem.h>
 
 #include <Helium/Components/Components.h>
+#include <Helium/Components/GUI/GUIComponent.h>
 
 #include <Helium/GeometryBuilder.h>
 #include <Helium/Serialization.hpp>
@@ -466,6 +467,15 @@ void HeliumCore::InitializeScene()
 
 		Helium.CreateComponent<Transform>(entity)->SetLocalPosition(Eigen::Vector3f(0.0f, 0.0f, 0.0f));
 		renderable->AddShader(CreateShader("Line", File("../../res/Shaders/Line.vs"), File("../../res/Shaders/Line.fs")));
+	}
+
+	{
+		auto entity = CreateEntity("Text");
+		auto text = CreateComponent<GUIText>(entity, 0, 200.0f, 200.0f, 64.0f, Color::red(), "Helium");
+	}
+	{
+		auto entity = CreateEntity("Text");
+		auto rectangle = CreateComponent<GUIRectangle>(entity, 1, 200.0f, 100.0f, 200.0f, 200.0f, Color::blue());
 	}
 
 	//InitializePrimitives();

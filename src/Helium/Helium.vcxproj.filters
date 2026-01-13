@@ -49,6 +49,9 @@
     <Filter Include="소스 파일\PointCloudProcessing">
       <UniqueIdentifier>{1bb7c669-d535-492e-b6cb-b3787786ce2e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="헤더 파일\Helium\Components\GUI">
+      <UniqueIdentifier>{b2dd5f38-3217-4c02-a33d-09d9de9d227e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -194,6 +197,9 @@
     </ClInclude>
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PFOR.h">
       <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\Components\GUI\GUIComponent.h">
+      <Filter>헤더 파일\Helium\Components\GUI</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
