@@ -244,7 +244,7 @@ private:
 
     std::unique_ptr<IGraphicsBackend> backend = nullptr;
 
-	Eigen::Vector4f clearColor = Eigen::Vector4f(0.298f, 0.337f, 0.416f, 1.0f);
+	Eigen::Vector4f clearColor = Eigen::Vector4f(0.198f, 0.237f, 0.316f, 1.0f);
 
     Registry registry;
     Dispatcher dispatcher;

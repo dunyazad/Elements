@@ -33,6 +33,8 @@ bool OpenGLBackend::Initialize(HWND hwnd)
         return false;
     }
 
+    glEnable(GL_FRAMEBUFFER_SRGB);
+
     const char* version = (const char*)glGetString(GL_VERSION);
     //He_Log(HE_LOG_INFO, "", "OpenGL Initialized: %s", version);
 

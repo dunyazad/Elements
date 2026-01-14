@@ -470,12 +470,12 @@ void HeliumCore::InitializeScene()
 	}
 
 	{
-		auto entity = CreateEntity("Text");
-		auto text = CreateComponent<GUIText>(entity, 200.0f, 200.0f, 64.0f, Color::red(), "Helium");
-	}
-	{
 		auto entity = CreateEntity("Rectangle");
 		auto rectangle = CreateComponent<GUIRectangle>(entity, 200.0f, 100.0f, 200.0f, 200.0f, Color::blue());
+	}
+	{
+		auto entity = CreateEntity("Text");
+		auto text = CreateComponent<GUIText>(entity, 200.0f, 200.0f, 64.0f, Color::red(), "Helium");
 	}
 
 	//InitializePrimitives();
