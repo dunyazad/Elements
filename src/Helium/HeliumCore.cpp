@@ -54,6 +54,8 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
 {
     if (isInitialized) return true;
 
+    clearColor = Eigen::Vector4f(0.148f, 0.148f, 0.168f, 1.0f);
+
     hWnd = hwnd;
 
     eventSystem = std::make_unique<EventSystem>(this);
