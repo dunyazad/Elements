@@ -11,6 +11,8 @@
 
 #include <Helium/Components/GUI/GUIComponent.h>
 
+int GUISystem::zIndexCounter = 0;
+
 std::vector<stbtt_packedchar> charData;
 
 // Base font size

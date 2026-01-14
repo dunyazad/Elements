@@ -38,7 +38,11 @@ public:
 	void RenderRectangle(float x, float y, float width, float height, const Eigen::Vector4f& color);
     void RenderText(const std::string& text, float x, float y, float scale, const Eigen::Vector4f& color);
 
+    inline static int GetNextZIndex() { return zIndexCounter++; }
+
 private:
+    static int zIndexCounter;
+
     unsigned int textureID = 0;
     std::vector<stbtt_packedchar> charData;
 

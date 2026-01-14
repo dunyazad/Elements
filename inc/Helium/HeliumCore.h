@@ -13,6 +13,7 @@
 #include <Helium/File.h>
 #include <Helium/Backend/GraphicsBackend.h>
 #include <Helium/Components/Components.h>
+#include <Helium/Components/GUI/GUIComponent.h>
 #include <Helium/Systems/Systems.h>
 #include <Helium/PointCloudProcessing/PointCloudProcessor.h>
 
@@ -119,11 +120,20 @@ public:
     template<typename T, typename... Args>
     T* CreateComponent(Entity entity, Args&&... args)
     {
-        if (registry.all_of<T>(entity))
-        {
-            return &registry.get<T>(entity);
+        T* component = nullptr;
+        if (registry.all_of<T>(entity)) {
+            component = &registry.get<T>(entity);
         }
-        return &(registry.emplace<T>(entity, std::forward<Args>(args)...));
+        else {
+            component = &registry.emplace<T>(entity, std::forward<Args>(args)...);
+        }
+
+        if constexpr (is_gui_component<T>::value)
+        {
+            component->zIndex = this->GetGUISystem()->GetNextZIndex();
+        }
+
+        return component;
     }
 
 	template<typename T>
