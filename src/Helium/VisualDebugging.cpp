@@ -172,7 +172,6 @@ void VisualDebugging::CreateWiredBoxEntity(const std::string& tag)
     GeometryBuilder::BuildBox(renderable, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, Color::white(), true);
 }
 
-// [수정] 파라미터 적용
 void VisualDebugging::CreateSphereEntity(const std::string& tag, float radius, unsigned int slices, unsigned int stacks)
 {
     auto entity = Helium.CreateEntity(tag);
@@ -185,7 +184,6 @@ void VisualDebugging::CreateSphereEntity(const std::string& tag, float radius, u
     GeometryBuilder::BuildSphere(renderable, { 0.0f, 0.0f, 0.0f }, radius, slices, stacks, Color::white());
 }
 
-// [수정] 파라미터 적용
 void VisualDebugging::CreateDiskEntity(const std::string& tag, float radius, unsigned int slices)
 {
     auto entity = Helium.CreateEntity(tag);
@@ -198,7 +196,6 @@ void VisualDebugging::CreateDiskEntity(const std::string& tag, float radius, uns
     GeometryBuilder::BuildDisk(renderable, { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, radius, slices, Color::white());
 }
 
-// [수정] 파라미터 적용
 void VisualDebugging::CreateCylinderEntity(const std::string& tag, float radius, float height, unsigned int slices)
 {
     auto entity = Helium.CreateEntity(tag);
@@ -211,7 +208,6 @@ void VisualDebugging::CreateCylinderEntity(const std::string& tag, float radius,
     GeometryBuilder::BuildCylinder(renderable, { 0.0f, 0.0f, 0.0f }, radius, height, slices, Color::white());
 }
 
-// [수정] 파라미터 적용
 void VisualDebugging::CreateConeEntity(const std::string& tag, float radius, float height, unsigned int slices)
 {
     auto entity = Helium.CreateEntity(tag);
@@ -224,7 +220,6 @@ void VisualDebugging::CreateConeEntity(const std::string& tag, float radius, flo
     GeometryBuilder::BuildCone(renderable, { 0.0f, 0.0f, 0.0f }, radius, height, slices, Color::white());
 }
 
-// (Capsule, Torus, Tube는 이미 파라미터가 적용되어 있으므로 유지)
 void VisualDebugging::CreateCapsuleEntity(const std::string& tag, float radius, float height, unsigned int rings)
 {
     auto entity = Helium.CreateEntity(tag);
@@ -284,7 +279,6 @@ void VisualDebugging::CreateArrowEntity(const std::string& tag)
     renderable->Initialize(Renderable::GeometryMode::Triangles);
     debuggingRenderables[tag] = renderable;
 
-    // 셰이더 설정 (기존과 동일)
     SetupStandardShaders(renderable);
 
     // [중요] 인스턴싱을 위한 "Base Model" 생성
@@ -352,6 +346,10 @@ void VisualDebugging::AddGeometryInstance(
             // 5. Calculate Final Transform (T * R * S)
             tm = Translate(center) * rot * Scale(scale);
             renderable->AddInstanceTransform(tm);
+            if (1.0f > color.w())
+            {
+				renderable->SetUseAlpha(true);
+            }
 
             renderable->EnableInstancing();
         });

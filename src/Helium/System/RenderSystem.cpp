@@ -35,11 +35,11 @@ void RenderRenderablesTemplate(
 
         shader->Bind();
 
-		shader->SetVector4f("lightPos", lightVector);
+        shader->SetVector4f("lightPos", lightVector);
 
         for (auto& renderable : renderables)
         {
-			if (false == renderable->IsVisible()) continue;
+            if (false == renderable->IsVisible()) continue;
 
             // Get Entity
             auto entity = Helium.GetEntityByComponent<T>(renderable);
@@ -59,14 +59,13 @@ void RenderRenderablesTemplate(
             shader->SetMatrix4f("view", viewMatrix);
             shader->SetMatrix4f("projection", perspectiveMatrix);
 
-			shader->SetVector3f("cameraPos", eye);
+            shader->SetVector3f("cameraPos", eye);
 
             auto texture = Helium.GetComponent<Texture>(entity);
             if (nullptr != texture)
             {
                 texture->Bind();
-
-				shader->SetInt("texture0", 0);
+                shader->SetInt("texture0", 0);
             }
 
             renderable->Draw();
@@ -89,8 +88,8 @@ void RenderSystem::Update(float dt)
 {
     int frameNumber = 0;
 
-	Eigen::Matrix4f viewMatrix;
-	Eigen::Matrix4f perspectiveMatrix;
+    Eigen::Matrix4f viewMatrix;
+    Eigen::Matrix4f perspectiveMatrix;
     Eigen::Vector3f eye;
 
     auto& registry = Helium.GetRegistry();
@@ -108,36 +107,12 @@ void RenderSystem::Update(float dt)
             perspectiveMatrix = camera.GetProjectionMatrix();
             eye = camera.GetEye();
 
-            if (nullptr == activeCamera)
-            {
-                activeCamera = &camera;
-			}
+            // 마지막 카메라 혹은 특정 로직에 의해 Active Camera 결정
+            activeCamera = &camera;
         }
     }
 
-    // 2. Calculate Light Vector
-    // Reset to default
-    auto lightVector = Eigen::Vector4f(0.0f, 100.0f, 0.0f, 1.0f);
-
-    if (activeCamera)
-    {
-        if (activeCamera->GetProjectionMode() == Camera::Orthogonal)
-        {
-            // Orthogonal Mode -> Directional Light (w = 0.0)
-            // Camera direction
-            Eigen::Vector3f camDir = (activeCamera->GetTarget() - activeCamera->GetEye()).normalized();
-
-            // Set w to 0.0 for directional light
-            lightVector = Eigen::Vector4f(camDir.x(), camDir.y(), camDir.z(), 0.0f);
-        }
-        else
-        {
-            // Perspective Mode -> Point Light (w = 1.0)
-            lightVector.w() = 1.0f;
-        }
-    }
-
-    // 3. Update Transform Hierarchy
+    // 2. Update Transform Hierarchy
     {
         auto entites = registry.view<Transform>();
         for (auto& entity : entites)
@@ -150,7 +125,7 @@ void RenderSystem::Update(float dt)
         }
     }
 
-    // 4. Update Logic for Renderables
+    // 3. Update Logic for Renderables
     {
         for (auto& entity : registry.view<Renderable>())
         {
@@ -167,18 +142,32 @@ void RenderSystem::Render()
 {
     auto& registry = Helium.GetRegistry();
 
-	Eigen::Matrix4f viewMatrix = Eigen::Matrix4f::Identity();
-	Eigen::Matrix4f perspectiveMatrix = Eigen::Matrix4f::Identity();
-	Eigen::Vector3f eye = Eigen::Vector3f::Zero();
+    Eigen::Matrix4f viewMatrix = Eigen::Matrix4f::Identity();
+    Eigen::Matrix4f perspectiveMatrix = Eigen::Matrix4f::Identity();
+    Eigen::Vector3f eye = Eigen::Vector3f::Zero();
 
+    // 기본 조명값
     auto lightVector = Eigen::Vector4f(0.0f, 100.0f, 0.0f, 1.0f);
 
-    if(activeCamera)
+    if (activeCamera)
     {
         viewMatrix = activeCamera->GetViewMatrix();
         perspectiveMatrix = activeCamera->GetProjectionMatrix();
         eye = activeCamera->GetEye();
-	}
+
+        // 조명 벡터 계산 (Update와 로직 동기화)
+        if (activeCamera->GetProjectionMode() == Camera::Orthogonal)
+        {
+            // Orthogonal Mode -> Directional Light (w = 0.0)
+            Eigen::Vector3f camDir = (activeCamera->GetTarget() - activeCamera->GetEye()).normalized();
+            lightVector = Eigen::Vector4f(camDir.x(), camDir.y(), camDir.z(), 0.0f);
+        }
+        else
+        {
+            // Perspective Mode -> Point Light (w = 1.0)
+            lightVector.w() = 1.0f;
+        }
+    }
 
     // 1. Opaque Renderables
     {
@@ -200,10 +189,10 @@ void RenderSystem::Render()
         glDisable(GL_BLEND);
 
         RenderRenderablesTemplate<Renderable>(
-			viewMatrix,
-			perspectiveMatrix,
-			eye,
-			lightVector,
+            viewMatrix,
+            perspectiveMatrix,
+            eye,
+            lightVector,
             shadermap);
     }
 
@@ -215,10 +204,9 @@ void RenderSystem::Render()
         for (auto& entity : registry.view<Renderable>())
         {
             auto& r = registry.get<Renderable>(entity);
-            if (r.IsUsingAlpha())
+            if (r.IsUsingAlpha() && r.IsVisible())
             {
                 Eigen::Vector3f pos = (0 == r.GetNumberOfVertices()) ? Eigen::Vector3f::Zero() : r.GetVertex(0);
-                // Eigen uses .norm() for length
                 float z = (eye - pos).norm();
                 transparentObjs.push_back({ &r, z });
             }
@@ -226,7 +214,7 @@ void RenderSystem::Render()
 
         std::sort(transparentObjs.begin(), transparentObjs.end(), [](const ZRenderable& a, const ZRenderable& b)
             {
-                return a.z > b.z;
+                return a.z > b.z; // Far to Near
             });
 
         std::map<Shader*, std::vector<Renderable*>> shadermap;
@@ -236,7 +224,7 @@ void RenderSystem::Render()
         }
 
         glEnable(GL_DEPTH_TEST);
-        glDepthMask(GL_FALSE);
+        glDepthMask(GL_FALSE); // 투명 객체는 Depth Buffer에 쓰지 않음
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -247,7 +235,8 @@ void RenderSystem::Render()
             lightVector,
             shadermap);
 
-        glDepthMask(GL_TRUE);
+        glDepthMask(GL_TRUE); // 상태 복구
+        glDisable(GL_BLEND);
     }
 
     // 3. Opaque Debugging Renderables
@@ -256,7 +245,7 @@ void RenderSystem::Render()
         for (auto& entity : registry.view<DebuggingRenderable>())
         {
             auto& r = registry.get<DebuggingRenderable>(entity);
-            if (!r.IsUsingAlpha())
+            if (!r.IsUsingAlpha() && r.IsVisible()) // 가시성 체크 추가
                 shadermap[r.GetActiveShader()].push_back(&r);
         }
 
@@ -280,7 +269,8 @@ void RenderSystem::Render()
         for (auto& entity : registry.view<DebuggingRenderable>())
         {
             auto& r = registry.get<DebuggingRenderable>(entity);
-            if (r.IsUsingAlpha())
+            // 중요: IsUsingAlpha()가 true여야만 이 블록으로 들어와서 블렌딩이 적용됨
+            if (r.IsUsingAlpha() && r.IsVisible())
             {
                 Eigen::Vector3f pos = (0 == r.GetNumberOfVertices()) ? Eigen::Vector3f::Zero() : r.GetVertex(0);
                 float z = (eye - pos).norm();
@@ -312,6 +302,7 @@ void RenderSystem::Render()
             shadermap);
 
         glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
     }
 }
 

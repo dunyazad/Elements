@@ -12,7 +12,8 @@ using VD = VisualDebugging;
 
 uint64_t SparseGrid::GetKey(int x, int y, int z) const
 {
-	return ((uint64_t)x << 42) | ((uint64_t)y << 21) | (uint64_t)z;
+	const uint64_t MASK = 0x1FFFFF; // 21 bits
+	return (((uint64_t)x & MASK) << 42) | (((uint64_t)y & MASK) << 21) | ((uint64_t)z & MASK);
 }
 
 Eigen::Vector3i SparseGrid::GetIndex(const Eigen::Vector3f& position) const
@@ -151,7 +152,7 @@ int SparseGrid::GetClosestPoint(const std::vector<Eigen::Vector3f>& points, cons
 	return closestIdx;
 }
 
-void SparseGrid::GetKNearestNeighbors(const std::vector<Eigen::Vector3f>& points, const Eigen::Vector3f& queryPos, int k, std::vector<unsigned int>& outIndices, std::vector<float>& outDistances)
+void SparseGrid::GetKNearestNeighbors(const std::vector<Eigen::Vector3f>& points, const Eigen::Vector3f& queryPos, int k, std::vector<unsigned int>& outIndices, std::vector<float>& outDistances) const
 {
 	outIndices.clear();
 	outDistances.clear();
@@ -245,7 +246,7 @@ void SparseGrid::GetKNearestNeighbors(const std::vector<Eigen::Vector3f>& points
 	}
 }
 
-void SparseGrid::GetPointsWithinRadius(const std::vector<Eigen::Vector3f>& points, const Eigen::Vector3f& queryPos, float radius, std::vector<unsigned int>& outIndices)
+void SparseGrid::GetPointsWithinRadius(const std::vector<Eigen::Vector3f>& points, const Eigen::Vector3f& queryPos, float radius, std::vector<unsigned int>& outIndices) const
 {
 	outIndices.clear();
 	if (points.empty() || radius <= 0.0f) return;

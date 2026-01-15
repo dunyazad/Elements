@@ -30,13 +30,13 @@ public:
 		const Eigen::Vector3f& queryPos,
 		int k,
 		std::vector<unsigned int>& outIndices,
-		std::vector<float>& outDistances);
+		std::vector<float>& outDistances) const;
 
 	void GetPointsWithinRadius(
 		const std::vector<Eigen::Vector3f>& points,
 		const Eigen::Vector3f& queryPos,
 		float radius,
-		std::vector<unsigned int>& outIndices);
+		std::vector<unsigned int>& outIndices) const;
 
 	void Visualize();
 };

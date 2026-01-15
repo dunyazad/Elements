@@ -73,7 +73,7 @@ std::vector<uint8_t> PFOR::Process(const PointCloudProcessorParameters& paramete
 
 			if (neighbors.size() < 3)
 			{
-				distToPlane[i] = 0.0f;
+				distToPlane[i] = FLT_MAX;
 				return;
 			}
 

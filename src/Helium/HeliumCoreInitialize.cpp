@@ -469,14 +469,14 @@ void HeliumCore::InitializeScene()
 		renderable->AddShader(CreateShader("Line", File("../../res/Shaders/Line.vs"), File("../../res/Shaders/Line.fs")));
 	}
 
-	{
-		auto entity = CreateEntity("Rectangle");
-		auto rectangle = CreateComponent<GUIRectangle>(entity, 200.0f, 100.0f, 200.0f, 200.0f, Color::blue());
-	}
-	{
-		auto entity = CreateEntity("Text");
-		auto text = CreateComponent<GUIText>(entity, 200.0f, 200.0f, 64.0f, Color::red(), "Helium");
-	}
+	//{
+	//	auto entity = CreateEntity("Rectangle");
+	//	auto rectangle = CreateComponent<GUIRectangle>(entity, 200.0f, 100.0f, 200.0f, 200.0f, Color::blue());
+	//}
+	//{
+	//	auto entity = CreateEntity("Text");
+	//	auto text = CreateComponent<GUIText>(entity, 200.0f, 200.0f, 64.0f, Color::red(), "Helium");
+	//}
 
 	//InitializePrimitives();
 
@@ -500,9 +500,6 @@ void HeliumCore::InitializeScene()
 					
 					if (isCtrlPressed)
 					{
-						//VD::Clear("Selected Point");
-						//VD::AddSphere("Selected Point", pickedPosition, pickedNormal, 0.055f, { 1.0f, 0.0f, 0.0f, 1.0f });
-
 						auto cameraEntity = Helium.GetEntityByName("MainCamera");
 						auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
 						if (cameraManipulator)
@@ -510,6 +507,9 @@ void HeliumCore::InitializeScene()
 							cameraManipulator->SetCenter(pickedPosition);
 						}
 					}
+
+					VD::Clear("Selected Point");
+					VD::AddSphere("Selected Point", pickedPosition, pickedNormal, 1.0f, { 0.0f, 0.0f, 1.0f, 0.5f });
 				}
 			}
 			});
