@@ -5,9 +5,9 @@
 #include <string>
 #include <vector>
 
-namespace PointCloudProcessing
+namespace PointProcessing
 {
-	enum class PointCloudVisualizationMode
+	enum class PointVisualizationMode
 	{
 		None,
 		Gradient,
@@ -15,11 +15,11 @@ namespace PointCloudProcessing
 		OutlierFiltered
 	};
 
-	class PointCloudProcessorParameters
+	class PointProcessorParameters
 	{
 	public:
-		PointCloudProcessorParameters() = default;
-		virtual ~PointCloudProcessorParameters() = default;
+		PointProcessorParameters() = default;
+		virtual ~PointProcessorParameters() = default;
 
 		template<typename T>
 		T GetParameter(const std::string& key, const T& defaultValue) const
@@ -42,10 +42,10 @@ namespace PointCloudProcessing
 		std::map<std::string, std::any> parameters;
 	};
 
-	class PointCloudProcessor
+	class PointProcessor
 	{
 	public:
-		enum class PointCloudProcessorType
+		enum class PointProcessorType
 		{
 			SOR,
 			ROR,
@@ -54,11 +54,11 @@ namespace PointCloudProcessing
 			PFOR
 		};
 
-		virtual ~PointCloudProcessor() = default;
+		virtual ~PointProcessor() = default;
 
-		virtual std::vector<uint8_t> Process(const PointCloudProcessorParameters& parameters) = 0;
+		virtual std::vector<uint8_t> Process(const PointProcessorParameters& parameters) = 0;
 
-		inline PointCloudProcessorType GetType() const { return type; }
+		inline PointProcessorType GetType() const { return type; }
 
 		template<typename T>
 		T GetProcessResult(const std::string& key, const T& defaultValue) const
@@ -72,12 +72,12 @@ namespace PointCloudProcessing
 		}
 
 	protected:
-		PointCloudProcessor(PointCloudProcessorType t) : type(t) {}
+		PointProcessor(PointProcessorType t) : type(t) {}
 
 		std::map<std::string, std::any> processResults;
 
 	private:
-		PointCloudProcessorType type;
-		PointCloudProcessorParameters parameters;
+		PointProcessorType type;
+		PointProcessorParameters parameters;
 	};
 }

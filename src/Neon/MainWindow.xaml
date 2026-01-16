@@ -157,6 +157,7 @@
                     <MenuItem Header="Point">
                         <MenuItem Header="Show Point Normal" Click="Menu_Point_ShowPointNormal_Click"/>
                         <MenuItem Header="Show Point Normal Deviation" Click="Menu_Point_ShowPointNormalDeviation_Click"/>
+                        <MenuItem Header="Apply Point Plane Fitting" Click="Menu_Point_ApplyPointPlaneFitting_Click"/>
                     </MenuItem>
 
                     <MenuItem Header="PointCloud">

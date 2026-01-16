@@ -356,68 +356,68 @@ void HeliumCore::PerformClustering(int pointCloudID, float searchRadius, float a
 	}
 }
 
-std::vector<uint8_t> HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, PointCloudVisualizationMode visualizationMode)
+std::vector<uint8_t> HeliumCore::PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, PointCloudProcessing::PointCloudVisualizationMode visualizationMode)
 {
-	PointCloudProcessorParameters parameters;
+	PointCloudProcessing::PointCloudProcessorParameters parameters;
 	parameters.SetParameter<int>("PointCloudID", pointCloudID);
 	parameters.SetParameter<int>("KNeighbors", kNeighbors);
 	parameters.SetParameter<float>("StdDevMulThresh", stdDevMulThresh);
 	parameters.SetParameter<bool>("DeletePoints", deletePoints);
 	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
 
-	SOR processor;
+	PointCloudProcessing::SOR processor;
 
 	return processor.Process(parameters);
 }
 
-std::vector<uint8_t> HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, PointCloudVisualizationMode visualizationMode)
+std::vector<uint8_t> HeliumCore::PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, PointCloudProcessing::PointCloudVisualizationMode visualizationMode)
 {
-	PointCloudProcessorParameters parameters;
+	PointCloudProcessing::PointCloudProcessorParameters parameters;
 	parameters.SetParameter<int>("PointCloudID", pointCloudID);
 	parameters.SetParameter<float>("Radius", radius);
 	parameters.SetParameter<int>("MinNeighborsInRadius", minNeighborsInRadius);
 	parameters.SetParameter<bool>("DeletePoints", deletePoints);
 	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
 	
-	ROR processor;
+	PointCloudProcessing::ROR processor;
 	
 	return processor.Process(parameters);
 }
 
-std::vector<uint8_t> HeliumCore::PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, PointCloudVisualizationMode visualizationMode)
+std::vector<uint8_t> HeliumCore::PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, PointCloudProcessing::PointCloudVisualizationMode visualizationMode)
 {
-	PointCloudProcessorParameters parameters;
+	PointCloudProcessing::PointCloudProcessorParameters parameters;
 	parameters.SetParameter<int>("PointCloudID", pointCloudID);
 	parameters.SetParameter<int>("KNeighbors", kNeighbors);
 	parameters.SetParameter<float>("CurvatureThreshold", curvatureThreshold);
 	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
 
-	CurvatureAnalysis processor;
+	PointCloudProcessing::CurvatureAnalysis processor;
 
 	return processor.Process(parameters);
 }
 
-std::vector<uint8_t> HeliumCore::PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, PointCloudVisualizationMode visualizationMode)
+std::vector<uint8_t> HeliumCore::PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, PointCloudProcessing::PointCloudVisualizationMode visualizationMode)
 {
-	PointCloudProcessorParameters parameters;
+	PointCloudProcessing::PointCloudProcessorParameters parameters;
 	parameters.SetParameter<int>("PointCloudID", pointCloudID);
 	parameters.SetParameter<float>("Radius", radius);
 	parameters.SetParameter<float>("DeviationThreshold", deviationThreshold);
 	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
 
-	NormalDeviation processor;
+	PointCloudProcessing::NormalDeviation processor;
 	return processor.Process(parameters);
 }
 
-std::vector<uint8_t> HeliumCore::PerformPFOR(int pointCloudID, int kNeighbors, float distanceThreshold, PointCloudVisualizationMode visualizationMode)
+std::vector<uint8_t> HeliumCore::PerformPFOR(int pointCloudID, int kNeighbors, float distanceThreshold, PointCloudProcessing::PointCloudVisualizationMode visualizationMode)
 {
-	PointCloudProcessorParameters parameters;
+	PointCloudProcessing::PointCloudProcessorParameters parameters;
 	parameters.SetParameter<int>("PointCloudID", pointCloudID);
 	parameters.SetParameter<int>("KNeighbors", kNeighbors);
 	parameters.SetParameter<float>("DistanceThreshold", distanceThreshold);
 	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
 
-	PFOR processor;
+	PointCloudProcessing::PFOR processor;
 	return processor.Process(parameters);
 }
 
@@ -602,7 +602,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 								bool deletePoints = j.value("DeletePoints", false);
 								int visualizationMode = j.value("VisualizationMode", 0);
 
-								PerformSOR(pointCloudID, kNeighbors, stdDevMulThresh, deletePoints, (PointCloudVisualizationMode)visualizationMode);
+								PerformSOR(pointCloudID, kNeighbors, stdDevMulThresh, deletePoints, (PointCloudProcessing::PointCloudVisualizationMode)visualizationMode);
 							}
 						}
 						}
@@ -619,7 +619,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 								bool deletePoints = j.value("DeletePoints", false);
 								int visualizationMode = j.value("VisualizationMode", 0);
 
-								PerformROR(pointCloudID, radius, minNeighborsInRadius, deletePoints, (PointCloudVisualizationMode)visualizationMode);
+								PerformROR(pointCloudID, radius, minNeighborsInRadius, deletePoints, (PointCloudProcessing::PointCloudVisualizationMode)visualizationMode);
 							}
 						}
 					}
@@ -632,7 +632,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 							float curvatureThreshold = j.value("CurvatureThreshold", 1.0f);
 							int visualizationMode = j.value("VisualizationMode", 0);
 
-							PerformCurvatureAnalysis(pointCloudID, kNeighbors, curvatureThreshold, (PointCloudVisualizationMode)visualizationMode);
+							PerformCurvatureAnalysis(pointCloudID, kNeighbors, curvatureThreshold, (PointCloudProcessing::PointCloudVisualizationMode)visualizationMode);
 						}
 					}
 					else if (cmd == "PerformNormalDeviationAnalysis")
@@ -644,7 +644,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 							float deviationThreshold = j.value("DeviationThreshold", 45.0f);
 							int visualizationMode = j.value("VisualizationMode", 0);
 
-							PerformNormalDeviationAnalysis(pointCloudID, radius, deviationThreshold, (PointCloudVisualizationMode)visualizationMode);
+							PerformNormalDeviationAnalysis(pointCloudID, radius, deviationThreshold, (PointCloudProcessing::PointCloudVisualizationMode)visualizationMode);
 						}
 					}
 					else if (cmd == "PerformPFOR")
@@ -656,7 +656,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 							float distanceThreshold = j.value("DistanceThreshold", 0.1f);
 							int visualizationMode = j.value("VisualizationMode", 0);
 					
-							PerformPFOR(pointCloudID, kNeighbors, distanceThreshold, (PointCloudVisualizationMode)visualizationMode);
+							PerformPFOR(pointCloudID, kNeighbors, distanceThreshold, (PointCloudProcessing::PointCloudVisualizationMode)visualizationMode);
 						}
 					}
 					else if (cmd == "PerformCompositeFilter")
@@ -688,7 +688,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 									std::vector<uint8_t> outlierMarking;
 									bool validStep = false;
 
-									PointCloudProcessorParameters params;
+									PointCloudProcessing::PointCloudProcessorParameters params;
 									params.SetParameter<int>("PointCloudID", pointCloudID);
 
 									if (type == "SOR Filter")
@@ -701,7 +701,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 										params.SetParameter<float>("StdDevMulThresh", stdDevMulThresh);
 										params.SetParameter<int>("VisualizationMode", visualizationMode);
 
-										SOR processor;
+										PointCloudProcessing::SOR processor;
 										outlierMarking = processor.Process(params);
 										validStep = true;
 									}
@@ -713,7 +713,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 										params.SetParameter<float>("Radius", radius);
 										params.SetParameter<int>("MinNeighborsInRadius", minNeighbors);
 
-										ROR processor;
+										PointCloudProcessing::ROR processor;
 										outlierMarking = processor.Process(params);
 										validStep = true;
 									}
@@ -724,7 +724,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 										params.SetParameter<int>("KNeighbors", kNeighbors);
 										params.SetParameter<float>("CurvatureThreshold", curvatureThreshold);
 
-										CurvatureAnalysis processor;
+										PointCloudProcessing::CurvatureAnalysis processor;
 										outlierMarking = processor.Process(params);
 										validStep = true;
 									}
@@ -736,7 +736,7 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 										params.SetParameter<float>("Radius", radius);
 										params.SetParameter<float>("DeviationThreshold", deviationThreshold);
 
-										NormalDeviation processor;
+										PointCloudProcessing::NormalDeviation processor;
 										outlierMarking = processor.Process(params);
 										validStep = true;
 									}
@@ -873,6 +873,22 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 									Eigen::Vector3f p1 = p0 + pointCloud->GetNormal(i) * 0.1f;
 									VD::AddLine("PointNormals", p0, p1, Eigen::Vector4f(1, 0, 0, 1));
 								}
+							}
+						}
+					}
+					else if (cmd == "ApplyPointPlaneFitting")
+					{
+						if (j.contains("PointCloudID"))
+						{
+							int pointCloudID = j["PointCloudID"];
+							auto pointCloud = GetPointCloud(pointCloudID);
+							if (nullptr != pointCloud)
+							{
+								int kNeighbors = j.value("KNeighbors", 30);
+								float distanceThreshold = j.value("DistanceThreshold", 0.07f);
+
+								//float searchRadius = j.value("SearchRadius", 0.2f);
+								//PointPlaneFitting(pointCloud, searchRadius);
 							}
 						}
 					}

@@ -148,6 +148,7 @@ void PointCloud::SetupEntity(ProcessedInstanceData& data)
 				j["PointPicked"]["PointCloudID"] = GetID();
 				j["PointPicked"]["PickedIndex"] = pickedIndex;
 				j["PointPicked"]["IsCtrlPressed"] = event.IsCtrlPressed();
+				j["PointPicked"]["IsShiftPressed"] = event.IsShiftPressed();
 
 				CustomEvent customEvent(j.dump());
 				Helium.EnqueueEvent<CustomEvent>(customEvent);

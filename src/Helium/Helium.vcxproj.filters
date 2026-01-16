@@ -52,6 +52,12 @@
     <Filter Include="헤더 파일\Helium\Components\GUI">
       <UniqueIdentifier>{b2dd5f38-3217-4c02-a33d-09d9de9d227e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="소스 파일\PointProcessing">
+      <UniqueIdentifier>{42fb6c35-d302-4744-bcf4-762106e0b700}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\Helium\PointProcessing">
+      <UniqueIdentifier>{3232bcdd-efd4-48e3-86ab-364c35f62972}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -174,16 +180,16 @@
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\AtomicDisjointSet.h">
       <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\SOR.h">
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudSOR.h">
       <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\ROR.h">
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudROR.h">
       <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\CurvatureAnalysis.h">
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudCurvatureAnalysis.h">
       <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\NormalDeviation.h">
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudNormalDeviation.h">
       <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
     </ClInclude>
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudProcessing.h">
@@ -195,11 +201,32 @@
     <ClInclude Include="..\..\inc\Helium\Systems\GUISystem.h">
       <Filter>헤더 파일\Helium\Systems</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PFOR.h">
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudPFOR.h">
       <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
     </ClInclude>
     <ClInclude Include="..\..\inc\Helium\Components\GUI\GUIComponent.h">
       <Filter>헤더 파일\Helium\Components\GUI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointProcessing\PointCurvatureAnalysis.h">
+      <Filter>헤더 파일\Helium\PointProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointProcessing\PointNormalDeviation.h">
+      <Filter>헤더 파일\Helium\PointProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointProcessing\PointPFOR.h">
+      <Filter>헤더 파일\Helium\PointProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointProcessing\PointProcessing.h">
+      <Filter>헤더 파일\Helium\PointProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointProcessing\PointProcessor.h">
+      <Filter>헤더 파일\Helium\PointProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointProcessing\PointROR.h">
+      <Filter>헤더 파일\Helium\PointProcessing</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointProcessing\PointSOR.h">
+      <Filter>헤더 파일\Helium\PointProcessing</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -293,23 +320,38 @@
     <ClCompile Include="HeliumCoreExecuteCommand.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="PointCloudProcessing\SOR.cpp">
+    <ClCompile Include="PointCloudProcessing\PointCloudSOR.cpp">
       <Filter>소스 파일\PointCloudProcessing</Filter>
     </ClCompile>
-    <ClCompile Include="PointCloudProcessing\ROR.cpp">
+    <ClCompile Include="PointCloudProcessing\PointCloudROR.cpp">
       <Filter>소스 파일\PointCloudProcessing</Filter>
     </ClCompile>
-    <ClCompile Include="PointCloudProcessing\CurvatureAnalysis.cpp">
+    <ClCompile Include="PointCloudProcessing\PointCloudCurvatureAnalysis.cpp">
       <Filter>소스 파일\PointCloudProcessing</Filter>
     </ClCompile>
-    <ClCompile Include="PointCloudProcessing\NormalDeviation.cpp">
+    <ClCompile Include="PointCloudProcessing\PointCloudNormalDeviation.cpp">
       <Filter>소스 파일\PointCloudProcessing</Filter>
     </ClCompile>
     <ClCompile Include="System\GUISystem.cpp">
       <Filter>소스 파일\Systems</Filter>
     </ClCompile>
-    <ClCompile Include="PointCloudProcessing\PFOR.cpp">
+    <ClCompile Include="PointCloudProcessing\PointCloudPFOR.cpp">
       <Filter>소스 파일\PointCloudProcessing</Filter>
+    </ClCompile>
+    <ClCompile Include="PointProcessing\PointSOR.cpp">
+      <Filter>소스 파일\PointProcessing</Filter>
+    </ClCompile>
+    <ClCompile Include="PointProcessing\PointCurvatureAnalysis.cpp">
+      <Filter>소스 파일\PointProcessing</Filter>
+    </ClCompile>
+    <ClCompile Include="PointProcessing\PointNormalDeviation.cpp">
+      <Filter>소스 파일\PointProcessing</Filter>
+    </ClCompile>
+    <ClCompile Include="PointProcessing\PointPFOR.cpp">
+      <Filter>소스 파일\PointProcessing</Filter>
+    </ClCompile>
+    <ClCompile Include="PointProcessing\PointROR.cpp">
+      <Filter>소스 파일\PointProcessing</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

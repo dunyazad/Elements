@@ -364,6 +364,22 @@ namespace Neon
             }
         }
 
+        private void Menu_Point_ApplyPointPlaneFitting_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                var commandData = new
+                {
+                    Command = "ApplyPointPlaneFitting",
+                    PointCloudID = selectedSceneNode.ID,
+                    KNeighbors = 30,
+                    DistanceThreshold = 0.07f,
+                };
+                string command = JsonSerializer.Serialize(commandData, _jsonOptions);
+                HeliumNative.He_ManagedToNative(command);
+            }
+        }
+
         private void Menu_PointCloud_Clone_Click(object sender, RoutedEventArgs e)
         {
             if (selectedSceneNode != null)

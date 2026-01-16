@@ -200,12 +200,12 @@ public:
     void DeletePointCloud(int pointCloudID);
     void RenamePointCloud(int pointCloudID, const std::string& newName);
 
-	void PerformClustering(int pointCloudID, float searchRadius, float angleThreshold);
-    std::vector<uint8_t> PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, PointCloudVisualizationMode visualizationMode);
-    std::vector<uint8_t> PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, PointCloudVisualizationMode visualizationMode);
-    std::vector<uint8_t> PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, PointCloudVisualizationMode visualizationMode);
-    std::vector<uint8_t> PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, PointCloudVisualizationMode visualizationMode);
-    std::vector<uint8_t> PerformPFOR(int pointCloudID, int kNeighbors, float distanceThreshold, PointCloudVisualizationMode visualizationMode);
+    void PerformClustering(int pointCloudID, float searchRadius, float angleThreshold);
+    std::vector<uint8_t> PerformSOR(int pointCloudID, int kNeighbors, float stdDevMulThresh, bool deletePoints, PointCloudProcessing::PointCloudVisualizationMode visualizationMode);
+    std::vector<uint8_t> PerformROR(int pointCloudID, float radius, int minNeighborsInRadius, bool deletePoints, PointCloudProcessing::PointCloudVisualizationMode visualizationMode);
+    std::vector<uint8_t> PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, PointCloudProcessing::PointCloudVisualizationMode visualizationMode);
+    std::vector<uint8_t> PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, PointCloudProcessing::PointCloudVisualizationMode visualizationMode);
+    std::vector<uint8_t> PerformPFOR(int pointCloudID, int kNeighbors, float distanceThreshold, PointCloudProcessing::PointCloudVisualizationMode visualizationMode);
 
     void ProcessManagedToNativeEvents();
     void EnqueueManagedToNativeEvent(std::function<void()> event);

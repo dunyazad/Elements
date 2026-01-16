@@ -491,6 +491,7 @@ void HeliumCore::InitializeScene()
 				auto pointCloudID = j["PointPicked"]["PointCloudID"].get<int>();
 				auto pickedIndex = j["PointPicked"]["PickedIndex"].get<int>();
 				auto isCtrlPressed = j["PointPicked"]["IsCtrlPressed"].get<bool>();
+				auto isShiftPressed = j["PointPicked"]["IsShiftPressed"].get<bool>();
 
 				auto pointCloud = Helium.GetPointCloud(pointCloudID);
 				if (nullptr != pointCloud)
@@ -508,8 +509,11 @@ void HeliumCore::InitializeScene()
 						}
 					}
 
-					VD::Clear("Selected Point");
-					VD::AddSphere("Selected Point", pickedPosition, pickedNormal, 1.0f, { 0.0f, 0.0f, 1.0f, 0.5f });
+					if (isShiftPressed)
+					{
+						VD::Clear("Selected Point");
+						VD::AddSphere("Selected Point", pickedPosition, pickedNormal, 1.0f, { 0.0f, 0.0f, 1.0f, 0.5f });
+					}
 				}
 			}
 			});

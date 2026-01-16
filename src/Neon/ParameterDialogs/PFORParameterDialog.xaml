@@ -220,15 +220,34 @@
                 </StackPanel>
 
                 <StackPanel Margin="0,0,0,20">
-                    <TextBlock Text="Distance Threshold"/>
+                    <Grid Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Distance Threshold" VerticalAlignment="Center"/>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <TextBlock Text="Min" Foreground="#888" VerticalAlignment="Center" Margin="0,0,5,0" FontSize="11"/>
+                            <TextBox x:Name="TxtDistMin" Text="0.001" Width="55" Height="22" Padding="2" FontSize="11"/>
+                            <TextBlock Text="~ Max" Foreground="#888" VerticalAlignment="Center" Margin="8,0,5,0" FontSize="11"/>
+                            <TextBox x:Name="TxtDistMax" Text="0.5" Width="55" Height="22" Padding="2" FontSize="11"/>
+                        </StackPanel>
+                    </Grid>
+
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="60"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <TextBox x:Name="TxtDistanceThreshold" Text="{Binding ElementName=SliderDistance, Path=Value, Mode=TwoWay, StringFormat={}{0:0.000}}"/>
-                        <Slider x:Name="SliderDistance" Grid.Column="1" Minimum="0.001" Maximum="0.5" Value="0.05" 
-                                SmallChange="0.001" LargeChange="0.01" IsSnapToTickEnabled="False"/>
+
+                        <Slider x:Name="SliderDistance" Grid.Column="1" 
+                        Minimum="{Binding ElementName=TxtDistMin, Path=Text, FallbackValue=0.001}" 
+                        Maximum="{Binding ElementName=TxtDistMax, Path=Text, FallbackValue=0.5}" 
+                        Value="0.05"
+                        TickFrequency="0.001" IsSnapToTickEnabled="True"
+                        SmallChange="0.001" LargeChange="0.01"/>
                     </Grid>
                 </StackPanel>
 

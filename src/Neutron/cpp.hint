@@ -1,0 +1,2 @@
+#define NEUTRON_API __declspec(dllexport)
+#define NEUTRON_API __declspec(dllimport)
