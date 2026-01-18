@@ -1,9 +1,12 @@
 #include "pch.h"
 
-#include <thread>
+#include <execution>
 
 #include <glad/glad.h>
 #include <nlohmann/json.hpp>
+#include <robin_hood/robin_hood.h>
+
+#include <Helium/Color.hpp>
 
 #include <Helium/HeliumCore.h>
 #include <Helium/Backend/OpenGLBackend.h>
@@ -11,6 +14,7 @@
 #include <Helium/HeliumEvents.h>
 
 #include <Helium/Systems/EventSystem.h>
+#include <Helium/Systems/GUISystem.h>
 #include <Helium/Systems/InputSystem.h>
 #include <Helium/Systems/RenderSystem.h>
 #include <Helium/Systems/ImmediateModeRenderSystem.h>
@@ -43,7 +47,7 @@ void InitializePrimitives()
 			Eigen::Vector3f(0.0f, 0.0f, 1.0f),
 			Eigen::Vector4f(0.7f, 0.2f, 0.2f, 1.0f)
 		);
-		// Plane을 뒤로 밀어서 배경처럼 사용
+	
 		Helium.CreateComponent<Transform>(entity)->SetLocalPosition(Eigen::Vector3f(8.0f, 0.0f, -5.0f));
 		renderable->AddShader(Helium.CreateShader("Default", File("../../res/Shaders/Default.vs"), File("../../res/Shaders/Default.fs")));
 
@@ -210,7 +214,6 @@ void InitializePrimitives()
 		renderable->Initialize(Renderable::Lines);
 
 		// 임의의 ViewProjection 역행렬 생성 (시각화를 위해)
-		// 1. Projection (Perspective)
 		float fov = 45.0f * 3.14159f / 180.0f;
 		float aspect = 16.0f / 9.0f;
 		float zNear = 0.5f;
@@ -224,10 +227,8 @@ void InitializePrimitives()
 		projection(2, 3) = -(2.0f * zFar * zNear) / (zFar - zNear);
 		projection(3, 2) = -1.0f;
 
-		// 2. View (Camera at origin looking -Z)
-		// 시각화할 Frustum을 현재 위치(currentX)로 이동시키기 위해 View 행렬을 조정
 		Eigen::Affine3f viewTransform = Eigen::Affine3f::Identity();
-		viewTransform.translate(Eigen::Vector3f(-currentX, 0.0f, -2.5f)); // 카메라가 오브젝트를 바라보는 역변환
+		viewTransform.translate(Eigen::Vector3f(-currentX, 0.0f, -2.5f));
 
 		Eigen::Matrix4f viewProj = projection * viewTransform.matrix();
 		Eigen::Matrix4f invViewProj = viewProj.inverse();
@@ -240,44 +241,39 @@ void InitializePrimitives()
 
 	// --- Tube ---
 	{
-		// 1. 제어점(Control Points) 생성 - S자 형태의 곡선
 		std::vector<Eigen::Vector3f> tubePoints;
-		tubePoints.push_back(Eigen::Vector3f(0.0f, 0.0f, 0.0f));   // 시작
-		tubePoints.push_back(Eigen::Vector3f(0.5f, 1.0f, 0.0f));   // 위로
-		tubePoints.push_back(Eigen::Vector3f(1.5f, -1.0f, 0.5f));  // 아래로 + 깊이 변화
-		tubePoints.push_back(Eigen::Vector3f(2.5f, 0.5f, -0.5f));  // 다시 위로
-		tubePoints.push_back(Eigen::Vector3f(3.0f, 0.0f, 0.0f));   // 끝
+		tubePoints.push_back(Eigen::Vector3f(0.0f, 0.0f, 0.0f));
+		tubePoints.push_back(Eigen::Vector3f(0.5f, 1.0f, 0.0f));
+		tubePoints.push_back(Eigen::Vector3f(1.5f, -1.0f, 0.5f));
+		tubePoints.push_back(Eigen::Vector3f(2.5f, 0.5f, -0.5f));
+		tubePoints.push_back(Eigen::Vector3f(3.0f, 0.0f, 0.0f));
 
-		// Solid Tube
 		auto entity = Helium.CreateEntity("Tube");
 		auto renderable = Helium.CreateComponent<Renderable>(entity);
 		renderable->Initialize(Renderable::Triangles);
 
-		// radius: 0.2, curveSegments: 15(부드럽게), radialSegments: 16(둥글게)
 		GeometryBuilder::BuildTube(
 			renderable,
 			tubePoints,
 			0.2f,
 			15,
 			16,
-			Eigen::Vector4f(0.2f, 0.8f, 1.0f, 1.0f) // Cyan Color
+			Eigen::Vector4f(0.2f, 0.8f, 1.0f, 1.0f)
 		);
 
 		Helium.CreateComponent<Transform>(entity)->SetLocalPosition(Eigen::Vector3f(currentX, 0.0f, 0.0f));
 		renderable->AddShader(Helium.CreateShader("Default", File("../../res/Shaders/Default.vs"), File("../../res/Shaders/Default.fs")));
 
-		// Wireframe Tube
 		auto wireEntity = Helium.CreateEntity("TubeWire");
 		auto wireRenderable = Helium.CreateComponent<Renderable>(wireEntity);
 		wireRenderable->Initialize(Renderable::Lines);
 
-		// Wireframe은 반지름을 아주 살짝 키워서(0.21f) 겹침 방지
 		GeometryBuilder::BuildTube(
 			wireRenderable,
 			tubePoints,
 			0.205f,
 			15,
-			8, // 와이어프레임은 가로줄을 좀 적게(8) 해서 보기 편하게
+			8,
 			Eigen::Vector4f(1.0f, 1.0f, 1.0f, 1.0f),
 			true
 		);
@@ -285,7 +281,7 @@ void InitializePrimitives()
 		Helium.CreateComponent<Transform>(wireEntity)->SetLocalPosition(Eigen::Vector3f(currentX, 0.0f, 0.0f));
 		wireRenderable->AddShader(Helium.CreateShader("Line", File("../../res/Shaders/Line.vs"), File("../../res/Shaders/Line.fs")));
 
-		currentX += xStride * 1.5f; // 튜브 길이가 있으므로 간격을 좀 더 벌림
+		currentX += xStride * 1.5f;
 	}
 }
 
@@ -315,100 +311,69 @@ inline Eigen::Matrix4f Scale(const Eigen::Vector3f& s)
 
 void InitializeVisualDebugging()
 {
-	// 1. 기본 도형 테스트 (Row 0: Z = 0)
-	// ---------------------------------------------------------
 	float x = -10.0f;
 	float z = 0.0f;
 	float spacing = 3.0f;
 
-	// Box
 	VisualDebugging::AddBox("Test_Box", { x, 1.0f, z }, { 1.0f, 1.0f, 1.0f }, RED);
 	x += spacing;
 
-	// Sphere
 	VisualDebugging::AddSphere("Test_Sphere", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 0.5f, GREEN);
 	x += spacing;
 
-	// Cylinder (기본 Up 방향)
 	VisualDebugging::AddCylinder("Test_Cylinder", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 0.5f, 2.0f, BLUE);
 	x += spacing;
 
-	// Cone
 	VisualDebugging::AddCone("Test_Cone", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 0.5f, 2.0f, YELLOW);
 	x += spacing;
 
-	// Capsule
 	VisualDebugging::AddCapsule("Test_Capsule", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 0.5f, 1.0f, 16, CYAN);
 	x += spacing;
 
-	// Disk
 	VisualDebugging::AddDisk("Test_Disk", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 1.0f, MAGENTA);
 	x += spacing;
 
-	// Torus
 	VisualDebugging::AddTorus("Test_Torus", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 1.0f, 0.3f, 32, 16, WHITE);
 
-	// ---------------------------------------------------------
-	// 2. 특수 및 복합 도형 (Row 1: Z = 3)
-	// ---------------------------------------------------------
 	x = -10.0f;
 	z = 3.0f;
 
-	// Wired Box
 	VisualDebugging::AddWiredBox("Test_WiredBox", { x, 1.0f, z }, { 1.2f, 1.2f, 1.2f }, WHITE);
 	x += spacing;
 
-	// Tube (수정된 로직 검증: ControlPoints 기반)
-	// 반지름 0.5, 곡선분할 16, 원형분할 16
 	VisualDebugging::AddTube("Test_Tube", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 0.5f, 16, 16, CYAN);
 	x += spacing;
 
-	// Arrow (Up)
 	VisualDebugging::AddArrow("Test_Arrow_Up", { x, 0.0f, z }, { 0.0f, 1.0f, 0.0f }, 2.0f, GREEN);
 	x += spacing;
 
-	// Arrow (Right) - 회전 로직 검증
 	VisualDebugging::AddArrow("Test_Arrow_Right", { x, 1.0f, z }, { 1.0f, 0.0f, 0.0f }, 2.0f, RED);
 	x += spacing;
 
-	// Arrow (Forward) - 회전 로직 검증
 	VisualDebugging::AddArrow("Test_Arrow_Forward", { x, 1.0f, z }, { 0.0f, 0.0f, 1.0f }, 2.0f, BLUE);
 	x += spacing;
 
-	// Arrow (Diagonal) - 임의의 방향 회전 검증
 	Eigen::Vector3f diag = Eigen::Vector3f(1.0f, 1.0f, 1.0f).normalized();
 	VisualDebugging::AddArrow("Test_Arrow_Diag", { x, 1.0f, z }, diag, 2.0f, YELLOW);
 
-	// ---------------------------------------------------------
-	// 3. 라인 및 기타 (Row 2: Z = 6)
-	// ---------------------------------------------------------
 	x = -10.0f;
 	z = 6.0f;
 
-	// Line
 	VisualDebugging::AddLine("Test_Line", { x - 1.0f, 0.0f, z }, { x + 1.0f, 2.0f, z }, RED, BLUE);
 	x += spacing;
 
-	// Triangle
 	VisualDebugging::AddTriangle("Test_Triangle",
 		{ x, 0.0f, z }, { x - 1.0f, 2.0f, z }, { x + 1.0f, 2.0f, z },
 		YELLOW);
 	x += spacing;
 
-	// Frustum (가상의 ViewProj 역행렬 생성)
-	// 간단한 박스 형태의 Frustum 테스트
 	Eigen::Matrix4f fakeInvViewProj = Eigen::Matrix4f::Identity();
 	fakeInvViewProj = Translate({ x, 1.0f, z }) * Scale({ 1.0f, 1.0f, 1.0f });
 	VisualDebugging::AddFrustum("Test_Frustum", fakeInvViewProj, MAGENTA);
 	x += spacing;
 
-	// ---------------------------------------------------------
-	// 4. 바닥 그리드
-	// ---------------------------------------------------------
-	// 원점(0,0,0) 바닥에 20x20 그리드
 	VisualDebugging::AddGrid("Test_Grid", 20, 1.0f, { 0.3f, 0.3f, 0.3f, 1.0f });
 
-	// 좌표축 표시 (원점)
 	VisualDebugging::AddArrow("Axis_X", { 0.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }, 1.0f, RED);
 	VisualDebugging::AddArrow("Axis_Y", { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 1.0f, GREEN);
 	VisualDebugging::AddArrow("Axis_Z", { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, 1.0f, BLUE);
@@ -429,25 +394,23 @@ void HeliumCore::InitializeScene()
 		auto eventSystem = GetEventSystem();
 		if (eventSystem)
 		{
-			CreateEventCallback<MousePositionEvent>(cameraEntity, [](Entity entity, const MousePositionEvent& e) {
-				auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-				auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
+			eventSystem->Subscribe<MousePositionEvent>("3D", [cameraEntity](const MousePositionEvent& e) {
+				auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
 				if (cameraManipulator) cameraManipulator->OnMousePosition(e);
 				});
 
-			CreateEventCallback<MouseButtonEvent>(cameraEntity, [](Entity entity, const MouseButtonEvent& e) {
-				auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-				auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
+			eventSystem->Subscribe<MouseButtonEvent>("3D", [cameraEntity](const MouseButtonEvent& e) {
+				auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
 				if (cameraManipulator) cameraManipulator->OnMouseButton(e);
 				});
-			CreateEventCallback<MouseWheelEvent>(cameraEntity, [](Entity entity, const MouseWheelEvent& e) {
-				auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-				auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
+
+			eventSystem->Subscribe<MouseWheelEvent>("3D", [cameraEntity](const MouseWheelEvent& e) {
+				auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
 				if (cameraManipulator) cameraManipulator->OnMouseWheel(e);
 				});
-			CreateEventCallback<KeyEvent>(cameraEntity, [](Entity entity, const KeyEvent& e) {
-				auto cmeraEntity = Helium.GetEntityByName("MainCamera");
-				auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cmeraEntity);
+
+			eventSystem->Subscribe<KeyEvent>("3D", [cameraEntity](const KeyEvent& e) {
+				auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(cameraEntity);
 				if (cameraManipulator) cameraManipulator->OnKey(e);
 				});
 		}
@@ -469,17 +432,7 @@ void HeliumCore::InitializeScene()
 		renderable->AddShader(CreateShader("Line", File("../../res/Shaders/Line.vs"), File("../../res/Shaders/Line.fs")));
 	}
 
-	//{
-	//	auto entity = CreateEntity("Rectangle");
-	//	auto rectangle = CreateComponent<GUIRectangle>(entity, 200.0f, 100.0f, 200.0f, 200.0f, Color::blue());
-	//}
-	//{
-	//	auto entity = CreateEntity("Text");
-	//	auto text = CreateComponent<GUIText>(entity, 200.0f, 200.0f, 64.0f, Color::red(), "Helium");
-	//}
-
 	//InitializePrimitives();
-
 	//InitializeVisualDebugging();
 
 	{
@@ -498,7 +451,7 @@ void HeliumCore::InitializeScene()
 				{
 					Eigen::Vector3f pickedPosition = pointCloud->GetPosition(pickedIndex);
 					Eigen::Vector3f pickedNormal = pointCloud->GetNormal(pickedIndex);
-					
+
 					if (isCtrlPressed)
 					{
 						auto cameraEntity = Helium.GetEntityByName("MainCamera");

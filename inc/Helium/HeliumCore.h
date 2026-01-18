@@ -6,6 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <set>
 
 #include <entt/entt.hpp>
 
@@ -21,12 +22,15 @@ class Scene;
 class PointCloud;
 class SparseGrid;
 class SparseDataBlock;
+class EventSystem; // Forward declaration
 
 using Entity = entt::entity;
 #define InvalidEntity ((Entity)UINT32_MAX)
 
 using Registry = entt::registry;
 using Dispatcher = entt::dispatcher;
+
+class HeliumCore;
 
 template <typename T>
 class EventCallback {
@@ -39,6 +43,7 @@ public:
 
     EventCallback(Entity target, std::function<void(Entity, const T&)> callback)
         : target(target), callback(std::move(callback)) {
+        // Uses HeliumCore's main dispatcher (Global/Default layer)
         HeliumCore::GetStaticInstance().GetDispatcher().sink<T>().connect<&OnEvent>();
         instances.insert(this);
     }
@@ -81,10 +86,10 @@ public:
     inline IGraphicsBackend* GetGraphicsBackend() { return backend.get(); }
 
     EventSystem* GetEventSystem() { return eventSystem.get(); }
-	GUISystem* GetGUISystem() { return guiSystem.get(); }
+    GUISystem* GetGUISystem() { return guiSystem.get(); }
     InputSystem* GetInputSystem() { return inputSystem.get(); }
     ImmediateModeRenderSystem* GetImmediateModeRenderSystem() { return immediateModeRenderSystem.get(); }
-	RenderSystem* GetRenderSystem() { return renderSystem.get(); }
+    RenderSystem* GetRenderSystem() { return renderSystem.get(); }
 
     Entity CreateEntity(const std::string& name);
     Entity GetEntityByName(const std::string& name);
@@ -136,14 +141,14 @@ public:
         return component;
     }
 
-	template<typename T>
+    template<typename T>
     void RemoveComponent(Entity entity)
     {
         if (registry.all_of<T>(entity))
         {
             registry.remove<T>(entity);
         }
-	}
+    }
 
     inline void AddOnInitializeCallback(std::function<void()> callback) { onInitializeCallbacks.push_back(callback); }
     inline void AddOnUpdateCallback(std::function<void(float)> callback) { onUpdateCallbacks.push_back(callback); }
@@ -186,14 +191,14 @@ public:
     Shader* CreateShader(const std::string& name, const File& vsFile, const File& fsFile);
     Shader* GetShader(const std::string& name);
 
-	inline HWND GetHWND() const { return hWnd; }
+    inline HWND GetHWND() const { return hWnd; }
 
     void Log(HeliumLogLevel level, const char* key, const char* fmt, ...);
 
-	int LoadPointCloudFromPLY(const std::string& filename, const std::string& name);
+    int LoadPointCloudFromPLY(const std::string& filename, const std::string& name);
     void BuildSpatialPartitionings(int pointCloudID);
     bool SelectPointCloud(int pointCloudID);
-	PointCloud* GetPointCloud(int pointCloudID);
+    PointCloud* GetPointCloud(int pointCloudID);
     PointCloud* GetSelectedPointCloud();
     void SetPointCloudVisibility(int pointCloudID, bool visible);
     void ClonePointCloud(int pointCloudID);
@@ -220,7 +225,7 @@ public:
             return sparseGrids[pointCloudID];
         }
         return nullptr;
-	}
+    }
 
     inline SparseDataBlock* GetSparseDataBlock(int pointCloudID)
     {
@@ -229,7 +234,7 @@ public:
             return sparseDataBlocks[pointCloudID];
         }
         return nullptr;
-	}
+    }
 
 private:
     HeliumCore();
@@ -244,12 +249,12 @@ private:
 
     std::unique_ptr<IGraphicsBackend> backend = nullptr;
 
-	Eigen::Vector4f clearColor = Eigen::Vector4f(0.048f, 0.087f, 0.166f, 1.0f);
+    Eigen::Vector4f clearColor = Eigen::Vector4f(0.048f, 0.087f, 0.166f, 1.0f);
 
     Registry registry;
-    Dispatcher dispatcher;
+    Dispatcher dispatcher; // Core/Global dispatcher
 
-    std::unique_ptr<EventSystem> eventSystem;
+    std::unique_ptr<EventSystem> eventSystem; // Layered Event System
     std::unique_ptr<GUISystem> guiSystem;
     std::unique_ptr<InputSystem> inputSystem;
     std::unique_ptr<RenderSystem> renderSystem;
@@ -267,13 +272,13 @@ private:
 
     std::unordered_map<std::string, Scene*> scenes;
 
-	std::unordered_map<int, PointCloud*> pointClouds;
-	PointCloud* selectedPointCloud = nullptr;
+    std::unordered_map<int, PointCloud*> pointClouds;
+    PointCloud* selectedPointCloud = nullptr;
 
     const float voxelSize = 0.3f;
     const float cellSize = 0.3f;
-	std::unordered_map<int, SparseGrid*> sparseGrids;
-	std::unordered_map<int, SparseDataBlock*> sparseDataBlocks;
+    std::unordered_map<int, SparseGrid*> sparseGrids;
+    std::unordered_map<int, SparseDataBlock*> sparseDataBlocks;
 
     std::mutex managedToNativeEventQueueMutex;
     std::vector<std::function<void()>> managedToNativeEventQueue;

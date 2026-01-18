@@ -1,7 +1,10 @@
 #pragma once
 
 #include <vector>
-#include <map>
+#include <string>
+#include <memory>
+#include <algorithm>
+#include <functional>
 
 #include <Helium/Systems/HeliumSystem.h>
 
@@ -12,31 +15,66 @@ class HeliumCore;
 class EventSystem : public HeliumSystem
 {
 public:
-	EventSystem(HeliumCore* core);
+    template<typename EventType>
+    struct EventHandlerWrapper
+    {
+        std::function<void(const EventType&)> callback;
 
-	virtual void Initialize();
-	virtual void Update(float timeDelta);
+        void Invoke(const EventType& event)
+        {
+            if (callback) callback(event);
+        }
+    };
+
+    struct EventLayer
+    {
+        std::string name;
+        int priority;
+        entt::dispatcher dispatcher;
+
+        std::vector<std::shared_ptr<void>> handlers;
+    };
+
+    EventSystem(HeliumCore* core);
+
+    virtual void Initialize();
+    virtual void Update(float timeDelta);
+
+    void AddLayer(const std::string& name, int priority);
 
     template<typename EventType, typename Handler>
-    void Subscribe(Handler&& handler)
+    void Subscribe(const std::string& layerName, Handler&& handler)
     {
-        dispatcher.sink<EventType>().connect(std::forward<Handler>(handler));
+        EventLayer* layer = GetLayer(layerName);
+        if (layer)
+        {
+            auto wrapper = std::make_shared<EventHandlerWrapper<EventType>>();
+            wrapper->callback = std::forward<Handler>(handler);
+
+            layer->handlers.push_back(wrapper);
+
+            layer->dispatcher.sink<EventType>().template connect<&EventHandlerWrapper<EventType>::Invoke>(wrapper.get());
+        }
     }
 
     template<typename EventType>
     void Dispatch(const EventType& event)
     {
-        dispatcher.trigger(event);
+        for (auto& layer : layers)
+        {
+            layer->dispatcher.trigger(event);
+        }
     }
 
     template<typename EventType, typename... Args>
     void Trigger(Args&&... args)
     {
-        //dispatcher.trigger<EventType>(std::forward<Args>(args)...);
+        EventType event{ std::forward<Args>(args)... };
+        Dispatch(event);
     }
 
-	
-
 private:
-    entt::dispatcher dispatcher;
+    EventLayer* GetLayer(const std::string& name);
+
+    std::vector<std::shared_ptr<EventLayer>> layers;
 };

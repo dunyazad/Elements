@@ -136,9 +136,7 @@ void GUISystem::Update(float dt)
             return;
         }
 
-        // [Modified] Reserve vector size and initialize with 0
         charData.resize(12000);
-        // [Modified] Use .data() to pass actual memory address
         memset(charData.data(), 0, charData.size() * sizeof(stbtt_packedchar));
 
         stbtt_pack_range ranges[2] = { 0 };
@@ -188,23 +186,22 @@ void GUISystem::Update(float dt)
         glBindVertexArray(0);
 
         textShader = Helium.CreateShader("GUITextShader", textVS, textFS);
-        // [Modified] Create Geometry Shader
         geometryShader = Helium.CreateShader("GUIGeometryShader", geometryVS, geometryFS);
 
         initialized = true;
     }
 
-    auto& registry = Helium.GetRegistry();
-    for (auto& entity : registry.view<GUIRectangle>())
-    {
-        auto& r = registry.get<GUIRectangle>(entity);
-		Submit<GUIRectangle>(r.zIndex, GUICommandType::Rectangle, r);
-    }
-    for (auto& entity : registry.view<GUIText>())
-    {
-        auto& t = registry.get<GUIText>(entity);
-        Submit<GUIText>(t.zIndex, GUICommandType::Text, t);
-    }
+  //  auto& registry = Helium.GetRegistry();
+  //  for (auto& entity : registry.view<GUIRectangle>())
+  //  {
+  //      auto& r = registry.get<GUIRectangle>(entity);
+		//Submit<GUIRectangle>(r.zIndex, GUICommandType::Rectangle, r);
+  //  }
+  //  for (auto& entity : registry.view<GUIText>())
+  //  {
+  //      auto& t = registry.get<GUIText>(entity);
+  //      Submit<GUIText>(t.zIndex, GUICommandType::Text, t);
+  //  }
 }
 
 void GUISystem::Render()

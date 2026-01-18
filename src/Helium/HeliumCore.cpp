@@ -39,13 +39,13 @@ HeliumCore::~HeliumCore()
 {
     for (auto& kvp : pointClouds)
     {
-        if(nullptr != kvp.second)
+        if (nullptr != kvp.second)
         {
             delete kvp.second;
             kvp.second = nullptr;
-		}
+        }
     }
-	pointClouds.clear();
+    pointClouds.clear();
 
     Shutdown();
 }
@@ -58,11 +58,12 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
 
     hWnd = hwnd;
 
+    // EventSystem 초기화 (내부에서 기본 레이어 생성)
     eventSystem = std::make_unique<EventSystem>(this);
     eventSystem->Initialize();
 
-	guiSystem = std::make_unique<GUISystem>(this);
-	guiSystem->Initialize();
+    guiSystem = std::make_unique<GUISystem>(this);
+    guiSystem->Initialize();
 
     inputSystem = std::make_unique<InputSystem>(this);
     inputSystem->Initialize();
@@ -121,6 +122,7 @@ void HeliumCore::Update(float dt)
 
     VisualDebugging::DispatchCommands();
 
+    // EventSystem 업데이트 (모든 레이어의 디스패처 처리)
     if (eventSystem) eventSystem->Update(dt);
 
     if (guiSystem) guiSystem->Update(dt);
@@ -168,10 +170,10 @@ void HeliumCore::Render()
         glEnable(GL_DEPTH_TEST);
     }
 
-    if(guiSystem)
+    if (guiSystem)
     {
         guiSystem->Render();
-	}
+    }
 
     if (backend) backend->Render();
 }
@@ -182,16 +184,17 @@ void HeliumCore::Resize(int width, int height)
     for (auto& entity : entites)
     {
         auto& camera = entites.get<Camera>(entity);
-		camera.GetPerspectiveSettings().SetAspectRatio(static_cast<float>(width) / static_cast<float>(height));
+        camera.GetPerspectiveSettings().SetAspectRatio(static_cast<float>(width) / static_cast<float>(height));
     }
 
     if (guiSystem)
     {
-		guiSystem->Resize(width, height);
+        guiSystem->Resize(width, height);
     }
 
     if (backend) backend->Resize(width, height);
 
+    // EventSystem을 통해 리사이즈 이벤트를 모든 레이어에 전파
     if (eventSystem) eventSystem->Trigger<WindowResizeEvent>(width, height);
 }
 
@@ -212,7 +215,7 @@ void HeliumCore::Shutdown()
             kvp.second = nullptr;
         }
     }
-	sparseGrids.clear();
+    sparseGrids.clear();
 
     for (auto& kvp : sparseDataBlocks)
     {
@@ -222,7 +225,7 @@ void HeliumCore::Shutdown()
             kvp.second = nullptr;
         }
     }
-	sparseDataBlocks.clear();
+    sparseDataBlocks.clear();
 
     if (inputSystem)
     {
@@ -278,11 +281,11 @@ Shader* HeliumCore::CreateShader(const std::string& name, const std::string& vsC
 
 Shader* HeliumCore::CreateShader(const std::string& name, const File& vsFile, const File& fsFile)
 {
-	auto vsCode = vsFile.ReadAllString();
-	auto fsCode = fsFile.ReadAllString();
+    auto vsCode = vsFile.ReadAllString();
+    auto fsCode = fsFile.ReadAllString();
     Shader* shader = new Shader(name, vsCode, fsCode);
     shaders[name] = shader;
-	return shader;
+    return shader;
 }
 
 Shader* HeliumCore::GetShader(const std::string& name)
@@ -315,7 +318,7 @@ void HeliumCore::RemoveEntity(const std::string& name)
         nameEntityMapping.erase(name);
         entityNameMapping.erase(entity);
         registry.destroy(entity);
-	}
+    }
 }
 
 void HeliumCore::RemoveEntity(Entity entity)
