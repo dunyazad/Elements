@@ -175,6 +175,8 @@
                         <MenuItem Header="PFOR" Click="Menu_PointCloud_PFOR_Click"/>
                         <MenuItem Header="Composite Filter" Click="Menu_PointCloud_Composite_Filter_Click"/>
                         <MenuItem Header="Node Editor" Click="Menu_PointCloud_Node_Editor_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Generate Mesh" Click="Menu_PointCloud_Generate_Mesh_Click"/>
                     </MenuItem>
 
                     <MenuItem Header="VD">

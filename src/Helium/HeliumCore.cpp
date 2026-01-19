@@ -122,7 +122,6 @@ void HeliumCore::Update(float dt)
 
     VisualDebugging::DispatchCommands();
 
-    // EventSystem 업데이트 (모든 레이어의 디스패처 처리)
     if (eventSystem) eventSystem->Update(dt);
 
     if (guiSystem) guiSystem->Update(dt);

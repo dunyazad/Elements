@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Helium/HeliumCommon.h>
+
 #include <Helium/File.h>
 
 #include <glad/glad.h>
 
-class Texture
+class HELIUM_API Texture
 {
 public:
 	Texture();

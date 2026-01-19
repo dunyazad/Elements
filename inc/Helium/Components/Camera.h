@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Helium/HeliumCommon.h>
+
 #include <Eigen/Dense>
 #include <cmath>
 
@@ -12,7 +14,7 @@
 
 #include <Helium/TypeDefinitions.h>
 
-class Camera
+class HELIUM_API Camera
 {
 public:
     enum ProjectionMode
@@ -21,7 +23,7 @@ public:
         Orthogonal
     };
 
-    class PerspectiveSettings
+    class HELIUM_API PerspectiveSettings
     {
     public:
         inline bool IsDirty() const { return dirty; }
@@ -49,7 +51,7 @@ public:
         float zFar = 1000.0f;
     };
 
-    class OrthogonalSettings
+    class HELIUM_API OrthogonalSettings
     {
     public:
         inline bool IsDirty() const { return dirty; }

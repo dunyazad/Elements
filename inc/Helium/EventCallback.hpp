@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Helium/HeliumCommon.h>
+
 #include <Helium/HeliumCore.h>
 
 template <typename T>
-class EventCallback
+class HELIUM_API EventCallback
 {
 public:
     static void OnEvent(const T& event)

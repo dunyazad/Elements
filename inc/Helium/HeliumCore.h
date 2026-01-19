@@ -10,6 +10,7 @@
 
 #include <entt/entt.hpp>
 
+#include <Helium/HeliumCommon.h>
 #include <Helium/Color.hpp>
 #include <Helium/File.h>
 #include <Helium/Backend/GraphicsBackend.h>
@@ -33,7 +34,7 @@ using Dispatcher = entt::dispatcher;
 class HeliumCore;
 
 template <typename T>
-class EventCallback {
+class HELIUM_API EventCallback {
 public:
     static void OnEvent(const T& event) {
         for (auto* callback : instances) {
@@ -59,7 +60,7 @@ protected:
     static inline std::set<EventCallback<T>*> instances;
 };
 
-class HeliumCore
+class HELIUM_API HeliumCore
 {
 public:
     static HeliumCore& GetStaticInstance()
@@ -211,6 +212,7 @@ public:
     std::vector<uint8_t> PerformCurvatureAnalysis(int pointCloudID, int kNeighbors, float curvatureThreshold, PointCloudProcessing::PointCloudVisualizationMode visualizationMode);
     std::vector<uint8_t> PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, PointCloudProcessing::PointCloudVisualizationMode visualizationMode);
     std::vector<uint8_t> PerformPFOR(int pointCloudID, int kNeighbors, float distanceThreshold, PointCloudProcessing::PointCloudVisualizationMode visualizationMode);
+    std::vector<uint8_t> PerformGenerateMesh(int pointCloudID);
 
     void ProcessManagedToNativeEvents();
     void EnqueueManagedToNativeEvent(std::function<void()> event);

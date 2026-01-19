@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Helium/HeliumCommon.h>
+
 #include <Eigen/Dense>
 #include <set>
 
-class Transform
+class HELIUM_API Transform
 {
 public:
 	Transform();

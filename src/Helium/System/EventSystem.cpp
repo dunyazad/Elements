@@ -10,7 +10,6 @@ EventSystem::EventSystem(HeliumCore* core)
 
 void EventSystem::Initialize()
 {
-    // Example: Create default layers
     AddLayer("GUI", 100);
     AddLayer("3D", 0);
 }

@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Helium/HeliumCommon.h>
+
 #include <vector>
 #include <glad/glad.h> 
 
-class GraphicsBuffer
+class HELIUM_API GraphicsBuffer
 {
 public:
     GraphicsBuffer(GLenum target);

@@ -5,7 +5,7 @@
 class Renderable;
 class DebuggingRenderable;
 
-class GeometryBuilder
+class HELIUM_API GeometryBuilder
 {
 public:
     static void BuildPlane(

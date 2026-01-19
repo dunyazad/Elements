@@ -1,7 +1,10 @@
 #pragma once
+
+#include <Helium/HeliumCommon.h>
+
 #include "GraphicsBackend.h"
 
-class OpenGLBackend : public IGraphicsBackend
+class HELIUM_API OpenGLBackend : public IGraphicsBackend
 {
 public:
     bool Initialize(HWND hwnd) override;

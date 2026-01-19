@@ -6,4 +6,6 @@
 #include <Helium/HeliumLog.h>
 #include <Helium/HeliumCore.h>
 
+#include <Helium/Components/GUI/GUIComponent.h>
+
 #include "resource.h"

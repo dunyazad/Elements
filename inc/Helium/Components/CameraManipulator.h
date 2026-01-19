@@ -1,5 +1,7 @@
 #pragma once
 
+#pragma warning(disable: 4251)
+
 #include <vector>
 #include <set>
 #include <unordered_set>
@@ -13,7 +15,7 @@ using json = nlohmann::json;
 
 class Camera;
 
-class CameraManipulatorBase
+class HELIUM_API CameraManipulatorBase
 {
 public:
 	CameraManipulatorBase();
@@ -42,7 +44,7 @@ protected:
 	json settings;
 };
 
-class CameraManipulatorOrbit : public CameraManipulatorBase
+class HELIUM_API CameraManipulatorOrbit : public CameraManipulatorBase
 {
 public:
 	CameraManipulatorOrbit();
@@ -85,7 +87,7 @@ protected:
 	float mouseWheelSensitivity = 0.5f;
 };
 
-class CameraManipulatorTrackball : public CameraManipulatorBase
+class HELIUM_API CameraManipulatorTrackball : public CameraManipulatorBase
 {
 public:
 	CameraManipulatorTrackball();

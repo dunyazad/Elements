@@ -1,4 +1,7 @@
 #pragma once
+
+#include <Helium/HeliumCommon.h>
+
 #include <vector>
 #include <memory>
 #include <glad/glad.h>
@@ -6,7 +9,7 @@
 #include <Helium/GraphicsBuffer.h>
 
 template<typename T>
-class AttributeBuffer
+class HELIUM_API AttributeBuffer
 {
 public:
     AttributeBuffer() = default;

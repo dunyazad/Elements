@@ -14,7 +14,7 @@ class DebuggingRenderable;
 class Shader;
 class Texture;
 
-class RenderSystem : public HeliumSystem
+class HELIUM_API RenderSystem : public HeliumSystem
 {
 public:
 	RenderSystem(HeliumCore* core);

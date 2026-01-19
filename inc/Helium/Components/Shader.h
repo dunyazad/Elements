@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Helium/HeliumCommon.h>
+
 #include <Eigen/Dense>
 
-class Shader
+class HELIUM_API Shader
 {
 public:
     Shader(const std::string& name, const std::string& vertexSrc, const std::string& fragmentSrc);

@@ -5,3 +5,5 @@
 #include <Helium/PointCloudProcessing/PointCloudROR.h>
 #include <Helium/PointCloudProcessing/PointCloudCurvatureAnalysis.h>
 #include <Helium/PointCloudProcessing/PointCloudNormalDeviation.h>
+
+#include <Helium/PointCloudProcessing/PointCloudGenerateMesh.h>

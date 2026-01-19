@@ -22,7 +22,7 @@ struct GUIRenderCommand
     std::any component;
 };
 
-class GUISystem : public HeliumSystem
+class HELIUM_API GUISystem : public HeliumSystem
 {
 public:
     GUISystem(HeliumCore* core);

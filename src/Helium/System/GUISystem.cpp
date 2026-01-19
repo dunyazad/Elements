@@ -191,17 +191,17 @@ void GUISystem::Update(float dt)
         initialized = true;
     }
 
-  //  auto& registry = Helium.GetRegistry();
-  //  for (auto& entity : registry.view<GUIRectangle>())
-  //  {
-  //      auto& r = registry.get<GUIRectangle>(entity);
-		//Submit<GUIRectangle>(r.zIndex, GUICommandType::Rectangle, r);
-  //  }
-  //  for (auto& entity : registry.view<GUIText>())
-  //  {
-  //      auto& t = registry.get<GUIText>(entity);
-  //      Submit<GUIText>(t.zIndex, GUICommandType::Text, t);
-  //  }
+    auto& registry = Helium.GetRegistry();
+    for (auto& entity : registry.view<GUIRectangle>())
+    {
+        auto& r = registry.get<GUIRectangle>(entity);
+		Submit<GUIRectangle>(r.zIndex, GUICommandType::Rectangle, r);
+    }
+    for (auto& entity : registry.view<GUIText>())
+    {
+        auto& t = registry.get<GUIText>(entity);
+        Submit<GUIText>(t.zIndex, GUICommandType::Text, t);
+    }
 }
 
 void GUISystem::Render()

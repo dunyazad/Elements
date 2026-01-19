@@ -1,4 +1,7 @@
 #pragma once
+
+#include <Helium/HeliumCommon.h>
+
 #include <memory>
 #include <vector>
 #include <Eigen/Dense>
@@ -6,7 +9,7 @@
 
 class Shader;
 
-class Renderable
+class HELIUM_API Renderable
 {
 public:
     enum GeometryMode
@@ -167,7 +170,7 @@ private:
     bool instancingEnabled = false;
 };
 
-class DebuggingRenderable : public Renderable
+class HELIUM_API DebuggingRenderable : public Renderable
 {
 public:
 };

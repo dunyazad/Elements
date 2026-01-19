@@ -1,10 +1,13 @@
 #pragma once
+
+#include <Helium/HeliumCommon.h>
+
 #include "GraphicsBackend.h"
 
 // Vulkan 헤더 필요 (pch.h에 포함하거나 여기서 포함)
 // #include <vulkan/vulkan.h> 
 
-class VulkanBackend : public IGraphicsBackend
+class HELIUM_API VulkanBackend : public IGraphicsBackend
 {
 public:
     bool Initialize(HWND hwnd) override;

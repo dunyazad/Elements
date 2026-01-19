@@ -4,7 +4,7 @@
 
 class HeliumCore;
 
-class ImmediateModeRenderSystem : public HeliumSystem
+class HELIUM_API ImmediateModeRenderSystem : public HeliumSystem
 {
 public:
 	ImmediateModeRenderSystem(HeliumCore* core);

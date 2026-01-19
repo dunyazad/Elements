@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Helium/HeliumCommon.h>
+
 class HeliumCore;
 
-class HeliumSystem
+class HELIUM_API HeliumSystem
 {
 public:
     HeliumSystem(HeliumCore* core) : core(core) {}

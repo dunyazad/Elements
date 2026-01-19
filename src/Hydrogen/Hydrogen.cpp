@@ -51,11 +51,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     HWND hWnd = FindWindowW(szWindowClass, szTitle);
 
-    // [렌더링 스레드]
     g_renderingThread = std::thread([hWnd]() {
         He_Initialize(hWnd, 0);
 
-        // 1. 초기 크기 강제 설정 (스레드 시작 시점)
         RECT rect;
         if (GetClientRect(hWnd, &rect))
         {
@@ -65,6 +63,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             {
                 He_Resize(width, height);
             }
+        }
+
+        {
+            auto entity = Helium.CreateEntity("Button");
+            auto button = Helium.CreateComponent<GUIRectangle>(entity, 100.0f, 100.0f, 200.0f, 50.0f, Color::blue());
         }
 
         while (g_isRendering)

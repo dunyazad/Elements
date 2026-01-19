@@ -1,5 +1,7 @@
 #pragma once
 
+#pragma warning(disable: 4251)
+
 #include <vector>
 #include <string>
 #include <memory>
@@ -12,7 +14,7 @@
 
 class HeliumCore;
 
-class EventSystem : public HeliumSystem
+class HELIUM_API EventSystem : public HeliumSystem
 {
 public:
     template<typename EventType>
@@ -46,15 +48,15 @@ public:
     void Subscribe(const std::string& layerName, Handler&& handler)
     {
         EventLayer* layer = GetLayer(layerName);
-        if (layer)
+        if (nullptr == layer)
         {
-            auto wrapper = std::make_shared<EventHandlerWrapper<EventType>>();
-            wrapper->callback = std::forward<Handler>(handler);
-
-            layer->handlers.push_back(wrapper);
-
-            layer->dispatcher.sink<EventType>().template connect<&EventHandlerWrapper<EventType>::Invoke>(wrapper.get());
+			AddLayer(layerName, 0);
         }
+
+        auto wrapper = std::make_shared<EventHandlerWrapper<EventType>>();
+        wrapper->callback = std::forward<Handler>(handler);
+        layer->handlers.push_back(wrapper);
+        layer->dispatcher.sink<EventType>().template connect<&EventHandlerWrapper<EventType>::Invoke>(wrapper.get());
     }
 
     template<typename EventType>

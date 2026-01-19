@@ -4,7 +4,7 @@
 #include <fstream>
 #include <vector>
 
-class File
+class HELIUM_API File
 {
 public:
 	File();

@@ -421,6 +421,15 @@ std::vector<uint8_t> HeliumCore::PerformPFOR(int pointCloudID, int kNeighbors, f
 	return processor.Process(parameters);
 }
 
+std::vector<uint8_t> HeliumCore::PerformGenerateMesh(int pointCloudID)
+{
+	PointCloudProcessing::PointCloudProcessorParameters parameters;
+	parameters.SetParameter<int>("PointCloudID", pointCloudID);
+
+	PointCloudProcessing::PointCloudGenerateMesh processor;
+	return processor.Process(parameters);
+}
+
 void HeliumCore::ProcessManagedToNativeEvents()
 {
 	std::lock_guard<std::mutex> lock(managedToNativeEventQueueMutex);
@@ -798,6 +807,22 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 								}
 
 								InfoLog("", "Composite Filter applied. Selected %d points.", selectedCount);
+							}
+						}
+					}
+					else if (cmd == "GenerateMesh")
+					{
+						if (j.contains("PointCloudID"))
+						{
+							int pointCloudID = j["PointCloudID"];
+							auto pointCloud = GetPointCloud(pointCloudID);
+
+							if (nullptr != pointCloud)
+							{
+								PerformGenerateMesh(pointCloudID);
+
+								std::string message = "Generating Mesh from PointCloud ID: " + std::to_string(pointCloudID) + "\n";
+								NotifyMessage(message, 5000);
 							}
 						}
 					}

@@ -1,12 +1,14 @@
 #pragma once
 
-enum class BackendType
+#include <Helium/HeliumCommon.h>
+
+enum class HELIUM_API BackendType
 {
     OpenGL = 0,
     Vulkan = 1
 };
 
-class IGraphicsBackend
+class HELIUM_API IGraphicsBackend
 {
 public:
     virtual ~IGraphicsBackend() = default;
