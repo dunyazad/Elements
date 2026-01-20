@@ -433,7 +433,7 @@ void HeliumCore::InitializeScene()
 	}
 
 	//InitializePrimitives();
-	InitializeVisualDebugging();
+	//InitializeVisualDebugging();
 
 	//{
 	//	VD::AddDisk("PFOR", { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 5.0f, Color::yellow());
