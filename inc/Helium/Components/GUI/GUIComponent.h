@@ -24,6 +24,16 @@ struct GUIRectangle : GUIComponent
 		: x(x), y(y), width(width), height(height), color(color) {}
 };
 
+struct GUICircle : GUIComponent
+{
+	float x;
+	float y;
+	float radius;
+	Eigen::Vector4f color;
+	GUICircle(float x, float y, float radius, const Eigen::Vector4f& color)
+		: x(x), y(y), radius(radius), color(color) {}
+};
+
 struct GUIText : GUIComponent
 {
 	float x;
@@ -41,4 +51,5 @@ struct is_gui_component : std::false_type {};
 
 template<> struct is_gui_component<GUIComponent> : std::true_type {};
 template<> struct is_gui_component<GUIRectangle> : std::true_type {};
+template<> struct is_gui_component<GUICircle> : std::true_type {};
 template<> struct is_gui_component<GUIText> : std::true_type {};

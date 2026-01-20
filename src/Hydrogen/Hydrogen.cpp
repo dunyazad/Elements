@@ -3,18 +3,15 @@
 #include <atomic>
 #include <thread>
 
-// [추가] DPI 인식을 위한 헤더 및 라이브러리 링크
 #include <ShellScalingApi.h>
 #pragma comment(lib, "Shcore.lib")
 
 #define MAX_LOADSTRING 100
 
-// 전역 변수:
 HINSTANCE hInst;
 WCHAR szTitle[MAX_LOADSTRING];
 WCHAR szWindowClass[MAX_LOADSTRING];
 
-// 리사이즈 동기화를 위한 원자적 변수
 std::atomic<bool> g_isRendering = true;
 std::atomic<bool> g_resizeRequested = false;
 std::atomic<int> g_resizeWidth = 0;
@@ -22,7 +19,6 @@ std::atomic<int> g_resizeHeight = 0;
 
 std::thread g_renderingThread;
 
-// 함수 선언
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -36,8 +32,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
 
-    // [수정] 고해상도 모니터에서 흐릿하게 보이는 현상 방지 (DPI 인식 설정)
-    // 윈도우 생성 전에 호출해야 합니다.
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
@@ -70,9 +64,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             auto button = Helium.CreateComponent<GUIRectangle>(entity, 100.0f, 100.0f, 200.0f, 50.0f, Color::blue());
         }
 
+        {
+            auto entity = Helium.CreateEntity("ButtonText");
+            auto button = Helium.CreateComponent<GUIText>(entity, 120.0f, 132.0f, 32.0f, Color::white(), "Button");
+        }
+
         while (g_isRendering)
         {
-            // 2. 리사이즈 요청 처리
             if (g_resizeRequested)
             {
                 g_resizeRequested = false;
@@ -92,7 +90,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_HYDROGEN));
     MSG msg;
 
-    // 기본 메시지 루프
     while (GetMessage(&msg, nullptr, 0, 0))
     {
         if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
@@ -152,7 +149,6 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    // 입력 메시지 처리
     switch (message)
     {
     case WM_KEYDOWN:

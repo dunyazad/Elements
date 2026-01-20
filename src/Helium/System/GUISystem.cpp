@@ -197,6 +197,11 @@ void GUISystem::Update(float dt)
         auto& r = registry.get<GUIRectangle>(entity);
 		Submit<GUIRectangle>(r.zIndex, GUICommandType::Rectangle, r);
     }
+    for (auto& entity : registry.view<GUICircle>())
+    {
+        auto& c = registry.get<GUICircle>(entity);
+        Submit<GUICircle>(c.zIndex, GUICommandType::Circle, c);
+    }
     for (auto& entity : registry.view<GUIText>())
     {
         auto& t = registry.get<GUIText>(entity);
@@ -322,6 +327,11 @@ void GUISystem::RenderRectangle(float x, float y, float width, float height, con
     // Restore states if needed
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
+}
+
+void GUISystem::RenderCircle(float x, float y, float radius, const Eigen::Vector4f& color)
+{
+
 }
 
 void GUISystem::RenderText(const std::string& text, float x, float y, float targetFontSize, const Eigen::Vector4f& color)

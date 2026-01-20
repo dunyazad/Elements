@@ -12,6 +12,7 @@ class Shader;
 enum class GUICommandType
 {
     Rectangle,
+    Circle,
     Text
 };
 
@@ -36,6 +37,7 @@ public:
     void Resize(int width, int height);
 
 	void RenderRectangle(float x, float y, float width, float height, const Eigen::Vector4f& color);
+	void RenderCircle(float x, float y, float radius, const Eigen::Vector4f& color);
     void RenderText(const std::string& text, float x, float y, float scale, const Eigen::Vector4f& color);
 
     inline static int GetNextZIndex() { return zIndexCounter++; }

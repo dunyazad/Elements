@@ -8,6 +8,7 @@
 #include <robin_hood/robin_hood.h>
 
 #include <Helium/Color.hpp>
+#include <Helium/Serialization.hpp>
 
 #include <Helium/HeliumCore.h>
 #include <Helium/Backend/OpenGLBackend.h>

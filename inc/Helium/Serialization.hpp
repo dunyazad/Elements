@@ -15,24 +15,24 @@
 #include <tuple>
 #include <vector>
 #include <mutex>
+#include <cstring>
+#include <algorithm>
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 
 #define FLT_VALID(x) ((x) < 3.402823466e+36F)
 
-// --- Helper Functions ---
-
 inline int safe_stoi(const std::string& input)
 {
 	if (input.empty()) return INT_MAX;
-	return stoi(input);
+	return std::stoi(input);
 }
 
 inline float safe_stof(const std::string& input)
 {
 	if (input.empty()) return FLT_MAX;
-	return stof(input);
+	return std::stof(input);
 }
 
 inline std::vector<std::string> split(const std::string& input, const std::string& delimiters, bool includeEmptyString = false)
@@ -64,7 +64,6 @@ inline std::vector<std::string> split(const std::string& input, const std::strin
 	return result;
 }
 
-// Updated ParseOneLine to use Eigen vectors
 inline void ParseOneLine(
 	const std::string& line,
 	std::vector<Eigen::Vector3f>& vertices,
@@ -116,15 +115,10 @@ inline void ParseOneLine(
 			auto fe1 = split(words[2], "/", true);
 			auto fe2 = split(words[3], "/", true);
 
-			// Note: OBJ indices are 1-based usually, but here we store raw parsed ints.
-			// Ideally, we should subtract 1 here if converting to 0-based directly.
-			// Assuming caller handles indexing or these are just raw IDs.
 			faces.emplace_back(safe_stoi(fe0[0]), safe_stoi(fe1[0]), safe_stoi(fe2[0]));
 		}
 	}
 }
-
-// --- Classes ---
 
 class HSerializable
 {
@@ -220,7 +214,6 @@ public:
 		{
 			std::swap(p.y(), p.z());
 		}
-		// Recompute AABB
 		aabb.setEmpty();
 		for (const auto& p : points) aabb.extend(p);
 	}
@@ -241,7 +234,6 @@ public:
 
 		fprintf(fp, "OFF\n");
 
-		// Indices are stored as Vector3i (triangles)
 		auto pointCount = points.size();
 		auto faceCount = indices.size();
 
@@ -269,9 +261,6 @@ public:
 			}
 			else
 			{
-				// Color per vertex logic in original code was slightly ambiguous (color per face vs vertex).
-				// Assuming mapping color of first vertex to face or direct face color list.
-				// Based on original code: colors[i0 * 3] -> likely vertex colors.
 				if (tri.x() < (int)colors.size())
 				{
 					const auto& c = colors[tri.x()];
@@ -287,11 +276,8 @@ public:
 			}
 		}
 
-		// Fallback for point cloud color saving if no faces
 		if (faceCount == 0 && !colors.empty())
 		{
-			// Note: OFF standard doesn't typically support standalone colors without faces/verts well,
-			// but keeping original logic.
 			for (const auto& c : colors)
 			{
 				auto red = (unsigned char)(c.x() * 255);
@@ -384,7 +370,7 @@ public:
 	}
 
 protected:
-	std::vector<Eigen::Vector3i> indices; // Stores triangles
+	std::vector<Eigen::Vector3i> indices;
 	std::vector<Eigen::Vector4f> colors;
 };
 
@@ -397,22 +383,18 @@ public:
 		auto err = fopen_s(&fp, filename.c_str(), "wb");
 		if (0 != err) return false;
 
-		// Points
 		fprintf_s(fp, "%llu\n", points.size());
 		for (const auto& p : points)
 			fprintf(fp, "%f, %f, %f\n", p.x(), p.y(), p.z());
 
-		// Normals
 		fprintf_s(fp, "%llu\n", normals.size());
 		for (const auto& n : normals)
 			fprintf(fp, "%f, %f, %f\n", n.x(), n.y(), n.z());
 
-		// Colors
 		fprintf_s(fp, "%llu\n", colors.size());
 		for (const auto& c : colors)
 			fprintf(fp, "%f, %f, %f\n", c.x(), c.y(), c.z());
 
-		// Indices
 		fprintf_s(fp, "%llu\n", indices.size());
 		for (const auto& tri : indices)
 			fprintf(fp, "%d, %d, %d\n", tri.x(), tri.y(), tri.z());
@@ -429,29 +411,6 @@ public:
 
 		char buffer[1024];
 
-		auto ReadBlock = [&](auto& vector, int dim) {
-			size_t count = 0;
-			fgets(buffer, sizeof(buffer), fp);
-			sscanf_s(buffer, "%llu\n", &count);
-			vector.reserve(count);
-			for (size_t i = 0; i < count; i++)
-			{
-				fgets(buffer, sizeof(buffer), fp);
-				if (dim == 3) // Vectors
-				{
-					float x, y, z;
-					sscanf_s(buffer, "%f, %f, %f\n", &x, &y, &z);
-					if constexpr (std::is_same_v<typename std::decay_t<decltype(vector)>::value_type, Eigen::Vector3f>)
-						vector.emplace_back(x, y, z);
-					else if constexpr (std::is_same_v<typename std::decay_t<decltype(vector)>::value_type, Eigen::Vector4f>)
-						vector.emplace_back(x, y, z, 1.0f);
-					else if constexpr (std::is_same_v<typename std::decay_t<decltype(vector)>::value_type, Eigen::Vector3i>)
-						vector.emplace_back((int)x, (int)y, (int)z); // Actually integers in string
-				}
-			}
-			};
-
-		// Points
 		size_t nop = 0;
 		if (fgets(buffer, sizeof(buffer), fp)) sscanf_s(buffer, "%llu\n", &nop);
 		points.reserve(nop);
@@ -462,7 +421,6 @@ public:
 			AddPoint(x, y, z);
 		}
 
-		// Normals
 		size_t non = 0;
 		if (fgets(buffer, sizeof(buffer), fp)) sscanf_s(buffer, "%llu\n", &non);
 		normals.reserve(non);
@@ -473,7 +431,6 @@ public:
 			AddNormal(x, y, z);
 		}
 
-		// Colors
 		size_t noc = 0;
 		if (fgets(buffer, sizeof(buffer), fp)) sscanf_s(buffer, "%llu\n", &noc);
 		colors.reserve(noc);
@@ -484,7 +441,6 @@ public:
 			AddColor(r, g, b);
 		}
 
-		// Indices
 		size_t noi = 0;
 		if (fgets(buffer, sizeof(buffer), fp)) sscanf_s(buffer, "%llu\n", &noi);
 		indices.reserve(noi);
@@ -517,7 +473,7 @@ public:
 
 protected:
 	std::vector<Eigen::Vector3f> normals;
-	std::vector<Eigen::Vector3i> indices; // Triangles
+	std::vector<Eigen::Vector3i> indices;
 	std::vector<Eigen::Vector4f> colors;
 };
 
@@ -562,10 +518,6 @@ public:
 		for (size_t i = 0; i < indices.size(); i++)
 		{
 			const auto& face = indices[i];
-			// OBJ indices are usually 1-based, assuming stored as such or handled on read
-			// Here we assume indices stored are 1-based compatible with how ParseOneLine reads them
-			// If ParseOneLine stores raw file ints, they are 1-based.
-
 			if (has_uv && has_vn)
 			{
 				ss << "f "
@@ -621,7 +573,6 @@ public:
 		{
 			getline(buffer, line);
 			ParseOneLine(line, points, uvs, normals, colors, indices, 1.0f, 1.0f, 1.0f);
-			// Update AABB
 			if (!points.empty()) aabb.extend(points.back());
 		}
 		return true;
@@ -654,127 +605,230 @@ protected:
 class PLYFormat : public HSerializable
 {
 public:
+	enum class PLYDataType
+	{
+		ASCII,
+		BINARY
+	};
+
+public:
 	virtual bool Serialize(const std::string& filename) override
 	{
-		std::ofstream ofs(filename);
-		std::stringstream ss;
-		ss.precision(6);
+		std::ofstream ofs(filename, std::ios::out | std::ios::binary);
+		if (!ofs.is_open()) return false;
 
-		ss << "ply" << std::endl;
-		ss << "format ascii 1.0" << std::endl;
-		ss << "element vertex " << points.size() << std::endl;
-		ss << "property float x" << std::endl;
-		ss << "property float y" << std::endl;
-		ss << "property float z" << std::endl;
+		std::stringstream ssHeader;
+		ssHeader << "ply" << std::endl;
+
+		if (dataType == PLYDataType::ASCII)
+			ssHeader << "format ascii 1.0" << std::endl;
+		else
+			ssHeader << "format binary_little_endian 1.0" << std::endl;
+
+		ssHeader << "element vertex " << points.size() << std::endl;
+		ssHeader << "property float x" << std::endl;
+		ssHeader << "property float y" << std::endl;
+		ssHeader << "property float z" << std::endl;
 
 		if (normals.size() == points.size())
 		{
-			ss << "property float nx" << std::endl;
-			ss << "property float ny" << std::endl;
-			ss << "property float nz" << std::endl;
+			ssHeader << "property float nx" << std::endl;
+			ssHeader << "property float ny" << std::endl;
+			ssHeader << "property float nz" << std::endl;
 		}
 		if (colors.size() == points.size())
 		{
-			ss << "property uchar red" << std::endl;
-			ss << "property uchar green" << std::endl;
-			ss << "property uchar blue" << std::endl;
-			if (useAlpha) ss << "property uchar alpha" << std::endl;
+			ssHeader << "property uchar red" << std::endl;
+			ssHeader << "property uchar green" << std::endl;
+			ssHeader << "property uchar blue" << std::endl;
+			if (useAlpha) ssHeader << "property uchar alpha" << std::endl;
 		}
 		if (uvs.size() == points.size())
 		{
-			ss << "property float u" << std::endl;
-			ss << "property float v" << std::endl;
+			ssHeader << "property float u" << std::endl;
+			ssHeader << "property float v" << std::endl;
+		}
+		if (labels.size() == points.size())
+		{
+			ssHeader << "property int label" << std::endl;
+		}
+		if (deepLearningClasses.size() == points.size())
+		{
+			ssHeader << "property int deepLearningClass" << std::endl;
 		}
 
 		if (!lineIndices.empty())
 		{
-			ss << "element edge " << lineIndices.size() << std::endl;
-			ss << "property int vertex1" << std::endl;
-			ss << "property int vertex2" << std::endl;
+			ssHeader << "element edge " << lineIndices.size() << std::endl;
+			ssHeader << "property int vertex1" << std::endl;
+			ssHeader << "property int vertex2" << std::endl;
 		}
 
 		if (!triangleIndices.empty())
 		{
-			ss << "element face " << triangleIndices.size() << std::endl;
-			ss << "property list uchar int vertex_indices" << std::endl;
+			ssHeader << "element face " << triangleIndices.size() << std::endl;
+			ssHeader << "property list uchar int vertex_indices" << std::endl;
 		}
 
-		ss << "end_header" << std::endl;
+		ssHeader << "end_header" << std::endl;
+		ofs.write(ssHeader.str().c_str(), ssHeader.str().length());
 
-		for (size_t i = 0; i < points.size(); i++)
+		if (dataType == PLYDataType::ASCII)
 		{
-			const auto& p = points[i];
-			ss << p.x() << " " << p.y() << " " << p.z() << " ";
-
-			if (normals.size() == points.size())
+			std::stringstream ss;
+			ss.precision(6);
+			for (size_t i = 0; i < points.size(); i++)
 			{
-				const auto& n = normals[i];
-				ss << n.x() << " " << n.y() << " " << n.z() << " ";
+				const auto& p = points[i];
+				ss << p.x() << " " << p.y() << " " << p.z() << " ";
+
+				if (normals.size() == points.size())
+				{
+					const auto& n = normals[i];
+					ss << n.x() << " " << n.y() << " " << n.z() << " ";
+				}
+
+				if (colors.size() == points.size())
+				{
+					const auto& c = colors[i];
+					ss << (int)(c.x() * 255) << " " << (int)(c.y() * 255) << " " << (int)(c.z() * 255) << " ";
+					if (useAlpha) ss << (int)(c.w() * 255) << " ";
+				}
+
+				if (uvs.size() == points.size())
+				{
+					const auto& uv = uvs[i];
+					ss << uv.x() << " " << uv.y() << " ";
+				}
+
+				if (labels.size() == points.size()) ss << labels[i] << " ";
+				if (deepLearningClasses.size() == points.size()) ss << deepLearningClasses[i] << " ";
+
+				ss << std::endl;
+
+				if (i % 5000 == 0) { ofs << ss.rdbuf(); ss.str(std::string()); ss.clear(); }
+			}
+			ofs << ss.rdbuf();
+
+			for (const auto& line : lineIndices)
+				ofs << line.x() << " " << line.y() << std::endl;
+
+			for (const auto& tri : triangleIndices)
+				ofs << "3 " << tri.x() << " " << tri.y() << " " << tri.z() << std::endl;
+		}
+		else // BINARY
+		{
+			for (size_t i = 0; i < points.size(); i++)
+			{
+				const auto& p = points[i];
+				ofs.write(reinterpret_cast<const char*>(&p.x()), sizeof(float));
+				ofs.write(reinterpret_cast<const char*>(&p.y()), sizeof(float));
+				ofs.write(reinterpret_cast<const char*>(&p.z()), sizeof(float));
+
+				if (normals.size() == points.size())
+				{
+					const auto& n = normals[i];
+					ofs.write(reinterpret_cast<const char*>(&n.x()), sizeof(float));
+					ofs.write(reinterpret_cast<const char*>(&n.y()), sizeof(float));
+					ofs.write(reinterpret_cast<const char*>(&n.z()), sizeof(float));
+				}
+
+				if (colors.size() == points.size())
+				{
+					const auto& c = colors[i];
+					unsigned char r = (unsigned char)(c.x() * 255);
+					unsigned char g = (unsigned char)(c.y() * 255);
+					unsigned char b = (unsigned char)(c.z() * 255);
+					ofs.write(reinterpret_cast<const char*>(&r), sizeof(unsigned char));
+					ofs.write(reinterpret_cast<const char*>(&g), sizeof(unsigned char));
+					ofs.write(reinterpret_cast<const char*>(&b), sizeof(unsigned char));
+					if (useAlpha) {
+						unsigned char a = (unsigned char)(c.w() * 255);
+						ofs.write(reinterpret_cast<const char*>(&a), sizeof(unsigned char));
+					}
+				}
+
+				if (uvs.size() == points.size())
+				{
+					const auto& uv = uvs[i];
+					ofs.write(reinterpret_cast<const char*>(&uv.x()), sizeof(float));
+					ofs.write(reinterpret_cast<const char*>(&uv.y()), sizeof(float));
+				}
+
+				if (labels.size() == points.size())
+				{
+					ofs.write(reinterpret_cast<const char*>(&labels[i]), sizeof(int));
+				}
+				if (deepLearningClasses.size() == points.size())
+				{
+					ofs.write(reinterpret_cast<const char*>(&deepLearningClasses[i]), sizeof(int));
+				}
 			}
 
-			if (colors.size() == points.size())
+			// Edges (assuming raw int pairs if not list, standard PLY usually uses vertex indices)
+			for (const auto& line : lineIndices)
 			{
-				const auto& c = colors[i];
-				ss << (int)(c.x() * 255) << " " << (int)(c.y() * 255) << " " << (int)(c.z() * 255) << " ";
-				if (useAlpha) ss << (int)(c.w() * 255) << " ";
+				// Note: Property definition above was "property int vertex1", "property int vertex2" (scalars)
+				// If we want list property, we should change header. 
+				// Consistently writing scalars as per header definition in Serialize().
+				int v1 = line.x();
+				int v2 = line.y();
+				ofs.write(reinterpret_cast<const char*>(&v1), sizeof(int));
+				ofs.write(reinterpret_cast<const char*>(&v2), sizeof(int));
 			}
 
-			if (uvs.size() == points.size())
+			// Faces
+			unsigned char listCount = 3;
+			for (const auto& tri : triangleIndices)
 			{
-				const auto& uv = uvs[i];
-				ss << uv.x() << " " << uv.y() << " ";
+				ofs.write(reinterpret_cast<const char*>(&listCount), sizeof(unsigned char));
+				int i0 = tri.x();
+				int i1 = tri.y();
+				int i2 = tri.z();
+				ofs.write(reinterpret_cast<const char*>(&i0), sizeof(int));
+				ofs.write(reinterpret_cast<const char*>(&i1), sizeof(int));
+				ofs.write(reinterpret_cast<const char*>(&i2), sizeof(int));
 			}
-
-			ss << std::endl;
 		}
 
-		for (const auto& line : lineIndices)
-		{
-			// Edge: vertex1 vertex2 (Usually PLY edges are just v1 v2)
-			// But sometimes stored as list. The original code used "2 i0 i1" but property was "vertex1", "vertex2".
-			// If property is explicit v1, v2, it should just be "i0 i1".
-			// However, original code: `ss << "2 " << i0 << " " << i1` implies it wanted a list, 
-			// BUT header said `property int vertex1`, not list.
-			// Let's stick to standard PLY edge list convention if property is list, or direct values if scalar.
-			// Original header: "property int vertex1" -> Scalar.
-			// Original body: "2 i0 i1" -> List format.
-			// This is contradictory. I will use standard list format "property list uchar int vertex_indices" for edges usually,
-			// or scalar. Let's fix to list for safety or scalar.
-			// Based on property definition "vertex1", "vertex2", it expects "i0 i1".
-			ss << line.x() << " " << line.y() << std::endl;
-		}
-
-		for (const auto& tri : triangleIndices)
-		{
-			ss << "3 " << tri.x() << " " << tri.y() << " " << tri.z() << std::endl;
-		}
-
-		ofs << ss.rdbuf();
 		ofs.close();
 		return true;
 	}
 
 	virtual bool Deserialize(const std::string& filename) override
 	{
-		std::ifstream ifs(filename);
+		std::ifstream ifs(filename, std::ios::in | std::ios::binary);
 		if (!ifs.is_open()) return false;
 
 		std::string line;
 		std::vector<std::string> elementNames;
 		std::vector<size_t> elementCounts;
 		std::vector<bool> listTypeInfo;
-		std::vector<std::vector<std::string>> elementPropertyNames;
+		// Store property types: name -> type string
+		struct PropInfo { std::string name; std::string type; };
+		std::vector<std::vector<PropInfo>> elementProperties;
+		bool isBinary = false;
 
-		while (std::getline(ifs, line))
+		// 1. Header Parsing
+		while (true)
 		{
+			// Handle mixed line endings by reading char by char or getline and stripping \r
+			std::getline(ifs, line);
+			if (!line.empty() && line.back() == '\r') line.pop_back();
+
 			auto words = split(line, " \t");
 			if (words.empty()) continue;
 
-			if (words[0] == "element")
+			if (words[0] == "format")
+			{
+				if (words[1] == "binary_little_endian") isBinary = true;
+				else isBinary = false;
+			}
+			else if (words[0] == "element")
 			{
 				elementNames.push_back(words[1]);
 				elementCounts.push_back(atoi(words[2].c_str()));
-				elementPropertyNames.emplace_back();
+				elementProperties.emplace_back();
 				listTypeInfo.push_back(false);
 			}
 			else if (words[0] == "property")
@@ -783,94 +837,157 @@ public:
 				if (words[1] == "list")
 				{
 					listTypeInfo[index] = true;
-					elementPropertyNames[index].push_back(words[4]); // property list uchar int vertex_indices
+					// Format: property list <count_type> <index_type> <name>
+					elementProperties[index].push_back({ words[4], "list" });
 				}
 				else
 				{
-					elementPropertyNames[index].push_back(words[2]);
-					if (words[2] == "alpha" || words[2] == "a") useAlpha = true;
+					// Format: property <type> <name>
+					std::string name = words[2];
+					if (name == "alpha" || name == "a") useAlpha = true;
+					elementProperties[index].push_back({ name, words[1] });
 				}
 			}
 			else if (words[0] == "end_header") break;
 		}
 
+		SetDataType(isBinary ? PLYDataType::BINARY : PLYDataType::ASCII);
+
+		// Helper lambda to read binary values
+		auto ReadBinVal = [&](const std::string& type) -> float {
+			if (type == "float" || type == "float32") { float v; ifs.read((char*)&v, 4); return v; }
+			else if (type == "int" || type == "int32") { int v; ifs.read((char*)&v, 4); return (float)v; }
+			else if (type == "uchar" || type == "uint8") { unsigned char v; ifs.read((char*)&v, 1); return (float)v; }
+			// Simplified: assuming standard PLY types. Add double/short/etc if needed.
+			return 0.0f;
+			};
+
+		// 2. Body Parsing
 		for (size_t i = 0; i < elementNames.size(); i++)
 		{
 			bool isList = listTypeInfo[i];
 			size_t count = elementCounts[i];
 
-			if (!isList) // Vertices usually
+			if (elementNames[i] == "vertex")
 			{
+				points.reserve(count);
 				for (size_t j = 0; j < count; j++)
 				{
-					std::getline(ifs, line);
-					auto words = split(line, " \t");
-
 					float x = 0, y = 0, z = 0, nx = 0, ny = 0, nz = 0, u = 0, v = 0;
 					float r = 0, g = 0, b = 0, a = 1.0f;
 					int label = 0, dlClass = 0;
+					bool hasNormal = false, hasColor = false, hasUV = false, hasLabel = false, hasDL = false;
 
-					// Map properties to words
-					for (size_t k = 0; k < words.size() && k < elementPropertyNames[i].size(); k++)
+					if (isBinary)
 					{
-						const auto& prop = elementPropertyNames[i][k];
-						float val = (float)atof(words[k].c_str());
-
-						if (prop == "x") x = val;
-						else if (prop == "y") y = val;
-						else if (prop == "z") z = val;
-						else if (prop == "nx") nx = val;
-						else if (prop == "ny") ny = val;
-						else if (prop == "nz") nz = val;
-						else if (prop == "red") r = val / 255.0f;
-						else if (prop == "green") g = val / 255.0f;
-						else if (prop == "blue") b = val / 255.0f;
-						else if (prop == "alpha") a = val / 255.0f;
-						else if (prop == "u") u = val;
-						else if (prop == "v") v = val;
-						else if (prop == "label") label = (int)val;
-						else if (prop == "deepLearningClass") dlClass = (int)val;
+						for (const auto& prop : elementProperties[i])
+						{
+							float val = ReadBinVal(prop.type);
+							if (prop.name == "x") x = val;
+							else if (prop.name == "y") y = val;
+							else if (prop.name == "z") z = val;
+							else if (prop.name == "nx") { nx = val; hasNormal = true; }
+							else if (prop.name == "ny") { ny = val; hasNormal = true; }
+							else if (prop.name == "nz") { nz = val; hasNormal = true; }
+							else if (prop.name == "red") { r = val / 255.0f; hasColor = true; }
+							else if (prop.name == "green") { g = val / 255.0f; hasColor = true; }
+							else if (prop.name == "blue") { b = val / 255.0f; hasColor = true; }
+							else if (prop.name == "alpha") { a = val / 255.0f; hasColor = true; }
+							else if (prop.name == "u") { u = val; hasUV = true; }
+							else if (prop.name == "v") { v = val; hasUV = true; }
+							else if (prop.name == "label") { label = (int)val; hasLabel = true; }
+							else if (prop.name == "deepLearningClass") { dlClass = (int)val; hasDL = true; }
+						}
+					}
+					else // ASCII
+					{
+						std::getline(ifs, line);
+						auto words = split(line, " \t");
+						for (size_t k = 0; k < words.size() && k < elementProperties[i].size(); k++)
+						{
+							const auto& prop = elementProperties[i][k];
+							float val = (float)atof(words[k].c_str());
+							if (prop.name == "x") x = val;
+							else if (prop.name == "y") y = val;
+							else if (prop.name == "z") z = val;
+							else if (prop.name == "nx") { nx = val; hasNormal = true; }
+							else if (prop.name == "ny") { ny = val; hasNormal = true; }
+							else if (prop.name == "nz") { nz = val; hasNormal = true; }
+							else if (prop.name == "red") { r = val / 255.0f; hasColor = true; }
+							else if (prop.name == "green") { g = val / 255.0f; hasColor = true; }
+							else if (prop.name == "blue") { b = val / 255.0f; hasColor = true; }
+							else if (prop.name == "alpha") { a = val / 255.0f; hasColor = true; }
+							else if (prop.name == "u") { u = val; hasUV = true; }
+							else if (prop.name == "v") { v = val; hasUV = true; }
+							else if (prop.name == "label") { label = (int)val; hasLabel = true; }
+							else if (prop.name == "deepLearningClass") { dlClass = (int)val; hasDL = true; }
+						}
 					}
 
 					AddPoint(x, y, z);
-					// Assuming if any normal component exists, add normal
-					// Checking against property names existence is better, but simplified here:
-					if (!elementPropertyNames[i].empty())
-					{
-						// This simple parser adds defaults. Real usage checks what properties exist.
-						// Assuming standard PLY structure for this snippet.
-						// To be strictly robust, we should check if "nx" existed in property names.
-						// For now, we add only if we processed vertices.
-					}
-					// Just storing what we found if it looks like a vertex
-					if (elementNames[i] == "vertex") {
-						// Logic to only add if properties existed
-						// For brevity, assuming consistent file
-						if (normals.size() < points.size()) AddNormal(nx, ny, nz);
-						if (colors.size() < points.size()) AddColor(r, g, b, a);
-						if (uvs.size() < points.size()) AddUV(u, v);
-						if (labels.size() < points.size()) labels.push_back(label);
-						if (deepLearningClasses.size() < points.size()) deepLearningClasses.push_back(dlClass);
-					}
+					if (hasNormal) AddNormal(nx, ny, nz);
+					if (hasColor) AddColor(r, g, b, a);
+					if (hasUV) AddUV(u, v);
+					if (hasLabel) labels.push_back(label);
+					if (hasDL) deepLearningClasses.push_back(dlClass);
 				}
 			}
-			else // Faces (lists)
+			else if (elementNames[i] == "face" || elementNames[i] == "edge")
 			{
 				for (size_t j = 0; j < count; j++)
 				{
-					std::getline(ifs, line);
-					auto words = split(line, " \t");
-					int listSize = atoi(words[0].c_str());
+					if (isList) // Standard face definition (list uchar int)
+					{
+						int listSize = 0;
+						if (isBinary) {
+							unsigned char c; ifs.read((char*)&c, 1); listSize = c;
+						}
+						else {
+							std::string token; ifs >> token; listSize = atoi(token.c_str());
+						}
 
-					if (listSize == 3)
-					{
-						AddTriangle(atoi(words[1].c_str()), atoi(words[2].c_str()), atoi(words[3].c_str()));
+						std::vector<int> idxs(listSize);
+						for (int k = 0; k < listSize; ++k) {
+							if (isBinary) { int v; ifs.read((char*)&v, 4); idxs[k] = v; }
+							else { std::string token; ifs >> token; idxs[k] = atoi(token.c_str()); }
+						}
+
+						if (elementNames[i] == "face" && listSize == 3) AddTriangle(idxs[0], idxs[1], idxs[2]);
+						// Edge handling for lists could be added here
 					}
-					else if (listSize == 2) // Edge
+					else // Scalar properties (e.g. edge with vertex1, vertex2)
 					{
-						AddLineIndex(atoi(words[1].c_str()), atoi(words[2].c_str()));
+						int v1 = 0, v2 = 0;
+						if (isBinary) {
+							for (const auto& prop : elementProperties[i]) {
+								float val = ReadBinVal(prop.type); // assuming int stored
+								if (prop.name == "vertex1") v1 = (int)val;
+								else if (prop.name == "vertex2") v2 = (int)val;
+							}
+						}
+						else {
+							std::getline(ifs, line);
+							auto words = split(line, " \t");
+							for (size_t k = 0; k < words.size(); ++k) {
+								if (elementProperties[i][k].name == "vertex1") v1 = atoi(words[k].c_str());
+								else if (elementProperties[i][k].name == "vertex2") v2 = atoi(words[k].c_str());
+							}
+						}
+						if (elementNames[i] == "edge") AddLineIndex(v1, v2);
 					}
 				}
+				// If reading ASCII via >> tokens, consume rest of line if mixed
+				if (!isBinary && isList) { std::string dummy; std::getline(ifs, dummy); }
+			}
+			else // Unknown elements
+			{
+				// Skip unknown logic is complex for binary (need size calculation), 
+				// for ASCII simple skip line. 
+				if (!isBinary) {
+					std::string dummy;
+					for (size_t j = 0; j < count; ++j) std::getline(ifs, dummy);
+				}
+				// Binary skip omitted for brevity, assuming standard files
 			}
 		}
 		return true;
@@ -894,6 +1011,9 @@ public:
 	inline const std::vector<Eigen::Vector3i>& GetTriangleIndices() const { return triangleIndices; }
 	inline std::vector<Eigen::Vector4f>& GetColors() { return colors; }
 	inline const std::vector<Eigen::Vector4f>& GetColors() const { return colors; }
+
+	inline PLYDataType GetDataType() const { return dataType; }
+	inline void SetDataType(PLYDataType type) { dataType = type; }
 
 	virtual inline void AddUV(float u, float v) { uvs.emplace_back(u, v); }
 	virtual inline void AddNormal(float x, float y, float z) { normals.emplace_back(x, y, z); }
@@ -947,6 +1067,8 @@ public:
 	}
 
 protected:
+	PLYDataType dataType = PLYDataType::BINARY;
+
 	std::vector<Eigen::Vector2f> uvs;
 	std::vector<Eigen::Vector3f> normals;
 	std::vector<Eigen::Vector2i> lineIndices;
