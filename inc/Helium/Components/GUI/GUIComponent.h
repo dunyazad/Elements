@@ -7,6 +7,21 @@
 
 #include <Eigen/Dense>
 
+enum class TextHAlign
+{
+	Left,
+	Center,
+	Right
+};
+
+enum class TextVAlign
+{
+	Top,
+	Middle,
+	Bottom,
+	Baseline
+};
+
 struct GUIComponent
 {
 	int zIndex;
@@ -21,7 +36,8 @@ struct GUIRectangle : GUIComponent
 	Eigen::Vector4f color;
 
 	GUIRectangle(float x, float y, float width, float height, const Eigen::Vector4f& color)
-		: x(x), y(y), width(width), height(height), color(color) {}
+		: x(x), y(y), width(width), height(height), color(color) {
+	}
 };
 
 struct GUICircle : GUIComponent
@@ -31,7 +47,8 @@ struct GUICircle : GUIComponent
 	float radius;
 	Eigen::Vector4f color;
 	GUICircle(float x, float y, float radius, const Eigen::Vector4f& color)
-		: x(x), y(y), radius(radius), color(color) {}
+		: x(x), y(y), radius(radius), color(color) {
+	}
 };
 
 struct GUIText : GUIComponent
@@ -42,8 +59,17 @@ struct GUIText : GUIComponent
 	Eigen::Vector4f color;
 	std::string text;
 
-	GUIText(float x, float y, float fontSize, const Eigen::Vector4f& color, const std::string& text)
-		: x(x), y(y), fontSize(fontSize), color(color), text(text) {}
+	TextHAlign hAlign;
+	TextVAlign vAlign;
+
+	float cachedWidth = 0.0f;
+	std::string _lastText = "";
+	float _lastFontSize = 0.0f;
+
+	GUIText(float x, float y, float fontSize, const Eigen::Vector4f& color, const std::string& text,
+		TextHAlign hAlign = TextHAlign::Left, TextVAlign vAlign = TextVAlign::Baseline)
+		: x(x), y(y), fontSize(fontSize), color(color), text(text), hAlign(hAlign), vAlign(vAlign) {
+	}
 };
 
 template<typename T>

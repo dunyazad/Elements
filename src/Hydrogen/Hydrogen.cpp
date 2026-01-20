@@ -66,7 +66,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
         {
             auto entity = Helium.CreateEntity("ButtonText");
-            auto button = Helium.CreateComponent<GUIText>(entity, 120.0f, 132.0f, 32.0f, Color::white(), "Button");
+            auto button = Helium.CreateComponent<GUIText>(entity, 100.0f, 100.0f, 32.0f, Color::white(), "Button", TextHAlign::Center,  TextVAlign::Middle);
+        }
+
+        {
+            auto entity = Helium.CreateEntity("Circle");
+            auto circle = Helium.CreateComponent<GUICircle>(entity, 500.0f, 500.0f, 50.0f, Color::red());
         }
 
         while (g_isRendering)
