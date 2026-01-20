@@ -29,6 +29,8 @@
 #include <Helium/PointCloudProcessing/PointCloudProcessing.h>
 #include <Helium/PointCloudProcessing/AtomicDisjointSet.h>
 
+#include <Helium/PointProcessing/PointPFOR.h>
+
 using VD = VisualDebugging;
 
 extern void He_LogInternal(HeliumLogLevel level, const char* key, char* message);
@@ -429,6 +431,19 @@ std::vector<uint8_t> HeliumCore::PerformGenerateMesh(int pointCloudID)
 
 	PointCloudProcessing::PointCloudGenerateMesh processor;
 	return processor.Process(parameters);
+}
+
+void HeliumCore::PerformPointPlaneFitting(int pointCloudID, int pointIndex, int kNeighbors, float distanceThreshold, PointProcessing::PointVisualizationMode visualizationMode)
+{
+	PointProcessing::PointProcessorParameters parameters;
+	parameters.SetParameter<int>("PointCloudID", pointCloudID);
+	parameters.SetParameter<int>("PointIndex", pointIndex);
+	parameters.SetParameter<int>("KNeighbors", kNeighbors);
+	parameters.SetParameter<float>("DistanceThreshold", distanceThreshold);
+	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
+
+	PointProcessing::PFOR processor;
+	processor.Process(parameters);
 }
 
 void HeliumCore::ProcessManagedToNativeEvents()
@@ -908,10 +923,14 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 						{
 							int pointCloudID = j["PointCloudID"];
 							auto pointCloud = GetPointCloud(pointCloudID);
-							if (nullptr != pointCloud)
+							int pointIndex = j.value("PointIndex", -1);
+
+							if (nullptr != pointCloud || -1 == pointIndex)
 							{
 								int kNeighbors = j.value("KNeighbors", 30);
 								float distanceThreshold = j.value("DistanceThreshold", 0.07f);
+
+								PerformPointPlaneFitting(pointCloudID, pointIndex, kNeighbors, distanceThreshold, PointProcessing::PointVisualizationMode::Gradient);
 
 								//float searchRadius = j.value("SearchRadius", 0.2f);
 								//PointPlaneFitting(pointCloud, searchRadius);

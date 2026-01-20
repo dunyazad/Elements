@@ -125,6 +125,8 @@ namespace PointProcessing
 
 		{
 			VD::Clear("PFOR");
+			VD::Clear("PFORPlane");
+			VD::Clear("PFORArrow");
 
 			if (visualizationMode != (int)PointVisualizationMode::None)
 			{
@@ -134,7 +136,7 @@ namespace PointProcessing
 				{
 					bool isTargetOutlier = (outlierMarking[pointIndex] == 1);
 					Eigen::Vector4f targetColor;
-					float targetRadius = 0.08f;
+					float targetRadius = 0.06f;
 
 					if (isTargetOutlier)
 					{
@@ -178,8 +180,8 @@ namespace PointProcessing
 				}
 
 				// 평면과 법선 벡터 시각화
-				VD::AddDisk("PFOR", centroid, planeNormal, distanceThreshold * 5.0f, Color::yellow(0.3f));
-				VD::AddLine("PFOR", centroid, centroid + planeNormal * 0.2f, Color::yellow());
+				VD::AddDisk("PFORPlane", centroid, planeNormal, distanceThreshold * 5.0f, Color::yellow());
+				VD::AddArrow("PFORArrow", centroid, planeNormal, 0.5f, Color::red());
 			}
 		}
 

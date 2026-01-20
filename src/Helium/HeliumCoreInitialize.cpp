@@ -363,7 +363,7 @@ void InitializeVisualDebugging()
 	x += spacing;
 
 	VisualDebugging::AddTriangle("Test_Triangle",
-		{ x, 0.0f, z }, { x - 1.0f, 2.0f, z }, { x + 1.0f, 2.0f, z },
+		{ x, 0.0f, z }, { x + 1.0f, 2.0f, z }, { x - 1.0f, 2.0f, z },
 		YELLOW);
 	x += spacing;
 
@@ -433,7 +433,11 @@ void HeliumCore::InitializeScene()
 	}
 
 	//InitializePrimitives();
-	//InitializeVisualDebugging();
+	InitializeVisualDebugging();
+
+	//{
+	//	VD::AddDisk("PFOR", { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 5.0f, Color::yellow());
+	//}
 
 	{
 		auto entity = CreateEntity("Main");

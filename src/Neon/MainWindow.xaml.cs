@@ -160,7 +160,7 @@ namespace Neon
             this.WindowState = WindowState.Maximized;
 
             // Auto load for testing
-            Menu_File_Open_Click(this, new RoutedEventArgs()); 
+            Menu_File_Open_Click(this, new RoutedEventArgs());
         }
 
         private void OnUpdateUI(object? sender, EventArgs e)
@@ -372,6 +372,7 @@ namespace Neon
                 {
                     Command = "ApplyPointPlaneFitting",
                     PointCloudID = selectedSceneNode.ID,
+                    PointIndex = selectedPointIndex,
                     KNeighbors = 30,
                     DistanceThreshold = 0.07f,
                 };
@@ -1156,6 +1157,16 @@ namespace Neon
                                     }
                                     break;
                                 }
+                            case "PointSelected":
+                                {
+                                    if (root.TryGetProperty("Parameters", out JsonElement paramsElement))
+                                    {
+                                        int pointCloudID = paramsElement.GetProperty("PointCloudID").GetInt32();
+                                        int pointIndex = paramsElement.GetProperty("PointIndex").GetInt32();
+                                        OnPointSelected(pointCloudID, pointIndex);
+                                    }
+                                    break;
+                                }
                             default:
                                 NeonLogger.Log("NativeToManaged", $"Unknown event type: {eventType}");
                                 break;
@@ -1237,6 +1248,15 @@ namespace Neon
                     SceneItems.Remove(nodeToRemove);
                     ShowNotification($"Point Cloud Deleted: {name} (ID: {pointCloudID})");
                 }
+            });
+        }
+
+        private void OnPointSelected(int pointCloudID, int pointIndex)
+        {
+            Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                selectedPointCloudID = pointCloudID;
+                selectedPointIndex = pointIndex;
             });
         }
     }

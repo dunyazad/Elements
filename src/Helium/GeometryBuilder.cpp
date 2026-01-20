@@ -102,13 +102,14 @@ namespace
 				}
 				else
 				{
+					// CCW Order
 					AddIndexToBuffer(target, i0);
-					AddIndexToBuffer(target, i2);
 					AddIndexToBuffer(target, i1);
+					AddIndexToBuffer(target, i2);
 
 					AddIndexToBuffer(target, i1);
-					AddIndexToBuffer(target, i2);
 					AddIndexToBuffer(target, i3);
+					AddIndexToBuffer(target, i2);
 				}
 			}
 		}
@@ -247,6 +248,7 @@ namespace
 
 					if (y != latitudeSegments - 1)
 					{
+						// CCW Corrected
 						AddIndexToBuffer(target, i1);
 						AddIndexToBuffer(target, i3);
 						AddIndexToBuffer(target, i2);
@@ -293,9 +295,10 @@ namespace
 			}
 			else
 			{
+				// CCW Order
 				AddIndexToBuffer(target, centerIdx);
-				AddIndexToBuffer(target, centerIdx + i + 1);
 				AddIndexToBuffer(target, centerIdx + i);
+				AddIndexToBuffer(target, centerIdx + i + 1);
 			}
 		}
 	}
@@ -342,8 +345,8 @@ namespace
 			}
 			else
 			{
-				AddIndexToBuffer(target, top1); AddIndexToBuffer(target, bottom1); AddIndexToBuffer(target, top2);
-				AddIndexToBuffer(target, bottom1); AddIndexToBuffer(target, bottom2); AddIndexToBuffer(target, top2);
+				AddIndexToBuffer(target, top1); AddIndexToBuffer(target, top2); AddIndexToBuffer(target, bottom1);
+				AddIndexToBuffer(target, bottom1); AddIndexToBuffer(target, top2); AddIndexToBuffer(target, bottom2);
 			}
 		}
 
@@ -458,8 +461,9 @@ namespace
 				}
 				else
 				{
-					AddIndexToBuffer(target, i0); AddIndexToBuffer(target, i2); AddIndexToBuffer(target, i1);
-					AddIndexToBuffer(target, i1); AddIndexToBuffer(target, i2); AddIndexToBuffer(target, i3);
+					// CCW Corrected
+					AddIndexToBuffer(target, i0); AddIndexToBuffer(target, i1); AddIndexToBuffer(target, i2);
+					AddIndexToBuffer(target, i1); AddIndexToBuffer(target, i3); AddIndexToBuffer(target, i2);
 				}
 			}
 		}
@@ -518,8 +522,8 @@ namespace
 				}
 				else
 				{
-					AddIndexToBuffer(target, i0); AddIndexToBuffer(target, i2); AddIndexToBuffer(target, i1);
-					AddIndexToBuffer(target, i1); AddIndexToBuffer(target, i2); AddIndexToBuffer(target, i3);
+					AddIndexToBuffer(target, i0); AddIndexToBuffer(target, i1); AddIndexToBuffer(target, i2);
+					AddIndexToBuffer(target, i1); AddIndexToBuffer(target, i3); AddIndexToBuffer(target, i2);
 				}
 			}
 		}
@@ -552,11 +556,9 @@ namespace
 
 		unsigned int startVertexIdx = GetCurrentVertexCount(target);
 
-		// 1. 곡선 경로 생성 (Path Generation)
 		std::vector<Eigen::Vector3f> pathPoints;
 		std::vector<Eigen::Vector3f> tangents;
 
-		// Catmull-Rom을 위해 앞뒤로 점을 복제하여 패딩
 		std::vector<Eigen::Vector3f> paddedPoints = controlPoints;
 		paddedPoints.insert(paddedPoints.begin(), controlPoints.front());
 		paddedPoints.push_back(controlPoints.back());
@@ -569,37 +571,27 @@ namespace
 				pathPoints.push_back(CatmullRom(t, paddedPoints[i], paddedPoints[i + 1], paddedPoints[i + 2], paddedPoints[i + 3]));
 			}
 		}
-		// 마지막 점 추가
 		pathPoints.push_back(paddedPoints[paddedPoints.size() - 2]);
 
-		// 2. 접선(Tangent) 계산
-		if (pathPoints.size() < 2) return; // 안전장치
+		if (pathPoints.size() < 2) return;
 
 		tangents.resize(pathPoints.size());
 
-		// 첫 점 Tangent
 		tangents[0] = (pathPoints[1] - pathPoints[0]).normalized();
 
-		// 중간 점들 Tangent
 		for (size_t i = 1; i < pathPoints.size() - 1; ++i)
 		{
 			tangents[i] = (pathPoints[i + 1] - pathPoints[i - 1]).normalized();
 		}
 
-		// 마지막 점 Tangent
 		tangents.back() = (pathPoints.back() - pathPoints[pathPoints.size() - 2]).normalized();
 
-
-		// 3. 프레임(Normal/Binormal) 생성 (Parallel Transport / Bishop's Frame)
-		// 꼬임을 방지하기 위해 첫 프레임을 기준으로 회전시킵니다.
 		std::vector<Eigen::Vector3f> normals(pathPoints.size());
 		std::vector<Eigen::Vector3f> binormals(pathPoints.size());
 
-		// 초기 프레임 설정
 		Eigen::Vector3f initialTangent = tangents[0];
 		Eigen::Vector3f initialNormal;
 
-		// Tangent와 평행하지 않은 임의의 벡터를 찾아 Normal 생성
 		if (std::abs(initialTangent.x()) < 0.9f) initialNormal = Eigen::Vector3f(1, 0, 0);
 		else initialNormal = Eigen::Vector3f(0, 1, 0);
 
@@ -611,15 +603,12 @@ namespace
 			Eigen::Vector3f prevTangent = tangents[i - 1];
 			Eigen::Vector3f curTangent = tangents[i];
 
-			// 이전 Tangent를 현재 Tangent로 회전시키는 쿼터니언 계산
 			Eigen::Quaternionf rotation = Eigen::Quaternionf::FromTwoVectors(prevTangent, curTangent);
 
-			// 이전 Normal/Binormal을 회전시켜 현재 프레임 계산 (Parallel Transport)
 			normals[i] = (rotation * normals[i - 1]).normalized();
 			binormals[i] = curTangent.cross(normals[i]).normalized();
 		}
 
-		// 4. 버텍스 생성 (Extrusion)
 		for (size_t i = 0; i < pathPoints.size(); ++i)
 		{
 			Eigen::Vector3f center = pathPoints[i];
@@ -633,18 +622,14 @@ namespace
 				float sinTheta = std::sin(theta);
 				float cosTheta = std::cos(theta);
 
-				// 원형 단면의 로컬 오프셋
 				Eigen::Vector3f offset = (normal * cosTheta + binormal * sinTheta) * radius;
 				Eigen::Vector3f position = center + offset;
-
-				// 법선은 튜브 표면 바깥쪽을 향함
 				Eigen::Vector3f surfaceNormal = offset.normalized();
 
 				AddVertexToBuffer(target, position, surfaceNormal, color);
 			}
 		}
 
-		// 5. 인덱스 생성
 		unsigned int numRings = (unsigned int)pathPoints.size();
 		unsigned int vertsPerRing = radialSegments + 1;
 
@@ -662,15 +647,13 @@ namespace
 
 				if (wireframe)
 				{
-					// Ring
 					AddIndexToBuffer(target, i0); AddIndexToBuffer(target, i1);
-					// Connection to next ring
 					AddIndexToBuffer(target, i0); AddIndexToBuffer(target, i2);
 				}
 				else
 				{
-					AddIndexToBuffer(target, i0); AddIndexToBuffer(target, i2); AddIndexToBuffer(target, i1);
-					AddIndexToBuffer(target, i1); AddIndexToBuffer(target, i2); AddIndexToBuffer(target, i3);
+					AddIndexToBuffer(target, i0); AddIndexToBuffer(target, i1); AddIndexToBuffer(target, i2);
+					AddIndexToBuffer(target, i1); AddIndexToBuffer(target, i3); AddIndexToBuffer(target, i2);
 				}
 			}
 		}
@@ -696,7 +679,6 @@ namespace
 		Eigen::Quaternionf rotation = Eigen::Quaternionf::FromTwoVectors(Eigen::Vector3f::UnitY(), dir);
 		Eigen::Matrix3f rotMat = rotation.toRotationMatrix();
 
-		// FIX: (std::max)를 사용하여 매크로 확장을 방지합니다.
 		float stemLen = (std::max)(0.0f, length - headLength);
 		Eigen::Vector3f stemCenter = start + (dir * (stemLen * 0.5f));
 
@@ -729,8 +711,8 @@ namespace
 			}
 			else
 			{
-				AddIndexToBuffer(target, bl); AddIndexToBuffer(target, br); AddIndexToBuffer(target, tl);
-				AddIndexToBuffer(target, tl); AddIndexToBuffer(target, br); AddIndexToBuffer(target, tr);
+				AddIndexToBuffer(target, bl); AddIndexToBuffer(target, tl); AddIndexToBuffer(target, br);
+				AddIndexToBuffer(target, tl); AddIndexToBuffer(target, tr); AddIndexToBuffer(target, br);
 			}
 		}
 
@@ -758,12 +740,16 @@ namespace
 			unsigned int cur = coneStartIdx + i;
 			unsigned int next = coneStartIdx + i + 1;
 
-			if (wireframe) {
+			if (wireframe)
+			{
 				AddIndexToBuffer(target, tipIdx); AddIndexToBuffer(target, cur);
 				AddIndexToBuffer(target, cur); AddIndexToBuffer(target, next);
 			}
-			else {
-				AddIndexToBuffer(target, tipIdx); AddIndexToBuffer(target, next); AddIndexToBuffer(target, cur);
+			else
+			{
+				AddIndexToBuffer(target, tipIdx);
+				AddIndexToBuffer(target, next);
+				AddIndexToBuffer(target, cur);
 			}
 		}
 	}

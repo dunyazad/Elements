@@ -157,7 +157,7 @@ void PointCloud::SetupEntity(ProcessedInstanceData& data)
 			json j;
 			j["EventType"] = "PointSelected";
 			j["Parameters"]["PointCloudID"] = GetID();
-			j["Parameters"]["PickedIndex"] = pickedIndex;
+			j["Parameters"]["PointIndex"] = pickedIndex;
 			j["Parameters"]["IsCtrlPressed"] = event.IsCtrlPressed();
 
 			Helium.NativeToManaged(j.dump().c_str());
