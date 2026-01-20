@@ -437,7 +437,7 @@ void HeliumCore::InitializeScene()
 
 	{
 		auto entity = CreateEntity("Main");
-		Helium.CreateEventCallback<CustomEvent>(entity, [](Entity e, const CustomEvent& event) {
+		Helium.CreateEventCallback<CustomEvent>(entity, "3D", [](Entity e, const CustomEvent& event) {
 			json j = json::parse(event.jsonString);
 			if (j.contains("PointPicked"))
 			{
@@ -471,7 +471,7 @@ void HeliumCore::InitializeScene()
 			}
 			});
 
-		Helium.CreateEventCallback<KeyEvent>(entity, [](Entity e, const KeyEvent& event) {
+		Helium.CreateEventCallback<KeyEvent>(entity, "3D", [](Entity e, const KeyEvent& event) {
 			if (event.action == 0 && KeyCode::Enter == event.keyCode)
 			{
 				Helium.NotifyMessage("Enter key pressed!");

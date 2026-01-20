@@ -79,7 +79,6 @@ namespace PointCloudProcessing
 					return;
 				}
 
-				// Calculate Centroid
 				Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
 				for (unsigned int idx : neighbors)
 				{
@@ -95,7 +94,6 @@ namespace PointCloudProcessing
 					covariance += d * d.transpose();
 				}
 
-				// PCA for Normal Estimation
 				Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> solver(covariance);
 				Eigen::Vector3f planeNormal = solver.eigenvectors().col(0);
 

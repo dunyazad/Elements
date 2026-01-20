@@ -9,6 +9,6 @@ namespace PointProcessing
 	public:
 		PFOR();
 		virtual ~PFOR() override = default;
-		virtual std::vector<uint8_t> Process(const PointProcessorParameters& parameters) override;
+		virtual void Process(const PointProcessorParameters& parameters) override;
 	};
 }

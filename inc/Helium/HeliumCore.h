@@ -82,7 +82,7 @@ public:
     inline int GetHeight() const { if (backend) return backend->GetHeight(); else return 0; }
 
     inline Registry& GetRegistry() { return registry; }
-    inline Dispatcher& GetDispatcher() { return dispatcher; }
+    //inline Dispatcher& GetDispatcher() { return dispatcher; }
 
     inline IGraphicsBackend* GetGraphicsBackend() { return backend.get(); }
 
@@ -156,21 +156,15 @@ public:
     inline void AddOnRenderCallback(std::function<void()> callback) { onRenderCallbacks.push_back(callback); }
     inline void AddOnShutdownCallback(std::function<void()> callback) { onShutdownCallbacks.push_back(callback); }
 
-    template<typename T>
-    EventCallback<T>& GetEventCallback(Entity entity)
+    template<typename EventType>
+    void CreateEventCallback(Entity entity, const std::string& layerName, std::function<void(Entity, const EventType&)> callback)
     {
-        assert(registry.all_of<EventCallback<T>>(entity) && "Entity does not have the requested event callback.");
-        return registry.get<EventCallback<T>>(entity);
-    }
+        if (!eventSystem) return;
 
-    template<typename T, typename... Args>
-    EventCallback<T>& CreateEventCallback(Entity entity, Args&&... args)
-    {
-        if (registry.all_of<EventCallback<T>>(entity))
-        {
-            return registry.get<EventCallback<T>>(entity);
-        }
-        return registry.emplace<EventCallback<T>>(entity, entity, std::forward<Args>(args)...);
+        eventSystem->Subscribe<EventType>(layerName, [entity, callback, this](const EventType& e) {
+            if (!GetRegistry().valid(entity)) return;
+            callback(entity, e);
+            });
     }
 
     template<typename T>
@@ -185,7 +179,8 @@ public:
     template<typename T>
     void EnqueueEvent(const T& event)
     {
-        dispatcher.enqueue<T>(event);
+        //dispatcher.enqueue<T>(event);
+		eventSystem->Trigger<T>(event);
     }
 
     Shader* CreateShader(const std::string& name, const std::string& vsCode, const std::string& fsCode);
@@ -254,7 +249,7 @@ private:
     Eigen::Vector4f clearColor = Eigen::Vector4f(0.048f, 0.087f, 0.166f, 1.0f);
 
     Registry registry;
-    Dispatcher dispatcher; // Core/Global dispatcher
+    //Dispatcher dispatcher; // Core/Global dispatcher
 
     std::unique_ptr<EventSystem> eventSystem; // Layered Event System
     std::unique_ptr<GUISystem> guiSystem;

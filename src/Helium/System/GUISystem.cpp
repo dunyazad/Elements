@@ -75,7 +75,8 @@ void main() {
 std::vector<uint32_t> DecodeUTF8(const std::string& text)
 {
     std::vector<uint32_t> codepoints;
-    for (size_t i = 0; i < text.length();) {
+    for (size_t i = 0; i < text.length();)
+    {
         unsigned char c = text[i];
         if ((c & 0x80) == 0) { codepoints.push_back(c); i += 1; }
         else if ((c & 0xE0) == 0xC0) { codepoints.push_back(((c & 0x1F) << 6) | (text[i + 1] & 0x3F)); i += 2; }
@@ -114,7 +115,8 @@ void GUISystem::Update(float dt)
         if (ttf_buffer.empty()) return;
 
         stbtt_fontinfo fontInfo;
-        if (stbtt_InitFont(&fontInfo, ttf_buffer.data(), stbtt_GetFontOffsetForIndex(ttf_buffer.data(), 0))) {
+        if (stbtt_InitFont(&fontInfo, ttf_buffer.data(), stbtt_GetFontOffsetForIndex(ttf_buffer.data(), 0)))
+        {
             int ascent, descent, lineGap;
             stbtt_GetFontVMetrics(&fontInfo, &ascent, &descent, &lineGap);
             float scale = stbtt_ScaleForPixelHeight(&fontInfo, BASE_FONT_SIZE);
@@ -175,16 +177,19 @@ void GUISystem::Update(float dt)
     }
 
     auto& registry = Helium.GetRegistry();
+    
     for (auto& entity : registry.view<GUIRectangle>())
     {
         auto& r = registry.get<GUIRectangle>(entity);
         Submit<GUIRectangle>(r.zIndex, GUICommandType::Rectangle, r);
     }
+    
     for (auto& entity : registry.view<GUICircle>())
     {
         auto& c = registry.get<GUICircle>(entity);
         Submit<GUICircle>(c.zIndex, GUICommandType::Circle, c);
     }
+
     for (auto& entity : registry.view<GUIText>())
     {
         auto& t = registry.get<GUIText>(entity);
@@ -195,15 +200,18 @@ void GUISystem::Update(float dt)
             float fontScale = t.fontSize / BASE_FONT_SIZE;
             auto codepoints = DecodeUTF8(t.text);
 
-            for (uint32_t cp : codepoints) {
+            for (uint32_t cp : codepoints)
+            {
                 int idx = -1;
                 if (cp >= 32 && cp < 128) idx = cp - 32;
                 else if (cp >= 0xAC00 && cp <= 0xD7A3) idx = 96 + (cp - 0xAC00);
 
-                if (idx != -1) {
+                if (idx != -1)
+                {
                     widthCalc += this->charData[idx].xadvance * fontScale;
                 }
             }
+
             t.cachedWidth = widthCalc;
             t._lastText = t.text;
             t._lastFontSize = t.fontSize;
@@ -220,7 +228,8 @@ void GUISystem::Render()
 
         for (const auto& cmd : renderCommandQueue)
         {
-            switch (cmd.type) {
+            switch (cmd.type)
+            {
             case GUICommandType::Rectangle:
                 if (auto rect = std::any_cast<GUIRectangle>(&cmd.component))
                     RenderRectangle(rect->x, rect->y, rect->width, rect->height, rect->color);
@@ -304,7 +313,8 @@ void GUISystem::RenderText(const std::string& text, float x, float y, float text
     float scrWidth = (float)Helium.GetWidth();
     float scrHeight = (float)Helium.GetHeight();
     Eigen::Matrix4f projection = Eigen::Matrix4f::Identity();
-    if (scrWidth > 0 && scrHeight > 0) {
+    if (scrWidth > 0 && scrHeight > 0)
+    {
         projection(0, 0) = 2.0f / scrWidth; projection(1, 1) = -2.0f / scrHeight; projection(0, 3) = -1.0f; projection(1, 3) = 1.0f;
     }
 
@@ -325,10 +335,17 @@ void GUISystem::RenderText(const std::string& text, float x, float y, float text
     float currentAscent = this->fontAscent * fontScale;
     float currentDescent = this->fontDescent * fontScale;
 
-    switch (vAlign) {
-    case TextVAlign::Top: startY += currentAscent; break;
-    case TextVAlign::Middle: startY += (currentAscent + currentDescent) * 0.5f; break;
-    case TextVAlign::Bottom: startY += currentDescent; break;
+    switch (vAlign)
+    {
+    case TextVAlign::Top:
+        startY += currentAscent;
+        break;
+    case TextVAlign::Middle:
+        startY += (currentAscent + currentDescent) * 0.5f;
+        break;
+    case TextVAlign::Bottom:
+        startY += currentDescent;
+        break;
     default: break;
     }
 
@@ -336,7 +353,8 @@ void GUISystem::RenderText(const std::string& text, float x, float y, float text
     float currentY = startY;
     const int TEX_W = 4096, TEX_H = 4096;
 
-    for (uint32_t cp : codepoints) {
+    for (uint32_t cp : codepoints)
+    {
         int idx = -1;
         if (cp >= 32 && cp < 128) idx = cp - 32;
         else if (cp >= 0xAC00 && cp <= 0xD7A3) idx = 96 + (cp - 0xAC00);
@@ -357,5 +375,6 @@ void GUISystem::RenderText(const std::string& text, float x, float y, float text
 
         currentX += (this->charData[idx].xadvance * fontScale);
     }
+
     glBindVertexArray(0); glBindTexture(GL_TEXTURE_2D, 0); glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
 }

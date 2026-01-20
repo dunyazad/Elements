@@ -56,7 +56,7 @@ namespace PointProcessing
 
 		virtual ~PointProcessor() = default;
 
-		virtual std::vector<uint8_t> Process(const PointProcessorParameters& parameters) = 0;
+		virtual void Process(const PointProcessorParameters& parameters) = 0;
 
 		inline PointProcessorType GetType() const { return type; }
 

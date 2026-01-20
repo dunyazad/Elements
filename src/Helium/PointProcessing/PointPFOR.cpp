@@ -6,6 +6,7 @@
 #include <cmath>
 #include <atomic>
 #include <limits>
+#include <numeric>
 
 #include <Helium/HeliumCore.h>
 #include <Helium/PointCloud.h>
@@ -21,30 +22,35 @@ namespace PointProcessing
 	{
 	}
 
-	std::vector<uint8_t> PFOR::Process(const PointProcessorParameters& parameters)
+	void PFOR::Process(const PointProcessorParameters& parameters)
 	{
 		int pointCloudID = -1;
+		int pointIndex = -1;
 		int kNeighbors = 30;
 		float distanceThreshold = 0.085f;
 		bool deletePoints = false;
 		int visualizationMode = 0;
 
 		pointCloudID = parameters.GetParameter<int>("PointCloudID", pointCloudID);
+		pointIndex = parameters.GetParameter<int>("PointIndex", pointIndex);
 		kNeighbors = parameters.GetParameter<int>("KNeighbors", kNeighbors);
 		distanceThreshold = parameters.GetParameter<float>("DistanceThreshold", distanceThreshold);
 		deletePoints = parameters.GetParameter<bool>("DeletePoints", deletePoints);
 		visualizationMode = parameters.GetParameter<int>("VisualizationMode", visualizationMode);
 
-		InfoLog("", "Starting PFOR Filter (k=%d, distThresh=%.4f, delete=%s)",
-			kNeighbors, distanceThreshold, deletePoints ? "true" : "false");
-
-		std::vector<uint8_t> outlierMarking;
+		InfoLog("", "Point Index for PFOR: %d", pointIndex);
 
 		auto currentPointCloud = Helium.GetPointCloud(pointCloudID);
 		if (nullptr == currentPointCloud)
 		{
 			ErrorLog("", "PointCloud with ID %d not found.", pointCloudID);
-			return outlierMarking;
+			return;
+		}
+
+		if (-1 == pointIndex || pointIndex < 0 || pointIndex >= (int)currentPointCloud->Size())
+		{
+			ErrorLog("", "Invalid Point Index %d for PointCloud ID %d.", pointIndex, pointCloudID);
+			return;
 		}
 
 		auto sparseGrid = Helium.GetSparseGrid(pointCloudID);
@@ -57,62 +63,62 @@ namespace PointProcessing
 		TS(PlaneFit_Outlier_Removal);
 
 		size_t numberOfPoints = currentPointCloud->Size();
-		if (numberOfPoints == 0) return outlierMarking;
-
-		outlierMarking.resize(numberOfPoints, 0);
+		if (numberOfPoints == 0)
+		{
+			ErrorLog("", "[PFOR] PointCloud is empty.");
+			return;
+		}
 
 		const auto& positions = currentPointCloud->GetPositions();
-		std::vector<float> distToPlane(numberOfPoints, 0.0f);
-		std::vector<int> indices(numberOfPoints);
-		std::iota(indices.begin(), indices.end(), 0);
+		const auto& colors = currentPointCloud->GetColors();
 
-		std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i)
-			{
-				const Eigen::Vector3f& p = positions[i];
-				std::vector<unsigned int> neighbors;
-				std::vector<float> distances;
+		std::vector<uint8_t> outlierMarking(numberOfPoints, 0);
+		size_t outlierCount = 0;
 
-				sparseGrid->GetKNearestNeighbors(positions, p, kNeighbors, neighbors, distances);
+		const Eigen::Vector3f& p = positions[pointIndex];
+		std::vector<unsigned int> neighbors;
+		std::vector<float> distances;
 
-				if (neighbors.size() < 3)
-				{
-					distToPlane[i] = FLT_MAX;
-					return;
-				}
+		sparseGrid->GetKNearestNeighbors(positions, p, kNeighbors, neighbors, distances);
 
-				// Calculate Centroid
-				Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
-				for (unsigned int idx : neighbors)
-				{
-					centroid += positions[idx];
-				}
-				centroid /= (float)neighbors.size();
+		std::vector<float> distToPlane(neighbors.size(), FLT_MAX);
 
-				// Calculate Covariance Matrix
-				Eigen::Matrix3f covariance = Eigen::Matrix3f::Zero();
-				for (unsigned int idx : neighbors)
-				{
-					Eigen::Vector3f d = positions[idx] - centroid;
-					covariance += d * d.transpose();
-				}
-
-				// PCA for Normal Estimation
-				Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> solver(covariance);
-				Eigen::Vector3f planeNormal = solver.eigenvectors().col(0);
-
-				// Calculate Distance to Plane
-				float dist = std::abs(planeNormal.dot(p - centroid));
-				distToPlane[i] = dist;
-			});
-
-		int outlierCount = 0;
-		for (size_t i = 0; i < numberOfPoints; ++i)
+		if (neighbors.size() < 3)
 		{
-			if (distToPlane[i] > distanceThreshold)
-			{
-				outlierMarking[i] = 1;
-				outlierCount++;
-			}
+			WarningLog("", "[PFOR] Not enough neighbors (%zu) for Point Index %d", neighbors.size(), pointIndex);
+			return;
+		}
+
+		Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
+		for (unsigned int idx : neighbors)
+		{
+			centroid += positions[idx];
+		}
+		centroid /= (float)neighbors.size();
+
+		Eigen::Matrix3f covariance = Eigen::Matrix3f::Zero();
+		for (unsigned int idx : neighbors)
+		{
+			Eigen::Vector3f d = positions[idx] - centroid;
+			covariance += d * d.transpose();
+		}
+
+		Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> solver(covariance);
+		Eigen::Vector3f planeNormal = solver.eigenvectors().col(0);
+
+		for (size_t i = 0; i < neighbors.size(); i++)
+		{
+			auto& idx = neighbors[i];
+			const Eigen::Vector3f& neighborPos = positions[idx];
+			float dist = std::abs(planeNormal.dot(neighborPos - centroid));
+			distToPlane[i] = dist;
+		}
+
+		float centerPointDist = std::abs(planeNormal.dot(p - centroid));
+		if (centerPointDist > distanceThreshold)
+		{
+			outlierMarking[pointIndex] = 1;
+			outlierCount = 1;
 		}
 
 		TE(PlaneFit_Outlier_Removal);
@@ -122,47 +128,58 @@ namespace PointProcessing
 
 			if (visualizationMode != (int)PointVisualizationMode::None)
 			{
-				const auto& positions = currentPointCloud->GetPositions();
-				const auto& colors = currentPointCloud->GetColors();
 				float visMaxDist = distanceThreshold;
 
-				for (size_t i = 0; i < numberOfPoints; ++i)
+				// 1. 선택된 포인트(Target) 그리기
 				{
-					const bool isOutlier = (outlierMarking[i] == 1);
+					bool isTargetOutlier = (outlierMarking[pointIndex] == 1);
+					Eigen::Vector4f targetColor;
+					float targetRadius = 0.08f;
 
-					if (visualizationMode == (int)PointVisualizationMode::OutlierFiltered && isOutlier)
+					if (isTargetOutlier)
 					{
-						continue;
-					}
-
-					Eigen::Vector4f colorRGBA = colors[i];
-					float radius;
-
-					if (isOutlier)
-					{
-						colorRGBA = Color::red();
-						radius = 0.06f;
+						targetColor = Color::red();
 					}
 					else
 					{
-						radius = 0.05f;
-
-						if (visualizationMode == (int)PointVisualizationMode::Binary)
-						{
-							colorRGBA = Color::green(1.0f);
-						}
-						else if (visualizationMode == (int)PointVisualizationMode::Gradient)
-						{
-							colorRGBA = Color::GetHeatMapColor(distToPlane[i], 0.0f, visMaxDist, 1.0f);
-						}
-						else
-						{
-							colorRGBA = Color::white();
-						}
+						targetColor = Color::cyan();
 					}
 
-					VD::AddSphere("PFOR", positions[i], colorRGBA.head<3>(), radius, colorRGBA);
+					VD::AddSphere("PFOR", positions[pointIndex], targetColor.head<3>(), targetRadius, targetColor);
 				}
+
+				// 2. 이웃 포인트들(Neighbors) 그리기
+				for (size_t i = 0; i < neighbors.size(); i++)
+				{
+					unsigned int idx = neighbors[i];
+
+					// 타겟 포인트와 겹칠 경우 이웃 루프에서는 스킵 (위에서 강조해서 그렸으므로)
+					if ((int)idx == pointIndex)
+						continue;
+
+					Eigen::Vector4f neighborColor;
+					float neighborRadius = 0.05f;
+
+					if (visualizationMode == (int)PointVisualizationMode::Binary)
+					{
+						neighborColor = Color::green(1.0f);
+					}
+					else if (visualizationMode == (int)PointVisualizationMode::Gradient)
+					{
+						float d = distToPlane[i];
+						neighborColor = Color::GetHeatMapColor(d, 0.0f, visMaxDist, 1.0f);
+					}
+					else
+					{
+						neighborColor = colors[idx];
+					}
+
+					VD::AddSphere("PFOR", positions[idx], neighborColor.head<3>(), neighborRadius, neighborColor);
+				}
+
+				// 평면과 법선 벡터 시각화
+				VD::AddDisk("PFOR", centroid, planeNormal, distanceThreshold * 5.0f, Color::yellow(0.3f));
+				VD::AddLine("PFOR", centroid, centroid + planeNormal * 0.2f, Color::yellow());
 			}
 		}
 
@@ -196,7 +213,7 @@ namespace PointProcessing
 
 				Helium.BuildSpatialPartitionings(pointCloudID);
 
-				InfoLog("", "[PFOR] Removed %d outliers. Remaining: %zu", outlierCount, newSize);
+				InfoLog("", "[PFOR] Removed %zu outliers (Target Point). Remaining: %zu", outlierCount, newSize);
 			}
 			else
 			{
@@ -205,9 +222,7 @@ namespace PointProcessing
 		}
 		else
 		{
-			InfoLog("", "[PFOR] Analysis Done. Outliers Marked: %d", outlierCount);
+			InfoLog("", "[PFOR] Analysis Done for Point %d. Is Outlier: %s", pointIndex, (outlierCount > 0 ? "Yes" : "No"));
 		}
-
-		return outlierMarking;
 	}
 }

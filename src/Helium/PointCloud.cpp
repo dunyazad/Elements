@@ -106,7 +106,7 @@ void PointCloud::SetupEntity(ProcessedInstanceData& data)
 		entity = Helium.CreateEntity(entityName);
 	}
 
-	Helium.CreateEventCallback<KeyEvent>(entity, [this](Entity entity, const KeyEvent& event) {
+	Helium.CreateEventCallback<KeyEvent>(entity, "3D", [this](Entity entity, const KeyEvent& event) {
 		auto renderable = Helium.GetComponent<Renderable>(entity);
 		if (nullptr == renderable) return;
 		if (false == renderable->IsVisible()) return;
@@ -120,7 +120,7 @@ void PointCloud::SetupEntity(ProcessedInstanceData& data)
 		}
 		});
 
-	Helium.CreateEventCallback<MouseButtonEvent>(entity, [this](Entity entity, const MouseButtonEvent& event) {
+	Helium.CreateEventCallback<MouseButtonEvent>(entity, "3D", [this](Entity entity, const MouseButtonEvent& event) {
 		auto renderable = Helium.GetComponent<Renderable>(entity);
 		if (nullptr == renderable) return;
 		//if (false == renderable->IsVisible()) return;
