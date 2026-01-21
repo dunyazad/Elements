@@ -8,9 +8,9 @@
 #include <cuda_runtime.h>
 
 #ifdef COPPER_EXPORTS
-#define COPPER_API extern "C" __declspec(dllexport)
+#define COPPER_API __declspec(dllexport)
 #else
-#define COPPER_API extern "C" __declspec(dllimport)
+#define COPPER_API __declspec(dllimport)
 #endif
 
 #ifndef __CUSTOM_DEFINITIONS_FOR_CUDA__

@@ -1,7 +1,10 @@
 ﻿#include "framework.h"
 #include "Hydrogen.h"
+
 #include <atomic>
 #include <thread>
+
+#include <Helium/Serialization.hpp>
 
 #include <ShellScalingApi.h>
 #pragma comment(lib, "Shcore.lib")
@@ -45,7 +48,51 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     HWND hWnd = FindWindowW(szWindowClass, szTitle);
 
+    AllocConsole();
+	freopen("CONOUT$", "w", stdout);
+
 	Cu_Initialize();
+
+    PLYFormat ply;
+	ply.Deserialize("D:\\Temp\\PLY\\Maxilla.ply");
+
+    TS(MakePointCloud);
+
+	CuPointCloud pointCloud;
+	pointCloud.FromHostPointers(
+		(float3*)ply.GetPoints().data(),
+		(float3*)ply.GetNormals().data(),
+		(float4*)ply.GetColors().data(),
+		ply.GetPoints().size()
+	);
+
+    TE(MakePointCloud);
+
+    TS(Build);
+
+	CuSparseDataBlock sparseDataBlock;
+	sparseDataBlock.Build(&pointCloud);
+
+    TE(Build);
+
+    TS(SOR);
+	sparseDataBlock.ApplySOR(&pointCloud, 30, 0.07f);
+    TE(SOR);
+
+	std::vector<float3> filteredPoints;
+	std::vector<float3> filteredNormals;
+	std::vector<float4> filteredColors;
+	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
+
+	PLYFormat outPly;
+    for (size_t i = 0; i < filteredPoints.size(); i++)
+    {
+        outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
+        outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
+		outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
+    }
+	outPly.Serialize("D:\\Temp\\PLY\\Maxilla_SOR.ply");
+
 
     g_renderingThread = std::thread([hWnd]() {
         He_Initialize(hWnd, 0);

@@ -2,6 +2,9 @@
 
 #include <Copper/CopperCommon.h>
 
-COPPER_API bool Cu_Initialize();
+extern "C"
+{
+	COPPER_API bool Cu_Initialize();
 
-COPPER_API void Cu_Shutdown();
+	COPPER_API void Cu_Shutdown();
+}

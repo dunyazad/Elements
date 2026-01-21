@@ -3,6 +3,8 @@
 extern "C"
 {
 	bool Cu_Initialize() {
+		cudaFree(0);
+
 		ForceGPUPerformance();
 		return true;
 	}
