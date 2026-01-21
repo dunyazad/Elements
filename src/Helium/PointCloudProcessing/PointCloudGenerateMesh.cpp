@@ -127,8 +127,8 @@ namespace PointCloudProcessing
 								if ((dists[idx1] < isoLevel) != (dists[idx2] < isoLevel))
 								{
 									float t = (isoLevel - dists[idx1]) / (dists[idx2] - dists[idx1]);
-									Eigen::Vector3f p1 = sparseDataBlock->gridOrigin + Eigen::Vector3f(gx + corners[idx1].x(), gy + corners[idx1].y(), gz + corners[idx1].z()) * sparseDataBlock->voxelSize;
-									Eigen::Vector3f p2 = sparseDataBlock->gridOrigin + Eigen::Vector3f(gx + corners[idx2].x(), gy + corners[idx2].y(), gz + corners[idx2].z()) * sparseDataBlock->voxelSize;
+									Eigen::Vector3f p1 = sparseDataBlock->gridOrigin + Eigen::Vector3f((float)gx + corners[idx1].x(), (float)gy + corners[idx1].y(), (float)gz + corners[idx1].z()) * sparseDataBlock->voxelSize;
+									Eigen::Vector3f p2 = sparseDataBlock->gridOrigin + Eigen::Vector3f((float)gx + corners[idx2].x(), (float)gy + corners[idx2].y(), (float)gz + corners[idx2].z()) * sparseDataBlock->voxelSize;
 
 									avgPos += (p1 * (1.0f - t) + p2 * t);
 									avgColor += (colors[idx1] * (1.0f - t) + colors[idx2] * t);
