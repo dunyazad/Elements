@@ -45,6 +45,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     HWND hWnd = FindWindowW(szWindowClass, szTitle);
 
+	Cu_Initialize();
+
     g_renderingThread = std::thread([hWnd]() {
         He_Initialize(hWnd, 0);
 
@@ -109,6 +111,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     {
         g_renderingThread.join();
     }
+
+	Cu_Shutdown();
 
     return (int)msg.wParam;
 }

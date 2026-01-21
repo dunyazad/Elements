@@ -116,14 +116,14 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\cuCollections\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Helium.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Helium.lib;Copper.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -134,7 +134,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\cuCollections\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
@@ -142,7 +142,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Helium.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Helium.lib;Copper.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

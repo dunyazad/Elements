@@ -8,4 +8,6 @@
 
 #include <Helium/Components/GUI/GUIComponent.h>
 
+#include <Copper/Copper.h>
+
 #include "resource.h"

@@ -13,9 +13,12 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Hydrogen", "src\Hydrogen\Hydrogen.vcxproj", "{831DE5C3-33CE-466B-AECC-BA27CDF1FAA7}"
 	ProjectSection(ProjectDependencies) = postProject
 		{4EA67EA7-5C92-490C-B721-16CF1FBDF65A} = {4EA67EA7-5C92-490C-B721-16CF1FBDF65A}
+		{851EF454-63B8-C53D-FEF7-928F479480B5} = {851EF454-63B8-C53D-FEF7-928F479480B5}
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Neutron", "src\Neutron\Neutron.vcxproj", "{E3E8808B-FB50-44E4-8CE6-EE1DC2E067D2}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Copper", "src\Copper\Copper.vcxproj", "{851EF454-63B8-C53D-FEF7-928F479480B5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -57,6 +60,14 @@ Global
 		{E3E8808B-FB50-44E4-8CE6-EE1DC2E067D2}.Release|Any CPU.Build.0 = Release|x64
 		{E3E8808B-FB50-44E4-8CE6-EE1DC2E067D2}.Release|x64.ActiveCfg = Release|x64
 		{E3E8808B-FB50-44E4-8CE6-EE1DC2E067D2}.Release|x64.Build.0 = Release|x64
+		{851EF454-63B8-C53D-FEF7-928F479480B5}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{851EF454-63B8-C53D-FEF7-928F479480B5}.Debug|Any CPU.Build.0 = Debug|x64
+		{851EF454-63B8-C53D-FEF7-928F479480B5}.Debug|x64.ActiveCfg = Debug|x64
+		{851EF454-63B8-C53D-FEF7-928F479480B5}.Debug|x64.Build.0 = Debug|x64
+		{851EF454-63B8-C53D-FEF7-928F479480B5}.Release|Any CPU.ActiveCfg = Release|x64
+		{851EF454-63B8-C53D-FEF7-928F479480B5}.Release|Any CPU.Build.0 = Release|x64
+		{851EF454-63B8-C53D-FEF7-928F479480B5}.Release|x64.ActiveCfg = Release|x64
+		{851EF454-63B8-C53D-FEF7-928F479480B5}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -16,3 +16,9 @@
 [submodule "External/stb"]
 	path = External/stb
 	url = https://github.com/nothings/stb.git
+[submodule "External/cuCollections"]
+	path = External/cuCollections
+	url = https://github.com/NVIDIA/cuCollections.git
+[submodule "External/cccl"]
+	path = External/cccl
+	url = https://github.com/NVIDIA/cccl.git
