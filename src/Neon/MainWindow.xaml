@@ -177,6 +177,8 @@
                         <MenuItem Header="Node Editor" Click="Menu_PointCloud_Node_Editor_Click"/>
                         <Separator/>
                         <MenuItem Header="Generate Mesh" Click="Menu_PointCloud_Generate_Mesh_Click"/>
+                        <Separator/>
+                        <MenuItem Header="KDE" Click="Menu_PointCloud_KDE_Click"/>
                     </MenuItem>
 
                     <MenuItem Header="VD">

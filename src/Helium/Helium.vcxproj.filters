@@ -231,6 +231,9 @@
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudGenerateMesh.h">
       <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\PointCloudKDE.h">
+      <Filter>헤더 파일\Helium\PointCloudProcessing</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -357,6 +360,9 @@
       <Filter>소스 파일\PointProcessing</Filter>
     </ClCompile>
     <ClCompile Include="PointCloudProcessing\PointCloudGenerateMesh.cpp">
+      <Filter>소스 파일\PointCloudProcessing</Filter>
+    </ClCompile>
+    <ClCompile Include="PointCloudProcessing\PointCloudKDE.cpp">
       <Filter>소스 파일\PointCloudProcessing</Filter>
     </ClCompile>
   </ItemGroup>

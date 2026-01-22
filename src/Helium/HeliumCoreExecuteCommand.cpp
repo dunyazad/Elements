@@ -433,6 +433,18 @@ std::vector<uint8_t> HeliumCore::PerformGenerateMesh(int pointCloudID)
 	return processor.Process(parameters);
 }
 
+std::vector<uint8_t> HeliumCore::PerformKDE(int pointCloudID, float bandwidth, float searchRadius, PointProcessing::PointVisualizationMode visualizationMode)
+{
+	PointCloudProcessing::PointCloudProcessorParameters parameters;
+	parameters.SetParameter<int>("PointCloudID", pointCloudID);
+	parameters.SetParameter<float>("Bandwidth", bandwidth);
+	parameters.SetParameter<float>("SearchRadius", searchRadius);
+	parameters.SetParameter<int>("VisualizationMode", (int)visualizationMode);
+
+	PointCloudProcessing::KDE processor;
+	return processor.Process(parameters);
+}
+
 void HeliumCore::PerformPointPlaneFitting(int pointCloudID, int pointIndex, int kNeighbors, float distanceThreshold, PointProcessing::PointVisualizationMode visualizationMode)
 {
 	PointProcessing::PointProcessorParameters parameters;
@@ -839,6 +851,26 @@ void HeliumCore::OnManagedToNative(const char* jsonString)
 
 								std::string message = "Generating Mesh from PointCloud ID: " + std::to_string(pointCloudID) + "\n";
 								NotifyMessage(message, 5000);
+							}
+						}
+					}
+					else if(cmd == "PerformKDE")
+					{
+						if (j.contains("PointCloudID"))
+						{
+							int pointCloudID = j["PointCloudID"];
+							auto pointCloud = GetPointCloud(pointCloudID);
+							if (nullptr != pointCloud)
+							{
+								float bandwidth = j.value("Bandwidth", 0.1f);
+								float searchRadius = j.value("SearchRadius", 0.5f);
+								int visualizationMode = j.value("VisualizationMode", 0);
+
+								auto start = std::chrono::high_resolution_clock::now();
+								PerformKDE(pointCloudID, bandwidth, searchRadius, (PointProcessing::PointVisualizationMode)visualizationMode);
+								auto end = std::chrono::high_resolution_clock::now();
+								std::chrono::duration<double> elapsed = end - start;
+								InfoLog("", "KDE completed in %.3f seconds.\n", elapsed.count());
 							}
 						}
 					}

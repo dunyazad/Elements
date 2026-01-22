@@ -809,6 +809,28 @@ namespace Neon
             }
         }
 
+        private void Menu_PointCloud_KDE_Click(object sender, RoutedEventArgs e)
+        {
+            if (selectedSceneNode != null)
+            {
+                var commandData = new
+                {
+                    Command = "PerformKDE",
+                    PointCloudID = selectedSceneNode.ID,
+                    Bandwidth = 0.1f,
+                    SearchRadius = 0.5f,
+                    DeletePoints = false,
+                    VisualizationMode = PointCloudVisualizationMode.Gradient
+                };
+                string command = JsonSerializer.Serialize(commandData, _jsonOptions);
+                HeliumNative.He_ManagedToNative(command);
+            }
+            else
+            {
+                ShowNotification("No Point Cloud Selected.");
+            }
+        }
+
         private void Menu_VD_ClearAll_Click(object sender, RoutedEventArgs e)
         {
             var commandData = new { Command = "ClearAllVisualDebugging" };

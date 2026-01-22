@@ -7,3 +7,5 @@
 #include <Helium/PointCloudProcessing/PointCloudNormalDeviation.h>
 
 #include <Helium/PointCloudProcessing/PointCloudGenerateMesh.h>
+
+#include <Helium/PointCloudProcessing/PointCloudKDE.h>

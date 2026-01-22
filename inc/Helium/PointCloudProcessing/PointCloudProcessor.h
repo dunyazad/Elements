@@ -52,7 +52,8 @@ namespace PointCloudProcessing
 			CurvatureAnalysis,
 			NormalDeviation,
 			PFOR,
-			GenerateMesh
+			GenerateMesh,
+			KDE
 		};
 
 		virtual ~PointCloudProcessor() = default;

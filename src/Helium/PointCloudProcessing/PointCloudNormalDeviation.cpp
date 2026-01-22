@@ -62,11 +62,14 @@ namespace PointCloudProcessing
 				const Eigen::Vector3f& n = normals[i];
 
 				std::vector<unsigned int> neighbors;
+				std::vector<float> distances;
+
 				sparseGrid->GetPointsWithinRadius(
 					currentPointCloud->GetPositions(),
 					p,
 					radius,
-					neighbors
+					neighbors,
+					distances
 				);
 
 				if (neighbors.empty())

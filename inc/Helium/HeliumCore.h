@@ -210,6 +210,7 @@ public:
     std::vector<uint8_t> PerformNormalDeviationAnalysis(int pointCloudID, float radius, float deviationThreshold, PointCloudProcessing::PointCloudVisualizationMode visualizationMode);
     std::vector<uint8_t> PerformPFOR(int pointCloudID, int kNeighbors, float distanceThreshold, PointCloudProcessing::PointCloudVisualizationMode visualizationMode);
     std::vector<uint8_t> PerformGenerateMesh(int pointCloudID);
+    std::vector<uint8_t> PerformKDE(int pointCloudID, float bandwidth, float searchRadius, PointProcessing::PointVisualizationMode visualizationMode);
 
 	void PerformPointPlaneFitting(int pointCloudID, int pointIndex, int kNeighbors, float distanceThreshold, PointProcessing::PointVisualizationMode visualizationMode);
 

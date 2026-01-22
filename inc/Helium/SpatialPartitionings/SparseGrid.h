@@ -36,7 +36,8 @@ public:
 		const std::vector<Eigen::Vector3f>& points,
 		const Eigen::Vector3f& queryPos,
 		float radius,
-		std::vector<unsigned int>& outIndices) const;
+		std::vector<unsigned int>& outIndices,
+		std::vector<float>& outDistances) const;
 
 	void Visualize();
 };

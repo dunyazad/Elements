@@ -246,9 +246,11 @@ void SparseGrid::GetKNearestNeighbors(const std::vector<Eigen::Vector3f>& points
 	}
 }
 
-void SparseGrid::GetPointsWithinRadius(const std::vector<Eigen::Vector3f>& points, const Eigen::Vector3f& queryPos, float radius, std::vector<unsigned int>& outIndices) const
+void SparseGrid::GetPointsWithinRadius(const std::vector<Eigen::Vector3f>& points, const Eigen::Vector3f& queryPos, float radius, std::vector<unsigned int>& outIndices, std::vector<float>& outDistances) const
 {
 	outIndices.clear();
+	outDistances.clear();
+
 	if (points.empty() || radius <= 0.0f) return;
 
 	float radiusSq = radius * radius;
@@ -279,6 +281,7 @@ void SparseGrid::GetPointsWithinRadius(const std::vector<Eigen::Vector3f>& point
 						if (sqDist <= radiusSq)
 						{
 							outIndices.push_back((unsigned int)currIdx);
+							outDistances.push_back(std::sqrt(sqDist));
 						}
 
 						currIdx = nextPoint[currIdx];

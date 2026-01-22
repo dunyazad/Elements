@@ -398,8 +398,8 @@ void VisualDebugging::AddWiredBox(const std::string& tag, const Eigen::Vector3f&
 void VisualDebugging::AddSphere(const std::string& tag, const Eigen::Vector3f& center, const Eigen::Vector3f& normal, float radius, const Eigen::Vector4f& color)
 {
     // 기본 품질(slices=16, stacks=16) 사용
-    unsigned int slices = 16;
-    unsigned int stacks = 16;
+    unsigned int slices = 6;
+    unsigned int stacks = 6;
 
     // Scale 계산: Unit Sphere(0.5) * 2 * radius = radius
     Eigen::Vector3f scale(radius * 2.0f, radius * 2.0f, radius * 2.0f);
