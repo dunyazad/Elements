@@ -1,0 +1,69 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CudaCompile Include="CuPointCloud.cu" />
+    <CudaCompile Include="CuSparseDataBlock.cu" />
+    <CudaCompile Include="kernel.cu" />
+    <CudaCompile Include="OperatorCollection\CuOperatorCollection.cu">
+      <Filter>OperatorCollection</Filter>
+    </CudaCompile>
+    <CudaCompile Include="OperatorCollection\CuOperatorPointCloudKDE.cu">
+      <Filter>OperatorCollection</Filter>
+    </CudaCompile>
+    <CudaCompile Include="OperatorCollection\CuOperatorPointCloudLDE.cu">
+      <Filter>OperatorCollection</Filter>
+    </CudaCompile>
+    <CudaCompile Include="OperatorCollection\CuOperatorPointCloudPFOR.cu">
+      <Filter>OperatorCollection</Filter>
+    </CudaCompile>
+    <CudaCompile Include="OperatorCollection\CuOperatorPointCloudROR.cu">
+      <Filter>OperatorCollection</Filter>
+    </CudaCompile>
+    <CudaCompile Include="OperatorCollection\CuOperatorPointCloudSOR.cu">
+      <Filter>OperatorCollection</Filter>
+    </CudaCompile>
+    <CudaCompile Include="OperatorCollection\CuOperatorCommon.cu">
+      <Filter>OperatorCollection</Filter>
+    </CudaCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Copper.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\inc\Copper\Copper.h" />
+    <ClInclude Include="..\..\inc\Copper\CopperCommon.h" />
+    <ClInclude Include="..\..\inc\Copper\CopperCore.h" />
+    <ClInclude Include="..\..\inc\Copper\CuPointCloud.h" />
+    <ClInclude Include="..\..\inc\Copper\CuSparseDataBlock.h" />
+    <ClInclude Include="..\..\inc\Copper\CuTransferFunction.h" />
+    <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCollection.h">
+      <Filter>OperatorCollection</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorPointCloudKDE.h">
+      <Filter>OperatorCollection</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorPointCloudLDE.h">
+      <Filter>OperatorCollection</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorPointCloudPFOR.h">
+      <Filter>OperatorCollection</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorPointCloudROR.h">
+      <Filter>OperatorCollection</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorPointCloudSOR.h">
+      <Filter>OperatorCollection</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCommon.h">
+      <Filter>OperatorCollection</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCommonDevice.h">
+      <Filter>OperatorCollection</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="OperatorCollection">
+      <UniqueIdentifier>{67cc3f06-504f-4e06-9c5e-fd27151590d0}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

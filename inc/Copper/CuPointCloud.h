@@ -2,6 +2,9 @@
 
 #include <Copper/CopperCommon.h>
 
+#include <map>
+#include <string>
+
 #include <cuda_runtime.h>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
@@ -12,6 +15,8 @@ struct COPPER_API CuPointCloud
     thrust::device_vector<float3> normals;
     thrust::device_vector<uchar3> colors;
     thrust::device_vector<bool> isAlive;
+
+	std::map<std::string, thrust::device_vector<float>> customFloatAttributes;
 
     CuPointCloud();
     CuPointCloud(size_t n);

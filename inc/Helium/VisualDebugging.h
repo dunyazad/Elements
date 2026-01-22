@@ -19,7 +19,7 @@ using Entity = entt::entity;
 class DebuggingRenderable;
 class TextBlock;
 
-class VisualDebugging
+class HELIUM_API VisualDebugging
 {
 public:
 	static VisualDebugging& Instance()

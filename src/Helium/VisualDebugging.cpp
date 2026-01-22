@@ -3,6 +3,8 @@
 #include <Helium/GeometryBuilder.h>
 #include <Helium/HeliumCore.h>
 
+#include <entt/entt.hpp>
+
 // ============================================================================
 // Static Member Initialization
 // ============================================================================

@@ -22,15 +22,15 @@ struct COPPER_API CuSparseDataBlock
 
     void Build(CuPointCloud* cloud);
 
-    void ApplySOR(CuPointCloud* cloud, int k = 30, float stdDevMult = 1.0f);
+    thrust::device_vector<float> ApplySOR(CuPointCloud* cloud, int k = 30, float stdDevMult = 1.0f);
 
-	void ApplyPFOR(CuPointCloud* cloud, int k = 30, float distanceThreshold = 0.085f);
+    thrust::device_vector<float> ApplyPFOR(CuPointCloud* cloud, int k = 30, float distanceThreshold = 0.085f);
 
-    void ApplyNND(CuPointCloud* cloud, int k = 30);
+    thrust::device_vector<float> ApplyNND(CuPointCloud* cloud, int k = 30);
 
-    void ApplyLDE(CuPointCloud* cloud, float radius);
+    thrust::device_vector<float> ApplyLDE(CuPointCloud* cloud, float radius);
 
-    void ApplyKDE(CuPointCloud* cloud, float bandwidth);
+    //thrust::device_vector<float> ApplyKDE(CuPointCloud* cloud, float bandwidth);
 
 private:
     float computeAutoCellSize(const thrust::device_vector<float3>& points, float multiplier);
