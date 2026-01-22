@@ -28,35 +28,35 @@ LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
-    _In_opt_ HINSTANCE hPrevInstance,
-    _In_ LPWSTR    lpCmdLine,
-    _In_ int       nCmdShow)
+	_In_opt_ HINSTANCE hPrevInstance,
+	_In_ LPWSTR    lpCmdLine,
+	_In_ int       nCmdShow)
 {
-    UNREFERENCED_PARAMETER(hPrevInstance);
-    UNREFERENCED_PARAMETER(lpCmdLine);
+	UNREFERENCED_PARAMETER(hPrevInstance);
+	UNREFERENCED_PARAMETER(lpCmdLine);
 
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+	SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
-    LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-    LoadStringW(hInstance, IDC_HYDROGEN, szWindowClass, MAX_LOADSTRING);
-    MyRegisterClass(hInstance);
+	LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
+	LoadStringW(hInstance, IDC_HYDROGEN, szWindowClass, MAX_LOADSTRING);
+	MyRegisterClass(hInstance);
 
-    if (!InitInstance(hInstance, nCmdShow))
-    {
-        return FALSE;
-    }
+	if (!InitInstance(hInstance, nCmdShow))
+	{
+		return FALSE;
+	}
 
-    HWND hWnd = FindWindowW(szWindowClass, szTitle);
+	HWND hWnd = FindWindowW(szWindowClass, szTitle);
 
-    AllocConsole();
+	AllocConsole();
 	freopen("CONOUT$", "w", stdout);
 
 	Cu_Initialize();
 
-    PLYFormat ply;
-	ply.Deserialize("D:\\Temp\\PLY\\Maxilla.ply");
+	PLYFormat ply;
+	ply.Deserialize("D:\\Temp\\PLY\\DensityEstimation\\Model.ply");
 
-    TS(MakePointCloud);
+	TS(MakePointCloud);
 
 	CuPointCloud pointCloud;
 	pointCloud.FromHostPointers(
@@ -66,224 +66,305 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		ply.GetPoints().size()
 	);
 
-    TE(MakePointCloud);
+	TE(MakePointCloud);
 
-    TS(Build);
+	TS(Build);
 
 	CuSparseDataBlock sparseDataBlock;
 	sparseDataBlock.Build(&pointCloud);
 
-    TE(Build);
+	TE(Build);
 
-    TS(SOR);
-	sparseDataBlock.ApplySOR(&pointCloud, 30, 0.07f);
-    TE(SOR);
+	{
+		TS(NND);
+		sparseDataBlock.ApplyNND(&pointCloud, 30);
+		TE(NND);
 
-	std::vector<float3> filteredPoints;
-	std::vector<float3> filteredNormals;
-	std::vector<float4> filteredColors;
-	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
+		std::vector<float3> filteredPoints;
+		std::vector<float3> filteredNormals;
+		std::vector<float4> filteredColors;
+		pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
 
-	PLYFormat outPly;
-    for (size_t i = 0; i < filteredPoints.size(); i++)
-    {
-        outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
-        outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
-		outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
-    }
-	outPly.Serialize("D:\\Temp\\PLY\\Maxilla_SOR.ply");
+		PLYFormat outPly;
+		for (size_t i = 0; i < filteredPoints.size(); i++)
+		{
+			outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
+			outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
+			outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
+		}
+		outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_NND.ply");
+	}
 
+	{
+		TS(LDE);
+		sparseDataBlock.ApplyLDE(&pointCloud, 0.5f);
+		TE(LDE);
 
-    g_renderingThread = std::thread([hWnd]() {
-        He_Initialize(hWnd, 0);
+		std::vector<float3> filteredPoints;
+		std::vector<float3> filteredNormals;
+		std::vector<float4> filteredColors;
+		pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
 
-        RECT rect;
-        if (GetClientRect(hWnd, &rect))
-        {
-            int width = rect.right - rect.left;
-            int height = rect.bottom - rect.top;
-            if (width > 0 && height > 0)
-            {
-                He_Resize(width, height);
-            }
-        }
+		PLYFormat outPly;
+		for (size_t i = 0; i < filteredPoints.size(); i++)
+		{
+			outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
+			outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
+			outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
+		}
+		outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_LDE.ply");
+	}
 
-        {
-            auto entity = Helium.CreateEntity("Button");
-            auto button = Helium.CreateComponent<GUIRectangle>(entity, 100.0f, 100.0f, 200.0f, 50.0f, Color::blue());
-        }
+	{
+		TS(KDE);
+		sparseDataBlock.ApplyKDE(&pointCloud, 0.2f);
+		TE(KDE);
 
-        {
-            auto entity = Helium.CreateEntity("ButtonText");
-            auto button = Helium.CreateComponent<GUIText>(entity, 100.0f, 100.0f, 32.0f, Color::white(), "Button", TextHAlign::Center,  TextVAlign::Middle);
-        }
+		std::vector<float3> filteredPoints;
+		std::vector<float3> filteredNormals;
+		std::vector<float4> filteredColors;
+		pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
 
-        {
-            auto entity = Helium.CreateEntity("Circle");
-            auto circle = Helium.CreateComponent<GUICircle>(entity, 500.0f, 500.0f, 50.0f, Color::red());
-        }
+		PLYFormat outPly;
+		for (size_t i = 0; i < filteredPoints.size(); i++)
+		{
+			outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
+			outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
+			outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
+		}
+		outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_KDE.ply");
+	}
 
-        while (g_isRendering)
-        {
-            if (g_resizeRequested)
-            {
-                g_resizeRequested = false;
-                if (g_resizeWidth > 0 && g_resizeHeight > 0)
-                {
-                    He_Resize(g_resizeWidth, g_resizeHeight);
-                }
-            }
+	{
+		TS(PFOR);
+		sparseDataBlock.ApplyPFOR(&pointCloud, 30, 0.07f);
+		TE(PFOR);
 
-            He_Update(0.016f);
-            He_Render();
-        }
+		std::vector<float3> filteredPoints;
+		std::vector<float3> filteredNormals;
+		std::vector<float4> filteredColors;
+		pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
 
-        He_Shutdown();
-        });
+		PLYFormat outPly;
+		for (size_t i = 0; i < filteredPoints.size(); i++)
+		{
+			outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
+			outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
+			outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
+		}
+		outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_PFOR.ply");
+	}
 
-    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_HYDROGEN));
-    MSG msg;
+	{
+		TS(SOR);
+		sparseDataBlock.ApplySOR(&pointCloud, 30, 1.0f);
+		TE(SOR);
 
-    while (GetMessage(&msg, nullptr, 0, 0))
-    {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
-        {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-    }
+		std::vector<float3> filteredPoints;
+		std::vector<float3> filteredNormals;
+		std::vector<float4> filteredColors;
+		pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
 
-    g_isRendering = false;
-    if (g_renderingThread.joinable())
-    {
-        g_renderingThread.join();
-    }
+		PLYFormat outPly;
+		for (size_t i = 0; i < filteredPoints.size(); i++)
+		{
+			outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
+			outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
+			outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
+		}
+		outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_SOR.ply");
+	}
+
+	g_renderingThread = std::thread([hWnd]() {
+		He_Initialize(hWnd, 0);
+
+		RECT rect;
+		if (GetClientRect(hWnd, &rect))
+		{
+			int width = rect.right - rect.left;
+			int height = rect.bottom - rect.top;
+			if (width > 0 && height > 0)
+			{
+				He_Resize(width, height);
+			}
+		}
+
+		{
+			auto entity = Helium.CreateEntity("Button");
+			auto button = Helium.CreateComponent<GUIRectangle>(entity, 100.0f, 100.0f, 200.0f, 50.0f, Color::blue());
+		}
+
+		{
+			auto entity = Helium.CreateEntity("ButtonText");
+			auto button = Helium.CreateComponent<GUIText>(entity, 100.0f, 100.0f, 32.0f, Color::white(), "Button", TextHAlign::Center, TextVAlign::Middle);
+		}
+
+		{
+			auto entity = Helium.CreateEntity("Circle");
+			auto circle = Helium.CreateComponent<GUICircle>(entity, 500.0f, 500.0f, 50.0f, Color::red());
+		}
+
+		while (g_isRendering)
+		{
+			if (g_resizeRequested)
+			{
+				g_resizeRequested = false;
+				if (g_resizeWidth > 0 && g_resizeHeight > 0)
+				{
+					He_Resize(g_resizeWidth, g_resizeHeight);
+				}
+			}
+
+			He_Update(0.016f);
+			He_Render();
+		}
+
+		He_Shutdown();
+		});
+
+	HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_HYDROGEN));
+	MSG msg;
+
+	while (GetMessage(&msg, nullptr, 0, 0))
+	{
+		if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+	}
+
+	g_isRendering = false;
+	if (g_renderingThread.joinable())
+	{
+		g_renderingThread.join();
+	}
 
 	Cu_Shutdown();
 
-    return (int)msg.wParam;
+	return (int)msg.wParam;
 }
 
 ATOM MyRegisterClass(HINSTANCE hInstance)
 {
-    WNDCLASSEXW wcex;
+	WNDCLASSEXW wcex;
 
-    wcex.cbSize = sizeof(WNDCLASSEX);
+	wcex.cbSize = sizeof(WNDCLASSEX);
 
-    wcex.style = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc = WndProc;
-    wcex.cbClsExtra = 0;
-    wcex.cbWndExtra = 0;
-    wcex.hInstance = hInstance;
-    wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_HYDROGEN));
-    wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wcex.lpszMenuName = MAKEINTRESOURCEW(IDC_HYDROGEN);
-    wcex.lpszClassName = szWindowClass;
-    wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
+	wcex.style = CS_HREDRAW | CS_VREDRAW;
+	wcex.lpfnWndProc = WndProc;
+	wcex.cbClsExtra = 0;
+	wcex.cbWndExtra = 0;
+	wcex.hInstance = hInstance;
+	wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_HYDROGEN));
+	wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+	wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+	wcex.lpszMenuName = MAKEINTRESOURCEW(IDC_HYDROGEN);
+	wcex.lpszClassName = szWindowClass;
+	wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
-    return RegisterClassExW(&wcex);
+	return RegisterClassExW(&wcex);
 }
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
-    hInst = hInstance;
+	hInst = hInstance;
 
-    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+	HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
+		CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
 
-    if (!hWnd)
-    {
-        return FALSE;
-    }
+	if (!hWnd)
+	{
+		return FALSE;
+	}
 
-    ShowWindow(hWnd, nCmdShow);
-    UpdateWindow(hWnd);
+	ShowWindow(hWnd, nCmdShow);
+	UpdateWindow(hWnd);
 
-    return TRUE;
+	return TRUE;
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    switch (message)
-    {
-    case WM_KEYDOWN:
-        if (VK_ESCAPE == wParam)
-        {
-            PostMessage(hWnd, WM_CLOSE, 0, 0);
-        }
-    case WM_KEYUP:
-    case WM_SYSKEYDOWN:
-    case WM_SYSKEYUP:
-    case WM_MOUSEMOVE:
-    case WM_LBUTTONDOWN:
-    case WM_LBUTTONUP:
-    case WM_RBUTTONDOWN:
-    case WM_RBUTTONUP:
-    case WM_MBUTTONDOWN:
-    case WM_MBUTTONUP:
-    case WM_MOUSEWHEEL:
-        He_ProcessMessage(message, wParam, lParam);
-        break;
-    }
+	switch (message)
+	{
+	case WM_KEYDOWN:
+		if (VK_ESCAPE == wParam)
+		{
+			PostMessage(hWnd, WM_CLOSE, 0, 0);
+		}
+	case WM_KEYUP:
+	case WM_SYSKEYDOWN:
+	case WM_SYSKEYUP:
+	case WM_MOUSEMOVE:
+	case WM_LBUTTONDOWN:
+	case WM_LBUTTONUP:
+	case WM_RBUTTONDOWN:
+	case WM_RBUTTONUP:
+	case WM_MBUTTONDOWN:
+	case WM_MBUTTONUP:
+	case WM_MOUSEWHEEL:
+		He_ProcessMessage(message, wParam, lParam);
+		break;
+	}
 
-    switch (message)
-    {
-    case WM_COMMAND:
-    {
-        int wmId = LOWORD(wParam);
-        switch (wmId)
-        {
-        case IDM_ABOUT:
-            DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-            break;
-        case IDM_EXIT:
-            DestroyWindow(hWnd);
-            break;
-        default:
-            return DefWindowProc(hWnd, message, wParam, lParam);
-        }
-    }
-    break;
-    case WM_ERASEBKGND:
-        return 1;
-    case WM_PAINT:
-    {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hWnd, &ps);
-        EndPaint(hWnd, &ps);
-    }
-    break;
-    case WM_SIZE:
-        // 리사이즈 요청
-        g_resizeWidth = LOWORD(lParam);
-        g_resizeHeight = HIWORD(lParam);
-        g_resizeRequested = true;
-        break;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        break;
-    default:
-        return DefWindowProc(hWnd, message, wParam, lParam);
-    }
-    return 0;
+	switch (message)
+	{
+	case WM_COMMAND:
+	{
+		int wmId = LOWORD(wParam);
+		switch (wmId)
+		{
+		case IDM_ABOUT:
+			DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
+			break;
+		case IDM_EXIT:
+			DestroyWindow(hWnd);
+			break;
+		default:
+			return DefWindowProc(hWnd, message, wParam, lParam);
+		}
+	}
+	break;
+	case WM_ERASEBKGND:
+		return 1;
+	case WM_PAINT:
+	{
+		PAINTSTRUCT ps;
+		HDC hdc = BeginPaint(hWnd, &ps);
+		EndPaint(hWnd, &ps);
+	}
+	break;
+	case WM_SIZE:
+		// 리사이즈 요청
+		g_resizeWidth = LOWORD(lParam);
+		g_resizeHeight = HIWORD(lParam);
+		g_resizeRequested = true;
+		break;
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		break;
+	default:
+		return DefWindowProc(hWnd, message, wParam, lParam);
+	}
+	return 0;
 }
 
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    UNREFERENCED_PARAMETER(lParam);
-    switch (message)
-    {
-    case WM_INITDIALOG:
-        return (INT_PTR)TRUE;
+	UNREFERENCED_PARAMETER(lParam);
+	switch (message)
+	{
+	case WM_INITDIALOG:
+		return (INT_PTR)TRUE;
 
-    case WM_COMMAND:
-        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
-        {
-            EndDialog(hDlg, LOWORD(wParam));
-            return (INT_PTR)TRUE;
-        }
-        break;
-    }
-    return (INT_PTR)FALSE;
+	case WM_COMMAND:
+		if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
+		{
+			EndDialog(hDlg, LOWORD(wParam));
+			return (INT_PTR)TRUE;
+		}
+		break;
+	}
+	return (INT_PTR)FALSE;
 }
