@@ -21,6 +21,7 @@ struct COPPER_API CuSparseDataBlock
     CuSparseDataBlock();
 
     void Build(CuPointCloud* cloud);
+    void Build(CuPointCloud* cloud, float cellSize);
 
     thrust::device_vector<float> ApplySOR(CuPointCloud* cloud, int k = 30, float stdDevMult = 1.0f);
 

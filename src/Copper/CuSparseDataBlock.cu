@@ -421,26 +421,87 @@ float CuSparseDataBlock::computeAutoCellSize(const thrust::device_vector<float3>
     return (maxDim / powf((float)points.size(), 1.0f / 3.0f)) * multiplier;
 }
 
-void CuSparseDataBlock::Build(CuPointCloud* cloud) {
+void CuSparseDataBlock::Build(CuPointCloud* cloud)
+{
     if (cloud == nullptr || cloud->size() == 0) return;
+
     cellSize = computeAutoCellSize(cloud->points, 1.5f);
+
+	printf("Computed cell size: %f\n", cellSize);
+
     thrust::pair<float3, float3> init = thrust::make_pair(make_float3(1e30f, 1e30f, 1e30f), make_float3(-1e30f, -1e30f, -1e30f));
     thrust::pair<float3, float3> bbox = thrust::transform_reduce(cloud->points.begin(), cloud->points.end(), Float3ToPair(), init, Float3MinMax());
-    worldOrigin = bbox.first; float3 maxP = bbox.second;
+    
+    worldOrigin = bbox.first;
+    float3 maxP = bbox.second;
     float3 gridDimf = { (maxP.x - worldOrigin.x) / cellSize, (maxP.y - worldOrigin.y) / cellSize, (maxP.z - worldOrigin.z) / cellSize };
+
     gridSize = { (int)ceilf(gridDimf.x) + 1, (int)ceilf(gridDimf.y) + 1, (int)ceilf(gridDimf.z) + 1 };
+
     numberOfCells = gridSize.x * gridSize.y * gridSize.z;
+
     size_t numPoints = cloud->size();
+
     if (hashCodes.size() != numPoints) hashCodes.resize(numPoints);
+    
     if (cellStartIndices.size() != numberOfCells) cellStartIndices.resize(numberOfCells);
+    
     if (cellEndIndices.size() != numberOfCells) cellEndIndices.resize(numberOfCells);
+    
     thrust::fill(cellStartIndices.begin(), cellStartIndices.end(), -1);
     thrust::fill(cellEndIndices.begin(), cellEndIndices.end(), -1);
+    
     int blockSize = 256; int numBlocks = (int)((numPoints + blockSize - 1) / blockSize);
+    
     computeHashKernel << <numBlocks, blockSize >> > (thrust::raw_pointer_cast(cloud->points.data()), thrust::raw_pointer_cast(hashCodes.data()), (int)numPoints, cellSize, gridSize, worldOrigin);
+    
     cudaDeviceSynchronize();
+    
     thrust::sort_by_key(hashCodes.begin(), hashCodes.end(), thrust::make_zip_iterator(thrust::make_tuple(cloud->points.begin(), cloud->normals.begin(), cloud->colors.begin(), cloud->isAlive.begin())));
+    
     findCellStartEndKernel << <numBlocks, blockSize >> > (thrust::raw_pointer_cast(hashCodes.data()), thrust::raw_pointer_cast(cellStartIndices.data()), thrust::raw_pointer_cast(cellEndIndices.data()), (int)numPoints);
+    
+    cudaDeviceSynchronize();
+}
+
+void CuSparseDataBlock::Build(CuPointCloud* cloud, float cellSize)
+{
+    if (cloud == nullptr || cloud->size() == 0) return;
+
+    this->cellSize = cellSize;
+
+    thrust::pair<float3, float3> init = thrust::make_pair(make_float3(1e30f, 1e30f, 1e30f), make_float3(-1e30f, -1e30f, -1e30f));
+    thrust::pair<float3, float3> bbox = thrust::transform_reduce(cloud->points.begin(), cloud->points.end(), Float3ToPair(), init, Float3MinMax());
+
+    worldOrigin = bbox.first;
+    float3 maxP = bbox.second;
+    float3 gridDimf = { (maxP.x - worldOrigin.x) / cellSize, (maxP.y - worldOrigin.y) / cellSize, (maxP.z - worldOrigin.z) / cellSize };
+
+    gridSize = { (int)ceilf(gridDimf.x) + 1, (int)ceilf(gridDimf.y) + 1, (int)ceilf(gridDimf.z) + 1 };
+
+    numberOfCells = gridSize.x * gridSize.y * gridSize.z;
+
+    size_t numPoints = cloud->size();
+
+    if (hashCodes.size() != numPoints) hashCodes.resize(numPoints);
+
+    if (cellStartIndices.size() != numberOfCells) cellStartIndices.resize(numberOfCells);
+
+    if (cellEndIndices.size() != numberOfCells) cellEndIndices.resize(numberOfCells);
+
+    thrust::fill(cellStartIndices.begin(), cellStartIndices.end(), -1);
+    thrust::fill(cellEndIndices.begin(), cellEndIndices.end(), -1);
+
+    int blockSize = 256; int numBlocks = (int)((numPoints + blockSize - 1) / blockSize);
+
+    computeHashKernel << <numBlocks, blockSize >> > (thrust::raw_pointer_cast(cloud->points.data()), thrust::raw_pointer_cast(hashCodes.data()), (int)numPoints, cellSize, gridSize, worldOrigin);
+
+    cudaDeviceSynchronize();
+
+    thrust::sort_by_key(hashCodes.begin(), hashCodes.end(), thrust::make_zip_iterator(thrust::make_tuple(cloud->points.begin(), cloud->normals.begin(), cloud->colors.begin(), cloud->isAlive.begin())));
+
+    findCellStartEndKernel << <numBlocks, blockSize >> > (thrust::raw_pointer_cast(hashCodes.data()), thrust::raw_pointer_cast(cellStartIndices.data()), thrust::raw_pointer_cast(cellEndIndices.data()), (int)numPoints);
+
     cudaDeviceSynchronize();
 }
 

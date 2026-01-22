@@ -78,15 +78,62 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 	TE(Build);
 
-	{
-		//CuOperatorCollection operatorCollection;
+	//{
+	//	//CuOperatorCollection operatorCollection;
 
-		CuOperatorPointCloudKDE op;
+	//	CuOperatorPointCloudKDE op;
+	//	CuOperatorParameters params;
+	//	params.SetParameter<CuPointCloud*>("pointCloud", &pointCloud);
+	//	params.SetParameter<CuSparseDataBlock*>("sparseDataBlock", &sparseDataBlock);
+	//	params.SetParameter<int>("k", 30);
+	//	params.SetParameter<float>("bandwidth", 0.2f);
+	//	std::vector<float> densities;
+	//	TS(Execute);
+	//	op.Execute(params, densities);
+	//	TE(Execute);
+
+	//	std::vector<float> h_densities(densities.size());
+	//	thrust::copy(densities.begin(), densities.end(), h_densities.begin());
+
+	//	thrust::host_vector<float3> h_points = pointCloud.points;
+	//	thrust::host_vector<float3> h_normals = pointCloud.normals;
+	//	thrust::host_vector<uchar3> h_colors = pointCloud.colors;
+
+	//	auto [densityMin, densityMax] = std::minmax_element(h_densities.begin(), h_densities.end());
+	//	printf("Density Min: %f, Max: %f\n", *densityMin, *densityMax);
+
+	//	for (size_t i = 0; i < pointCloud.size(); i++)
+	//	{
+	//		auto& p = h_points[i];
+	//		auto& n = h_normals[i];
+	//		auto& c = h_colors[i];
+
+	//		if (h_densities[i] < 35.0f)
+	//		{
+	//			VD::AddSphere("KDE",
+	//				{ p.x, p.y, p.z },
+	//				{ n.x, n.y, n.z },
+	//				0.05f,
+	//				{ 1.0f, 0.0f, 0.0f, 1.0f });
+	//		}
+	//		else
+	//		{
+	//			VD::AddSphere("KDE",
+	//				{ p.x, p.y, p.z },
+	//				{ n.x, n.y, n.z },
+	//				0.05f,
+	//				{ (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f });
+	//		}
+	//	}
+	//}
+
+
+	{
+		CuOperatorPointCloudLDE op;
 		CuOperatorParameters params;
 		params.SetParameter<CuPointCloud*>("pointCloud", &pointCloud);
 		params.SetParameter<CuSparseDataBlock*>("sparseDataBlock", &sparseDataBlock);
-		params.SetParameter<int>("k", 30);
-		params.SetParameter<float>("bandwidth", 0.2f);
+		params.SetParameter<float>("radius", 0.5f);
 		std::vector<float> densities;
 		TS(Execute);
 		op.Execute(params, densities);
@@ -108,9 +155,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 			auto& n = h_normals[i];
 			auto& c = h_colors[i];
 
-			if (h_densities[i] < 35.0f)
+			if (h_densities[i] < 85.0f)
 			{
-				VD::AddSphere("KDE",
+				VD::AddSphere("LDE",
 					{ p.x, p.y, p.z },
 					{ n.x, n.y, n.z },
 					0.05f,
@@ -118,7 +165,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 			}
 			else
 			{
-				VD::AddSphere("KDE",
+				VD::AddSphere("LDE",
 					{ p.x, p.y, p.z },
 					{ n.x, n.y, n.z },
 					0.05f,
