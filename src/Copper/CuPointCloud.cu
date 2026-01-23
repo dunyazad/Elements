@@ -186,3 +186,92 @@ void CuPointCloud::ToHostVectors(
         };
     }
 }
+
+namespace
+{
+    struct PickTransformOp
+    {
+        float3 origin;
+        float3 dir;
+        float thresholdSq;
+
+        __host__ __device__
+            PickTransformOp(float3 o, float3 d, float t)
+            : origin(o), dir(d), thresholdSq(t* t) {
+        }
+
+        __host__ __device__
+            PickResult operator()(const thrust::tuple<int, float3, bool>& t) const
+        {
+            int idx = thrust::get<0>(t);
+            float3 p = thrust::get<1>(t);
+            bool alive = thrust::get<2>(t);
+
+            if (!alive) return { FLT_MAX, -1, make_float3(0,0,0) };
+
+            // 1. 벡터 P - Origin
+            float3 v = make_float3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
+
+            // 2. Ray 방향으로의 투영 거리 (t)
+            float t_proj = v.x * dir.x + v.y * dir.y + v.z * dir.z;
+
+            // 카메라 뒤에 있는 점은 무시
+            if (t_proj < 0.0f) return { FLT_MAX, -1, make_float3(0,0,0) };
+
+            // 3. Ray 상의 가장 가까운 점 (Closest Point on Ray)
+            float3 cp = make_float3(
+                origin.x + t_proj * dir.x,
+                origin.y + t_proj * dir.y,
+                origin.z + t_proj * dir.z
+            );
+
+            // 4. Ray와 포인트 사이의 수직 거리 제곱 계산
+            float dx = p.x - cp.x;
+            float dy = p.y - cp.y;
+            float dz = p.z - cp.z;
+            float distSq = dx * dx + dy * dy + dz * dz;
+
+            // 허용 오차(반지름) 밖이면 무시
+            if (distSq > thresholdSq) return { FLT_MAX, -1, make_float3(0,0,0) };
+
+            // 허용 오차 안이라면 결과 반환
+            // [수정] 실제 포인트 위치 p를 함께 반환
+            return { t_proj, idx, p };
+        }
+    };
+
+    // 두 결과 중 더 가까운(depth가 작은) 것을 선택하는 Functor
+    struct PickReduceOp
+    {
+        __host__ __device__
+            PickResult operator()(const PickResult& a, const PickResult& b) const
+        {
+            return (a.distance < b.distance) ? a : b;
+        }
+    };
+}
+
+PickResult CuPointCloud::Pick(const float3& rayOrigin, const float3& rayDir, float tolerance)
+{
+    if (points.empty()) return { -1, -1, make_float3(0,0,0) };
+
+    // 1. Iterator 준비 (Index, Point, IsAlive를 묶어서 전달)
+    auto zip_iter = thrust::make_zip_iterator(thrust::make_tuple(
+        thrust::counting_iterator<int>(0),
+        points.begin(),
+        isAlive.begin()
+    ));
+
+    // 2. Transform Reduce 실행
+    PickResult initVal = { FLT_MAX, -1, make_float3(0,0,0) };
+
+    PickResult result = thrust::transform_reduce(
+        zip_iter,
+        zip_iter + points.size(),
+        PickTransformOp(rayOrigin, rayDir, tolerance),
+        initVal,
+        PickReduceOp()
+    );
+
+    return result;
+}

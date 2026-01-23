@@ -126,7 +126,7 @@ void PointCloud::SetupEntity(ProcessedInstanceData& data)
 		//if (false == renderable->IsVisible()) return;
 		if (this != Helium.GetSelectedPointCloud()) return;
 
-		if (0 == event.action && 0 == event.button)
+		if (0 == event.action && MouseButton::Left == event.button)
 		{
 			auto cameraEntity = Helium.GetEntityByName("MainCamera");
 			auto camera = Helium.GetComponent<Camera>(cameraEntity);

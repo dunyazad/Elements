@@ -240,9 +240,9 @@ void CameraManipulatorTrackball::OnMouseButton(const MouseButtonEvent& event)
 {
 	if (nullptr == camera) return;
 
-	if (event.button == 0)      isLButtonPressed = (event.action == 1);
-	else if (event.button == 1) isRButtonPressed = (event.action == 1);
-	else if (event.button == 2) isMButtonPressed = (event.action == 1);
+	if (event.button == MouseButton::Left)      isLButtonPressed = (event.action == 1);
+	else if (event.button == MouseButton::Right) isRButtonPressed = (event.action == 1);
+	else if (event.button == MouseButton::Middle) isMButtonPressed = (event.action == 1);
 }
 
 void CameraManipulatorTrackball::OnMouseWheel(const MouseWheelEvent& event)

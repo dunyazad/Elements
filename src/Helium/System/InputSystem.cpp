@@ -91,14 +91,14 @@ void InputSystem::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
     case WM_RBUTTONDOWN:
     case WM_MBUTTONDOWN:
     {
-        int button = -1;
-        if (message == WM_LBUTTONDOWN) button = 0;
-        else if (message == WM_RBUTTONDOWN) button = 1;
-        else if (message == WM_MBUTTONDOWN) button = 2;
+        MouseButton button = MouseButton::None;
+        if (message == WM_LBUTTONDOWN) button = MouseButton::Left;
+        else if (message == WM_RBUTTONDOWN) button = MouseButton::Right;
+        else if (message == WM_MBUTTONDOWN) button = MouseButton::Middle;
 
-        if (button != -1)
+        if (button != MouseButton::None)
         {
-            mouseStates[button] = true;
+            mouseStates[(int)button] = true;
             eventSystem->Trigger<MouseButtonEvent>(button, 1, currentMods, mousePos.x(), mousePos.y());
         }
         break;
@@ -108,14 +108,14 @@ void InputSystem::ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
     case WM_RBUTTONUP:
     case WM_MBUTTONUP:
     {
-        int button = -1;
-        if (message == WM_LBUTTONUP) button = 0;
-        else if (message == WM_RBUTTONUP) button = 1;
-        else if (message == WM_MBUTTONUP) button = 2;
+        MouseButton button = MouseButton::None;
+        if (message == WM_LBUTTONUP) button = MouseButton::Left;
+        else if (message == WM_RBUTTONUP) button = MouseButton::Right;
+        else if (message == WM_MBUTTONUP) button = MouseButton::Middle;
 
-        if (button != -1)
+        if (button != MouseButton::None)
         {
-            mouseStates[button] = false;
+            mouseStates[(int)button] = false;
             eventSystem->Trigger<MouseButtonEvent>(button, 0, currentMods, mousePos.x(), mousePos.y());
         }
         break;

@@ -7,6 +7,7 @@
 #include <Copper/OperatorCollection/CuOperatorPointCloudPFOR.h>
 #include <Copper/OperatorCollection/CuOperatorPointCloudROR.h>
 #include <Copper/OperatorCollection/CuOperatorPointCloudSOR.h>
+#include <Copper/OperatorCollection/CuOperatorPointCloudClustering.h>
 
 #include <cuda_runtime.h>
 #include <thrust/device_vector.h>

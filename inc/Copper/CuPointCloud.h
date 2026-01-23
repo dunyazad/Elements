@@ -9,6 +9,13 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
+struct COPPER_API PickResult
+{
+    float distance;
+    int index;
+    float3 position;
+};
+
 struct COPPER_API CuPointCloud
 {
     thrust::device_vector<float3> points;
@@ -53,4 +60,6 @@ struct COPPER_API CuPointCloud
         std::vector<float3>& h_points,
         std::vector<float3>& h_normals,
         std::vector<float4>& h_colors);
+
+    PickResult Pick(const float3& rayOrigin, const float3& rayDir, float tolerance);
 };

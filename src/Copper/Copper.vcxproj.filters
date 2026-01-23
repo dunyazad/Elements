@@ -25,6 +25,9 @@
     <CudaCompile Include="OperatorCollection\CuOperatorCommon.cu">
       <Filter>OperatorCollection</Filter>
     </CudaCompile>
+    <CudaCompile Include="OperatorCollection\CuOperatorPointCloudClustering.cu">
+      <Filter>OperatorCollection</Filter>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Copper.cpp" />
@@ -58,6 +61,9 @@
       <Filter>OperatorCollection</Filter>
     </ClInclude>
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCommonDevice.h">
+      <Filter>OperatorCollection</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorPointCloudClustering.h">
       <Filter>OperatorCollection</Filter>
     </ClInclude>
   </ItemGroup>

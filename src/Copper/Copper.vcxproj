@@ -121,6 +121,7 @@
     <CudaCompile Include="kernel.cu" />
     <CudaCompile Include="OperatorCollection\CuOperatorCollection.cu" />
     <CudaCompile Include="OperatorCollection\CuOperatorCommon.cu" />
+    <CudaCompile Include="OperatorCollection\CuOperatorPointCloudClustering.cu" />
     <CudaCompile Include="OperatorCollection\CuOperatorPointCloudKDE.cu" />
     <CudaCompile Include="OperatorCollection\CuOperatorPointCloudLDE.cu" />
     <CudaCompile Include="OperatorCollection\CuOperatorPointCloudPFOR.cu" />
@@ -137,6 +138,7 @@
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCollection.h" />
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCommon.h" />
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCommonDevice.h" />
+    <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorPointCloudClustering.h" />
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorPointCloudKDE.h" />
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorPointCloudLDE.h" />
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorPointCloudPFOR.h" />

@@ -12,6 +12,8 @@ using VD = VisualDebugging;
 #include <ShellScalingApi.h>
 #pragma comment(lib, "Shcore.lib")
 
+#include <Monitor.h>
+
 #define MAX_LOADSTRING 100
 
 HINSTANCE hInst;
@@ -53,305 +55,335 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 	AllocConsole();
 	freopen("CONOUT$", "w", stdout);
+	MaximizeConsoleWindowOnMonitor(3);
 
-	CheckDeviceMemory("Initial");
+	MaximizeWindowOnMonitor(hWnd, 2);
 
 	Cu_Initialize();
 
-	PLYFormat ply;
-	ply.Deserialize("D:\\Temp\\PLY\\DensityEstimation\\Model.ply");
-
-	TS(MakePointCloud);
-
 	CuPointCloud pointCloud;
-	pointCloud.FromHostPointers(
-		(float3*)ply.GetPoints().data(),
-		(float3*)ply.GetNormals().data(),
-		(float4*)ply.GetColors().data(),
-		ply.GetPoints().size()
-	);
-
-	TE(MakePointCloud);
-
-	TS(Build);
-
 	CuSparseDataBlock sparseDataBlock;
-	sparseDataBlock.Build(&pointCloud);
 
-	TE(Build);
-
+#if 0
 	//{
-	//	//CuOperatorCollection operatorCollection;
+//	//CuOperatorCollection operatorCollection;
 
-	//	CuOperatorPointCloudKDE op;
-	//	CuOperatorParameters params;
-	//	params.SetParameter<CuPointCloud*>("pointCloud", &pointCloud);
-	//	params.SetParameter<CuSparseDataBlock*>("sparseDataBlock", &sparseDataBlock);
-	//	params.SetParameter<int>("k", 30);
-	//	params.SetParameter<float>("bandwidth", 0.2f);
-	//	std::vector<float> densities;
-	//	TS(Execute);
-	//	op.Execute(params, densities);
-	//	TE(Execute);
+//	CuOperatorPointCloudKDE op;
+//	CuOperatorParameters params;
+//	params.SetParameter<CuPointCloud*>("pointCloud", &pointCloud);
+//	params.SetParameter<CuSparseDataBlock*>("sparseDataBlock", &sparseDataBlock);
+//	params.SetParameter<int>("k", 30);
+//	params.SetParameter<float>("bandwidth", 0.2f);
+//	std::vector<float> densities;
+//	TS(Execute);
+//	op.Execute(params, densities);
+//	TE(Execute);
 
-	//	std::vector<float> h_densities(densities.size());
-	//	thrust::copy(densities.begin(), densities.end(), h_densities.begin());
+//	std::vector<float> h_densities(densities.size());
+//	thrust::copy(densities.begin(), densities.end(), h_densities.begin());
 
-	//	thrust::host_vector<float3> h_points = pointCloud.points;
-	//	thrust::host_vector<float3> h_normals = pointCloud.normals;
-	//	thrust::host_vector<uchar3> h_colors = pointCloud.colors;
+//	thrust::host_vector<float3> h_points = pointCloud.points;
+//	thrust::host_vector<float3> h_normals = pointCloud.normals;
+//	thrust::host_vector<uchar3> h_colors = pointCloud.colors;
 
-	//	auto [densityMin, densityMax] = std::minmax_element(h_densities.begin(), h_densities.end());
-	//	printf("Density Min: %f, Max: %f\n", *densityMin, *densityMax);
+//	auto [densityMin, densityMax] = std::minmax_element(h_densities.begin(), h_densities.end());
+//	printf("Density Min: %f, Max: %f\n", *densityMin, *densityMax);
 
-	//	for (size_t i = 0; i < pointCloud.size(); i++)
-	//	{
-	//		auto& p = h_points[i];
-	//		auto& n = h_normals[i];
-	//		auto& c = h_colors[i];
+//	for (size_t i = 0; i < pointCloud.size(); i++)
+//	{
+//		auto& p = h_points[i];
+//		auto& n = h_normals[i];
+//		auto& c = h_colors[i];
 
-	//		if (h_densities[i] < 35.0f)
-	//		{
-	//			VD::AddSphere("KDE",
-	//				{ p.x, p.y, p.z },
-	//				{ n.x, n.y, n.z },
-	//				0.05f,
-	//				{ 1.0f, 0.0f, 0.0f, 1.0f });
-	//		}
-	//		else
-	//		{
-	//			VD::AddSphere("KDE",
-	//				{ p.x, p.y, p.z },
-	//				{ n.x, n.y, n.z },
-	//				0.05f,
-	//				{ (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f });
-	//		}
-	//	}
-	//}
+//		if (h_densities[i] < 35.0f)
+//		{
+//			VD::AddSphere("KDE",
+//				{ p.x, p.y, p.z },
+//				{ n.x, n.y, n.z },
+//				0.05f,
+//				{ 1.0f, 0.0f, 0.0f, 1.0f });
+//		}
+//		else
+//		{
+//			VD::AddSphere("KDE",
+//				{ p.x, p.y, p.z },
+//				{ n.x, n.y, n.z },
+//				0.05f,
+//				{ (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f });
+//		}
+//	}
+//}  
+#endif // 0
 
-	{
-		TS(LDE);
+	std::thread thread([&]() {
+			TS(Loading);
+			PLYFormat ply;
+			ply.Deserialize("D:\\Temp\\PLY\\DensityEstimation\\Model.ply");
+			TE(Loading);
 
-		CuOperatorPointCloudLDE op;
-		CuOperatorParameters params;
-		params.SetParameter<CuPointCloud*>("pointCloud", &pointCloud);
-		params.SetParameter<CuSparseDataBlock*>("sparseDataBlock", &sparseDataBlock);
-		params.SetParameter<float>("radius", 0.5f);
-		std::vector<float> densities;
-		TS(Execute);
-		op.Execute(params, densities);
-		TE(Execute);
+			TS(MakePointCloud);
 
-		std::vector<float> h_densities(densities.size());
-		thrust::copy(densities.begin(), densities.end(), h_densities.begin());
+			//CuPointCloud pointCloud;
+			pointCloud.FromHostPointers(
+				(float3*)ply.GetPoints().data(),
+				(float3*)ply.GetNormals().data(),
+				(float4*)ply.GetColors().data(),
+				ply.GetPoints().size()
+			);
 
-		thrust::host_vector<float3> h_points = pointCloud.points;
-		thrust::host_vector<float3> h_normals = pointCloud.normals;
-		thrust::host_vector<uchar3> h_colors = pointCloud.colors;
+			TE(MakePointCloud);
 
-		auto [densityMin, densityMax] = std::minmax_element(h_densities.begin(), h_densities.end());
-		printf("Density Min: %f, Max: %f\n", *densityMin, *densityMax);
+			TS(Build);
 
-		std::vector<float3> lowDensityPoints;
-		std::vector<float3> lowDensityNormals;
-		std::vector<uchar3> lowDensityColors;
+			sparseDataBlock.Build(&pointCloud);
 
-		for (size_t i = 0; i < pointCloud.size(); i++)
-		{
-			auto& p = h_points[i];
-			auto& n = h_normals[i];
-			auto& c = h_colors[i];
+			TE(Build);
 
-			if (h_densities[i] < 85.0f)
+			TS(LDE);
+
+			CuOperatorPointCloudLDE op;
+			CuOperatorParameters params;
+			params.SetParameter<CuPointCloud*>("pointCloud", &pointCloud);
+			params.SetParameter<CuSparseDataBlock*>("sparseDataBlock", &sparseDataBlock);
+			params.SetParameter<float>("radius", 0.5f);
+			std::vector<float> densities;
+			TS(Execute);
+			op.Execute(params, densities);
+			TE(Execute);
+
+			std::vector<float> h_densities(densities.size());
+			thrust::copy(densities.begin(), densities.end(), h_densities.begin());
+
+			thrust::host_vector<float3> h_points = pointCloud.points;
+			thrust::host_vector<float3> h_normals = pointCloud.normals;
+			thrust::host_vector<uchar3> h_colors = pointCloud.colors;
+
+			auto [densityMin, densityMax] = std::minmax_element(h_densities.begin(), h_densities.end());
+			printf("Density Min: %f, Max: %f\n", *densityMin, *densityMax);
+
+			std::vector<float3> lowDensityPoints;
+			std::vector<float3> lowDensityNormals;
+			std::vector<uchar3> lowDensityColors;
+
+			for (size_t i = 0; i < pointCloud.size(); i++)
 			{
-				VD::AddDisk("LDE_LowDensityPoints", { p.x, p.y, p.z }, { n.x, n.y, n.z }, 0.1f, 16, Color::red(), true);
+				auto& p = h_points[i];
+				auto& n = h_normals[i];
+				auto& c = h_colors[i];
 
-				lowDensityPoints.push_back(p);
-				lowDensityNormals.push_back(n);
-				lowDensityColors.push_back(c);
+				if (h_densities[i] < 85.0f)
+				{
+					/////////////////////////////////VD::AddDisk("LDE_LowDensityPoints", { p.x, p.y, p.z }, { n.x, n.y, n.z }, 0.1f, 16, Color::red(), true);
+
+					lowDensityPoints.push_back(p);
+					lowDensityNormals.push_back(n);
+					lowDensityColors.push_back(c);
+				}
+				else
+				{
+					VD::AddDisk("LDE", { p.x, p.y, p.z }, { n.x, n.y, n.z }, 0.05f, 16, { (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f }, true);
+				}
 			}
-			else
+
+			TS(BuildArrowBlocks);
+			CuPointCloud lowDensityPointCloud;
+			lowDensityPointCloud.FromHostVectors(lowDensityPoints, lowDensityNormals, lowDensityColors);
+
+			CuSparseDataBlock sparseDataBlockForLowDensityPointCloud;
+			sparseDataBlockForLowDensityPointCloud.Build(&lowDensityPointCloud, 10.0f);
+			TE(BuildArrowBlocks);
+
+			TS(GetActiveCellStats);
+			auto cellStats = sparseDataBlockForLowDensityPointCloud.GetActiveCellStats(&lowDensityPointCloud);
+			TE(GetActiveCellStats);
+
+			for (const auto& cellStat : cellStats)
 			{
-				VD::AddDisk("LDE", { p.x, p.y, p.z }, { n.x, n.y, n.z }, 0.01f, 16, { (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f }, true);
+				VD::AddWiredBox("LDE_SparseDataBlocks",
+					{ (cellStat.cellMin.x + cellStat.cellMax.x) * 0.5f,
+					  (cellStat.cellMin.y + cellStat.cellMax.y) * 0.5f,
+					  (cellStat.cellMin.z + cellStat.cellMax.z) * 0.5f },
+					{ cellStat.cellMax.x - cellStat.cellMin.x,
+					  cellStat.cellMax.y - cellStat.cellMin.y,
+					  cellStat.cellMax.z - cellStat.cellMin.z },
+					Color::green());
+
+				// cellStat.pointCentroid 위치에서 가장 먼 코너에서 부터 cellStat.pointCentroid 방향으로 화살표 그리기
+				float3 corner;
+				corner.x = (fabsf(cellStat.pointCentroid.x - cellStat.cellMin.x) > fabsf(cellStat.pointCentroid.x - cellStat.cellMax.x)) ? cellStat.cellMin.x : cellStat.cellMax.x;
+				corner.y = (fabsf(cellStat.pointCentroid.y - cellStat.cellMin.y) > fabsf(cellStat.pointCentroid.y - cellStat.cellMax.y)) ? cellStat.cellMin.y : cellStat.cellMax.y;
+				corner.z = (fabsf(cellStat.pointCentroid.z - cellStat.cellMin.z) > fabsf(cellStat.pointCentroid.z - cellStat.cellMax.z)) ? cellStat.cellMin.z : cellStat.cellMax.z;
+				VD::AddArrow("LDE_LowDensityPointNormals",
+					{ corner.x, corner.y, corner.z },
+					{ cellStat.pointCentroid.x - corner.x,
+					  cellStat.pointCentroid.y - corner.y,
+					  cellStat.pointCentroid.z - corner.z },
+					5.0f,
+					Color::blue());
+
+
+				//VD::AddArrow("LDE_LowDensityPointNormals",
+				//	{ cellStat.pointCentroid.x, cellStat.pointCentroid.y, cellStat.pointCentroid.z },
+				//	{ cellStat.pcaNormal.x, cellStat.pcaNormal.y, cellStat.pcaNormal.z },
+				//	5.0f,
+				//	Color::blue());
 			}
-		}
+			TE(LDE);
 
-		TS(BuildArrowBlocks);
-		CuPointCloud lowDensityPointCloud;
-		lowDensityPointCloud.FromHostVectors(lowDensityPoints, lowDensityNormals, lowDensityColors);
+			CuOperatorPointCloudClustering clusteringOp;
+			CuOperatorParameters clusteringParams;
 
-		CuSparseDataBlock sparseDataBlockForLowDensityPointCloud;
-		sparseDataBlockForLowDensityPointCloud.Build(&lowDensityPointCloud, 10.0f);
-		TE(BuildArrowBlocks);
+			clusteringParams.SetParameter<CuPointCloud*>("pointCloud", &lowDensityPointCloud);
 
-		////////sparseDataBlockForLowDensityPointCloud.ColorizePointsByCell(&lowDensityPointCloud);
-		//////// -> 이후 myCloud를 렌더링하면 알록달록하게 복셀 단위로 구분되어 보임
+			clusteringParams.SetParameter<CuSparseDataBlock*>("sparseDataBlock", &sparseDataBlockForLowDensityPointCloud);
+			clusteringParams.SetParameter<float>("radius", 3.0f);
+			clusteringParams.SetParameter<int>("minClusterSize", 10);
+			clusteringParams.SetParameter<int>("maxClusterSize", 2000000000);
 
-		//////// 3. 그리드(복셀) 가시화 (Wireframe)
-		//////std::vector<std::pair<float3, float3>> boxes = sparseDataBlockForLowDensityPointCloud.GetActiveCellBounds();
+			std::vector<uint64_t> clusterLabels;
 
-		//////for (const auto& box : boxes)
-		//////{
-		//////	float3 minP = box.first;
-		//////	float3 maxP = box.second;
+			TS(Clustering);
+			clusteringOp.Execute(clusteringParams, clusterLabels);
+			TE(Clustering);
 
-		//////	VD::AddWiredBox("LDE_SparseDataBlocks",
-		//////		{ (minP.x + maxP.x) * 0.5f, (minP.y + maxP.y) * 0.5f, (minP.z + maxP.z) * 0.5f },
-		//////		{ maxP.x - minP.x, maxP.y - minP.y, maxP.z - minP.z },
-		//////		Color::green());
+			thrust::host_vector<float3> h_lowDensityPoints = lowDensityPointCloud.points;
+			thrust::host_vector<float3> h_lowDensityNormals = lowDensityPointCloud.normals;
+			thrust::host_vector<uchar3> h_lowDensityColors = lowDensityPointCloud.colors;
 
-		//////	// 렌더링 엔진의 Line Drawing 함수 호출 (예시)
-		//////	// DrawWireBox(minP, maxP, Color::Green); 
+			auto colors = Color::GetContrastingColorsWithoutBWRGB(100);
+			for (size_t i = 0; i < clusterLabels.size(); i++)
+			{
+				const auto& p = h_lowDensityPoints[i];
+				const auto& n = h_lowDensityNormals[i];
+				auto c = h_lowDensityColors[i];
+				uint64_t label = clusterLabels[i];
+				c = { (unsigned char)(colors[label % colors.size()].x() * 255.0f),
+					  (unsigned char)(colors[label % colors.size()].y() * 255.0f),
+					  (unsigned char)(colors[label % colors.size()].z() * 255.0f) };
 
-		//////	// 혹은 GL_LINES 등을 이용해 12개의 선분을 그립니다.
-		//////	// (min.x, min.y, min.z) -> (max.x, min.y, min.z) ...
-		//////}
+				VD::AddDisk(
+					"LDE_ClusteredLowDensityPoints",
+					{ p.x, p.y, p.z },
+					{ n.x, n.y, n.z },
+					0.1f,
+					16,
+					{ (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f },
+					true);
 
-		TS(GetActiveCellStats);
-		auto cellStats = sparseDataBlockForLowDensityPointCloud.GetActiveCellStats(&lowDensityPointCloud);
-		TE(GetActiveCellStats);
+				//printf("Point %zu: Cluster %llu\n", i, label);
+			}
+		});
 
-		for (const auto& cellStat : cellStats)
-		{
-			VD::AddWiredBox("LDE_SparseDataBlocks",
-				{ (cellStat.cellMin.x + cellStat.cellMax.x) * 0.5f,
-				  (cellStat.cellMin.y + cellStat.cellMax.y) * 0.5f,
-				  (cellStat.cellMin.z + cellStat.cellMax.z) * 0.5f },
-				{ cellStat.cellMax.x - cellStat.cellMin.x,
-				  cellStat.cellMax.y - cellStat.cellMin.y,
-				  cellStat.cellMax.z - cellStat.cellMin.z },
-				Color::green());
-
-			// cellStat.pointCentroid 위치에서 가장 먼 코너에서 부터 cellStat.pointCentroid 방향으로 화살표 그리기
-			float3 corner;
-			corner.x = (fabsf(cellStat.pointCentroid.x - cellStat.cellMin.x) > fabsf(cellStat.pointCentroid.x - cellStat.cellMax.x)) ? cellStat.cellMin.x : cellStat.cellMax.x;
-			corner.y = (fabsf(cellStat.pointCentroid.y - cellStat.cellMin.y) > fabsf(cellStat.pointCentroid.y - cellStat.cellMax.y)) ? cellStat.cellMin.y : cellStat.cellMax.y;
-			corner.z = (fabsf(cellStat.pointCentroid.z - cellStat.cellMin.z) > fabsf(cellStat.pointCentroid.z - cellStat.cellMax.z)) ? cellStat.cellMin.z : cellStat.cellMax.z;
-			VD::AddArrow("LDE_LowDensityPointNormals",
-				{ corner.x, corner.y, corner.z },
-				{ cellStat.pointCentroid.x - corner.x,
-				  cellStat.pointCentroid.y - corner.y,
-				  cellStat.pointCentroid.z - corner.z },
-				5.0f,
-				Color::blue());
-
-
-			//VD::AddArrow("LDE_LowDensityPointNormals",
-			//	{ cellStat.pointCentroid.x, cellStat.pointCentroid.y, cellStat.pointCentroid.z },
-			//	{ cellStat.pcaNormal.x, cellStat.pcaNormal.y, cellStat.pcaNormal.z },
-			//	5.0f,
-			//	Color::blue());
-		}
-		TE(LDE);
-	}
-
+#if 0
 	//{
-	//	TS(NND);
-	//	sparseDataBlock.ApplyNND(&pointCloud, 30);
-	//	TE(NND);
+//	TS(NND);
+//	sparseDataBlock.ApplyNND(&pointCloud, 30);
+//	TE(NND);
 
-	//	std::vector<float3> filteredPoints;
-	//	std::vector<float3> filteredNormals;
-	//	std::vector<float4> filteredColors;
-	//	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
+//	std::vector<float3> filteredPoints;
+//	std::vector<float3> filteredNormals;
+//	std::vector<float4> filteredColors;
+//	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
 
-	//	PLYFormat outPly;
-	//	for (size_t i = 0; i < filteredPoints.size(); i++)
-	//	{
-	//		outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
-	//		outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
-	//		outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
-	//	}
-	//	outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_NND.ply");
-	//}
+//	PLYFormat outPly;
+//	for (size_t i = 0; i < filteredPoints.size(); i++)
+//	{
+//		outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
+//		outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
+//		outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
+//	}
+//	outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_NND.ply");
+//}
 
-	//{
-	//	TS(LDE);
-	//	sparseDataBlock.ApplyLDE(&pointCloud, 0.5f);
-	//	TE(LDE);
+//{
+//	TS(LDE);
+//	sparseDataBlock.ApplyLDE(&pointCloud, 0.5f);
+//	TE(LDE);
 
-	//	std::vector<float3> filteredPoints;
-	//	std::vector<float3> filteredNormals;
-	//	std::vector<float4> filteredColors;
-	//	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
+//	std::vector<float3> filteredPoints;
+//	std::vector<float3> filteredNormals;
+//	std::vector<float4> filteredColors;
+//	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
 
-	//	PLYFormat outPly;
-	//	for (size_t i = 0; i < filteredPoints.size(); i++)
-	//	{
-	//		outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
-	//		outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
-	//		outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
-	//	}
-	//	outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_LDE.ply");
-	//}
+//	PLYFormat outPly;
+//	for (size_t i = 0; i < filteredPoints.size(); i++)
+//	{
+//		outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
+//		outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
+//		outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
+//	}
+//	outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_LDE.ply");
+//}
 
-	//{
-	//	TS(KDE);
-	//	sparseDataBlock.ApplyKDE(&pointCloud, 0.2f);
-	//	TE(KDE);
+//{
+//	TS(KDE);
+//	sparseDataBlock.ApplyKDE(&pointCloud, 0.2f);
+//	TE(KDE);
 
-	//	std::vector<float3> filteredPoints;
-	//	std::vector<float3> filteredNormals;
-	//	std::vector<float4> filteredColors;
-	//	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
+//	std::vector<float3> filteredPoints;
+//	std::vector<float3> filteredNormals;
+//	std::vector<float4> filteredColors;
+//	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
 
-	//	//PLYFormat outPly;
-	//	for (size_t i = 0; i < filteredPoints.size(); i++)
-	//	{
-	//		//outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
-	//		//outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
-	//		//outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
+//	//PLYFormat outPly;
+//	for (size_t i = 0; i < filteredPoints.size(); i++)
+//	{
+//		//outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
+//		//outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
+//		//outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
 
-	//		VD::AddSphere("KDE",
-	//			{ filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z },
-	//			{ filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z },
-	//			0.05f,
-	//			{ filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f });
-	//	}
-	//	//outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_KDE.ply");
-	//}
+//		VD::AddSphere("KDE",
+//			{ filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z },
+//			{ filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z },
+//			0.05f,
+//			{ filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f });
+//	}
+//	//outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_KDE.ply");
+//}
 
-	//{
-	//	TS(PFOR);
-	//	sparseDataBlock.ApplyPFOR(&pointCloud, 30, 0.07f);
-	//	TE(PFOR);
+//{
+//	TS(PFOR);
+//	sparseDataBlock.ApplyPFOR(&pointCloud, 30, 0.07f);
+//	TE(PFOR);
 
-	//	std::vector<float3> filteredPoints;
-	//	std::vector<float3> filteredNormals;
-	//	std::vector<float4> filteredColors;
-	//	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
+//	std::vector<float3> filteredPoints;
+//	std::vector<float3> filteredNormals;
+//	std::vector<float4> filteredColors;
+//	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
 
-	//	PLYFormat outPly;
-	//	for (size_t i = 0; i < filteredPoints.size(); i++)
-	//	{
-	//		outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
-	//		outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
-	//		outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
-	//	}
-	//	outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_PFOR.ply");
-	//}
+//	PLYFormat outPly;
+//	for (size_t i = 0; i < filteredPoints.size(); i++)
+//	{
+//		outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
+//		outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
+//		outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
+//	}
+//	outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_PFOR.ply");
+//}
 
-	//{
-	//	TS(SOR);
-	//	sparseDataBlock.ApplySOR(&pointCloud, 30, 1.0f);
-	//	TE(SOR);
+//{
+//	TS(SOR);
+//	sparseDataBlock.ApplySOR(&pointCloud, 30, 1.0f);
+//	TE(SOR);
 
-	//	std::vector<float3> filteredPoints;
-	//	std::vector<float3> filteredNormals;
-	//	std::vector<float4> filteredColors;
-	//	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
+//	std::vector<float3> filteredPoints;
+//	std::vector<float3> filteredNormals;
+//	std::vector<float4> filteredColors;
+//	pointCloud.ToHostVectors(filteredPoints, filteredNormals, filteredColors);
 
-	//	PLYFormat outPly;
-	//	for (size_t i = 0; i < filteredPoints.size(); i++)
-	//	{
-	//		outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
-	//		outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
-	//		outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
-	//	}
-	//	outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_SOR.ply");
-	//}
+//	PLYFormat outPly;
+//	for (size_t i = 0; i < filteredPoints.size(); i++)
+//	{
+//		outPly.AddPoint(filteredPoints[i].x, filteredPoints[i].y, filteredPoints[i].z);
+//		outPly.AddNormal(filteredNormals[i].x, filteredNormals[i].y, filteredNormals[i].z);
+//		outPly.AddColor(filteredColors[i].x, filteredColors[i].y, filteredColors[i].z, 1.0f);
+//	}
+//	outPly.Serialize("D:\\Temp\\PLY\\DensityEstimation\\Model_SOR.ply");
+//}  
+#endif // 0
 
-	g_renderingThread = std::thread([hWnd]() {
+
+	g_renderingThread = std::thread([&]() {
 		He_Initialize(hWnd, 0);
 
 		RECT rect;
@@ -388,7 +420,70 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 					//VD::ToggleVisibility("LDE_LowDensityPointNormals");
 					VD::ToggleVisibility("LDE_SparseDataBlocks");
 				}
+				else if (event.action == 0 && KeyCode::D1 == event.keyCode)
+				{
+					VD::ToggleVisibility("LDE");
+				}
+				else if (event.action == 0 && KeyCode::D2 == event.keyCode)
+				{
+					VD::ToggleVisibility("LDE_LowDensityPointNormals");
+				}
 				});
+
+			Helium.CreateEventCallback<MouseButtonEvent>(entity, "3D", [&](Entity e, const MouseButtonEvent& event) {
+				if (event.action == 1 && event.button == MouseButton::Left)
+				{
+					if (event.IsCtrlPressed())
+					{
+						auto entity = Helium.GetEntityByName("MainCamera");
+						auto camera = Helium.GetComponent<Camera>(entity);
+						if (nullptr == camera) return;
+
+						Eigen::Matrix4f viewMatrix = camera->GetViewMatrix();
+						Eigen::Matrix4f projMatrix = camera->GetProjectionMatrix();
+
+						float mouseX = (float)event.xpos;
+						float mouseY = (float)event.ypos;
+						float screenW = (float)Helium.GetWidth();
+						float screenH = (float)Helium.GetHeight();
+
+						float x = (2.0f * mouseX) / screenW - 1.0f;
+						float y = 1.0f - (2.0f * mouseY) / screenH;
+						float z = 1.0f;
+
+						Eigen::Vector4f rayClip(x, y, -1.0f, 1.0f);
+						Eigen::Matrix4f projInv = projMatrix.inverse();
+						Eigen::Vector4f rayView = projInv * rayClip;
+
+						rayView = Eigen::Vector4f(rayView.x(), rayView.y(), -1.0f, 0.0f);
+						Eigen::Matrix4f viewInv = viewMatrix.inverse();
+						Eigen::Vector4f rayWorld4 = viewInv * rayView;
+						Eigen::Vector3f rayDir(rayWorld4.x(), rayWorld4.y(), rayWorld4.z());
+						rayDir.normalize();
+
+						Eigen::Vector3f rayOrigin = viewInv.block<3, 1>(0, 3);
+
+						auto toFloat3 = [](const Eigen::Vector3f& v) { return make_float3(v.x(), v.y(), v.z()); };
+
+						float tolerance = 0.05f;
+
+						PickResult pickResult = pointCloud.Pick(
+							toFloat3(rayOrigin),
+							toFloat3(rayDir),
+							tolerance
+						);
+
+						if (pickResult.index != -1)
+						{
+							auto cameraManipulator = Helium.GetComponent<CameraManipulatorTrackball>(entity);
+							if (nullptr != cameraManipulator)
+							{
+								cameraManipulator->SetCenter(Eigen::Vector3f(pickResult.position.x, pickResult.position.y, pickResult.position.z));
+							}
+						}
+					}
+				}
+			});
 		}
 
 		{

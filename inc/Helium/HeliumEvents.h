@@ -273,16 +273,24 @@ struct MousePositionEvent
     MousePositionEvent(float xpos, float ypos) : xpos(xpos), ypos(ypos) {}
 };
 
+enum class MouseButton : int
+{
+	None = -1,
+	Left = 0,
+	Right = 1,
+	Middle = 2
+};
+
 struct MouseButtonEvent
 {
-    int button; // 0: Left, 1: Right, 2: Middle
+	MouseButton button;
     int action; // 0: Release, 1: Press
     int modifiers;
 	float xpos = 0.0;
 	float ypos = 0.0;
 
-    MouseButtonEvent(int btn, int action, int modifiers, float xpos, float ypos) :
-		button(btn), action(action), modifiers(modifiers), xpos(xpos), ypos(ypos) {}
+    MouseButtonEvent(MouseButton button, int action, int modifiers, float xpos, float ypos) :
+		button(button), action(action), modifiers(modifiers), xpos(xpos), ypos(ypos) {}
 
 	inline bool HasModifier(KeyModifiers modifiers) const { return (this->modifiers & static_cast<int>(modifiers)) != 0; }
 	inline bool IsCtrlPressed() const { return HasModifier(KeyModifiers::Control); }
