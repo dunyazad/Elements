@@ -113,7 +113,7 @@ public:
     inline unsigned int GetNumberOfInstances() const { return numberOfInstances; }
 
     // Shader Management
-    void AddShader(Shader* shader);
+    size_t AddShader(Shader* shader);
     Shader* GetActiveShader() const;
     void SetActiveShaderIndex(unsigned int index);
 

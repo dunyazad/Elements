@@ -330,7 +330,7 @@ void InitializeVisualDebugging()
 	VisualDebugging::AddCapsule("Test_Capsule", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 0.5f, 1.0f, 16, CYAN);
 	x += spacing;
 
-	VisualDebugging::AddDisk("Test_Disk", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 1.0f, MAGENTA);
+	VisualDebugging::AddDisk("Test_Disk", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 1.0f, 32, MAGENTA, false);
 	x += spacing;
 
 	VisualDebugging::AddTorus("Test_Torus", { x, 1.0f, z }, { 0.0f, 1.0f, 0.0f }, 1.0f, 0.3f, 32, 16, WHITE);

@@ -180,7 +180,7 @@ namespace PointProcessing
 				}
 
 				// 평면과 법선 벡터 시각화
-				VD::AddDisk("PFORPlane", centroid, planeNormal, distanceThreshold * 5.0f, Color::yellow());
+				VD::AddDisk("PFORPlane", centroid, planeNormal, distanceThreshold * 5.0f, 32, Color::yellow());
 				VD::AddArrow("PFORArrow", centroid, planeNormal, 0.5f, Color::red());
 			}
 		}

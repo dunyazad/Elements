@@ -37,7 +37,7 @@ public:
 	static void CreateBoxEntity(const std::string& tag); // Box는 보통 1x1x1 고정
 	static void CreateWiredBoxEntity(const std::string& tag);
 	static void CreateSphereEntity(const std::string& tag, float radius, unsigned int slices, unsigned int stacks);
-	static void CreateDiskEntity(const std::string& tag, float radius, unsigned int slices);
+	static void CreateDiskEntity(const std::string& tag, float radius, unsigned int slices, bool isBillboard = false);
 	static void CreateCylinderEntity(const std::string& tag, float radius, float height, unsigned int slices);
 	static void CreateConeEntity(const std::string& tag, float radius, float height, unsigned int slices);
 	static void CreateCapsuleEntity(const std::string& tag, float radius, float height, unsigned int rings);
@@ -138,7 +138,9 @@ public:
 		const Eigen::Vector3f& center,
 		const Eigen::Vector3f& normal,
 		float radius,
-		const Eigen::Vector4f& color);
+		unsigned int slices,
+		const Eigen::Vector4f& color,
+		bool isBillboard = false);
 
 	static void AddCylinder(
 		const std::string& tag,

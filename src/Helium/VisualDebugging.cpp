@@ -186,14 +186,29 @@ void VisualDebugging::CreateSphereEntity(const std::string& tag, float radius, u
     GeometryBuilder::BuildSphere(renderable, { 0.0f, 0.0f, 0.0f }, radius, slices, stacks, Color::white());
 }
 
-void VisualDebugging::CreateDiskEntity(const std::string& tag, float radius, unsigned int slices)
+void VisualDebugging::CreateDiskEntity(const std::string& tag, float radius, unsigned int slices, bool isBillboard)
 {
     auto entity = Helium.CreateEntity(tag);
     entities[tag] = entity;
     auto renderable = Helium.CreateComponent<DebuggingRenderable>(entity);
     renderable->Initialize(Renderable::GeometryMode::Triangles);
     debuggingRenderables[tag] = renderable;
-    SetupStandardShaders(renderable);
+
+    if (isBillboard)
+    {
+        // Requires a shader that handles billboard rotation (Spherical or Cylindrical)
+        auto shaderBillboard = Helium.CreateShader(
+            "InstancingBillboard",
+            File("../../res/Shaders/InstancingBillboard.vs"),
+            File("../../res/Shaders/InstancingBillboard.fs")
+        );
+        int shaderIndex = renderable->AddShader(shaderBillboard);
+        renderable->SetActiveShaderIndex(shaderIndex);
+    }
+    else
+    {
+        SetupStandardShaders(renderable);
+    }
 
     GeometryBuilder::BuildDisk(renderable, { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, radius, slices, Color::white());
 }
@@ -410,13 +425,12 @@ void VisualDebugging::AddSphere(const std::string& tag, const Eigen::Vector3f& c
         }, center, normal, scale, color);
 }
 
-void VisualDebugging::AddDisk(const std::string& tag, const Eigen::Vector3f& center, const Eigen::Vector3f& normal, float radius, const Eigen::Vector4f& color)
+void VisualDebugging::AddDisk(const std::string& tag, const Eigen::Vector3f& center, const Eigen::Vector3f& normal, float radius, unsigned int slices, const Eigen::Vector4f& color, bool isBillboard)
 {
-    unsigned int slices = 16;
     Eigen::Vector3f scale(radius * 2.0f, 1.0f, radius * 2.0f);
 
     AddGeometryInstance(tag, [=](const std::string& t) {
-        CreateDiskEntity(t, 0.5f, slices);
+        CreateDiskEntity(t, 0.5f, slices, isBillboard);
         }, center, normal, scale, color);
 }
 

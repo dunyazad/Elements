@@ -437,4 +437,12 @@
       <Filter>리소스 파일\Shader</Filter>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\..\res\Shaders\InstancingBillboard.fs">
+      <Filter>리소스 파일\Shader</Filter>
+    </Text>
+    <Text Include="..\..\res\Shaders\InstancingBillboard.vs">
+      <Filter>리소스 파일\Shader</Filter>
+    </Text>
+  </ItemGroup>
 </Project>

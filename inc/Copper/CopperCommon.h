@@ -240,6 +240,12 @@ inline std::tuple<double, double> CheckDeviceMemory(const char* tag = nullptr)
             used_db / (1024.0 * 1024.0 * 1024.0),
             total_db / (1024.0 * 1024.0 * 1024.0),
             (used_db / total_db) * 100.0);
+
+        //printf("[%s] using: %.4f MB / Total %.4f MB (%.2f%%)\n",
+        //    tag,
+        //    used_db / (1024.0 * 1024.0),
+        //    total_db / (1024.0 * 1024.0),
+        //    (used_db / total_db) * 100.0);
     }
     return { used_db, total_db };
 }

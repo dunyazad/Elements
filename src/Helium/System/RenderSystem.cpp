@@ -224,7 +224,7 @@ void RenderSystem::Render()
         }
 
         glEnable(GL_DEPTH_TEST);
-        glDepthMask(GL_FALSE); // 투명 객체는 Depth Buffer에 쓰지 않음
+        glDepthMask(GL_FALSE);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -235,7 +235,7 @@ void RenderSystem::Render()
             lightVector,
             shadermap);
 
-        glDepthMask(GL_TRUE); // 상태 복구
+        glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
     }
 
@@ -245,7 +245,7 @@ void RenderSystem::Render()
         for (auto& entity : registry.view<DebuggingRenderable>())
         {
             auto& r = registry.get<DebuggingRenderable>(entity);
-            if (!r.IsUsingAlpha() && r.IsVisible()) // 가시성 체크 추가
+            if (!r.IsUsingAlpha() && r.IsVisible())
                 shadermap[r.GetActiveShader()].push_back(&r);
         }
 

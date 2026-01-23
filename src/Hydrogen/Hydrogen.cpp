@@ -54,6 +54,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	AllocConsole();
 	freopen("CONOUT$", "w", stdout);
 
+	CheckDeviceMemory("Initial");
+
 	Cu_Initialize();
 
 	PLYFormat ply;
@@ -127,7 +129,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	//	}
 	//}
 
-
+	CheckDeviceMemory("Before");
 	{
 		CuOperatorPointCloudLDE op;
 		CuOperatorParameters params;
@@ -138,6 +140,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		TS(Execute);
 		op.Execute(params, densities);
 		TE(Execute);
+
+		CheckDeviceMemory("After Execute");
 
 		std::vector<float> h_densities(densities.size());
 		thrust::copy(densities.begin(), densities.end(), h_densities.begin());
@@ -157,22 +161,39 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 			if (h_densities[i] < 85.0f)
 			{
-				VD::AddSphere("LDE",
+				//VD::AddSphere("LDE",
+				//	{ p.x, p.y, p.z },
+				//	{ n.x, n.y, n.z },
+				//	0.05f,
+				//	{ 1.0f, 0.0f, 0.0f, 1.0f });
+
+				VD::AddDisk("LDE_Billboard",
 					{ p.x, p.y, p.z },
 					{ n.x, n.y, n.z },
-					0.05f,
-					{ 1.0f, 0.0f, 0.0f, 1.0f });
+					0.025f,
+					6,
+					Color::red(),
+					true);
 			}
 			else
 			{
-				VD::AddSphere("LDE",
+				//VD::AddSphere("LDE",
+				//	{ p.x, p.y, p.z },
+				//	{ n.x, n.y, n.z },
+				//	0.05f,
+				//	{ (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f });
+
+				VD::AddDisk("LDE_Billboard",
 					{ p.x, p.y, p.z },
 					{ n.x, n.y, n.z },
-					0.05f,
-					{ (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f });
+					0.025f,
+					6,
+					{ (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f },
+					true);
 			}
 		}
 	}
+	CheckDeviceMemory("After");
 
 	//{
 	//	TS(NND);
@@ -345,7 +366,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		g_renderingThread.join();
 	}
 
+	CheckDeviceMemory("Before Shutdown");
+
 	Cu_Shutdown();
+
+	CheckDeviceMemory("After Shutdown");
+
+	system("pause");
 
 	return (int)msg.wParam;
 }

@@ -230,6 +230,10 @@
     <None Include="..\..\res\Shaders\TwoSide.fs" />
     <None Include="..\..\res\Shaders\TwoSide.vs" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\..\res\Shaders\InstancingBillboard.fs" />
+    <Text Include="..\..\res\Shaders\InstancingBillboard.vs" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

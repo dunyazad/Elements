@@ -92,9 +92,10 @@ void Renderable::Update()
     glBindVertexArray(0);
 }
 
-void Renderable::AddShader(Shader* shader)
+size_t Renderable::AddShader(Shader* shader)
 {
     shaders.push_back(shader);
+	return shaders.size() - 1;
 }
 
 Shader* Renderable::GetActiveShader() const
