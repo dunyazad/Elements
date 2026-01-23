@@ -104,6 +104,7 @@ public:
     void AddInstanceColor(const Eigen::Vector4f& color);
     void AddInstanceNormal(const Eigen::Vector3f& normal);
 
+    Eigen::Matrix4f GetInstanceTransform(size_t index) const;
 	void SetInstanceTransform(unsigned int index, const Eigen::Matrix4f& transform);
 	void SetInstanceColor(unsigned int index, const Eigen::Vector4f& color);
 	void SetInstanceNormal(unsigned int index, const Eigen::Vector3f& normal);
@@ -136,6 +137,8 @@ public:
 	inline const AttributeBuffer<Eigen::Vector4f>& GetColor4Buffer() const { return colors4; }
 	inline const AttributeBuffer<Eigen::Vector2f>& GetUVBuffer() const { return uvs; }
 	inline const AttributeBuffer<unsigned int>& GetIndexBuffer() const { return indices; }
+
+    inline size_t GetInstanceCount() const { return instanceTransforms.Size(); }
 
 protected:
     void DrawImplementation();

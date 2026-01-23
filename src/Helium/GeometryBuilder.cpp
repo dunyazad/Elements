@@ -680,8 +680,6 @@ namespace
 		Eigen::Matrix3f rotMat = rotation.toRotationMatrix();
 
 		float stemLen = (std::max)(0.0f, length - headLength);
-		Eigen::Vector3f stemCenter = start + (dir * (stemLen * 0.5f));
-
 		unsigned int segments = 16;
 
 		unsigned int stemStartIdx = GetCurrentVertexCount(target);
@@ -716,6 +714,30 @@ namespace
 			}
 		}
 
+		if (!wireframe)
+		{
+			unsigned int capStartIdx = GetCurrentVertexCount(target);
+			Eigen::Vector3f capNormal = -dir;
+
+			AddVertexToBuffer(target, start, capNormal, color);
+
+			for (unsigned int i = 0; i <= segments; ++i)
+			{
+				float theta = (float)i / segments * TWO_PI;
+				float x = std::cos(theta) * stemRadius;
+				float z = std::sin(theta) * stemRadius;
+
+				AddVertexToBuffer(target, start + rotMat * Eigen::Vector3f(x, 0, z), capNormal, color);
+			}
+
+			for (unsigned int i = 0; i < segments; ++i)
+			{
+				AddIndexToBuffer(target, capStartIdx);
+				AddIndexToBuffer(target, capStartIdx + i + 1);
+				AddIndexToBuffer(target, capStartIdx + i + 2);
+			}
+		}
+		
 		unsigned int coneStartIdx = GetCurrentVertexCount(target);
 		Eigen::Vector3f tip = end;
 		Eigen::Vector3f base = start + dir * stemLen;
@@ -750,6 +772,30 @@ namespace
 				AddIndexToBuffer(target, tipIdx);
 				AddIndexToBuffer(target, next);
 				AddIndexToBuffer(target, cur);
+			}
+		}
+
+		if (!wireframe)
+		{
+			unsigned int capStartIdx = GetCurrentVertexCount(target);
+			Eigen::Vector3f capNormal = -dir;
+
+			AddVertexToBuffer(target, base, capNormal, color);
+
+			for (unsigned int i = 0; i <= segments; ++i)
+			{
+				float theta = (float)i / segments * TWO_PI;
+				float x = std::cos(theta) * headRadius;
+				float z = std::sin(theta) * headRadius;
+
+				AddVertexToBuffer(target, base + rotMat * Eigen::Vector3f(x, 0, z), capNormal, color);
+			}
+
+			for (unsigned int i = 0; i < segments; ++i)
+			{
+				AddIndexToBuffer(target, capStartIdx);
+				AddIndexToBuffer(target, capStartIdx + i + 1);
+				AddIndexToBuffer(target, capStartIdx + i + 2);
 			}
 		}
 	}

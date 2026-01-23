@@ -129,8 +129,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	//	}
 	//}
 
-	CheckDeviceMemory("Before");
 	{
+		TS(LDE);
+
 		CuOperatorPointCloudLDE op;
 		CuOperatorParameters params;
 		params.SetParameter<CuPointCloud*>("pointCloud", &pointCloud);
@@ -140,8 +141,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		TS(Execute);
 		op.Execute(params, densities);
 		TE(Execute);
-
-		CheckDeviceMemory("After Execute");
 
 		std::vector<float> h_densities(densities.size());
 		thrust::copy(densities.begin(), densities.end(), h_densities.begin());
@@ -153,6 +152,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		auto [densityMin, densityMax] = std::minmax_element(h_densities.begin(), h_densities.end());
 		printf("Density Min: %f, Max: %f\n", *densityMin, *densityMax);
 
+		std::vector<float3> lowDensityPoints;
+		std::vector<float3> lowDensityNormals;
+		std::vector<uchar3> lowDensityColors;
+
 		for (size_t i = 0; i < pointCloud.size(); i++)
 		{
 			auto& p = h_points[i];
@@ -161,39 +164,86 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 			if (h_densities[i] < 85.0f)
 			{
-				//VD::AddSphere("LDE",
-				//	{ p.x, p.y, p.z },
-				//	{ n.x, n.y, n.z },
-				//	0.05f,
-				//	{ 1.0f, 0.0f, 0.0f, 1.0f });
+				VD::AddDisk("LDE_LowDensityPoints", { p.x, p.y, p.z }, { n.x, n.y, n.z }, 0.1f, 16, Color::red(), true);
 
-				VD::AddDisk("LDE_Billboard",
-					{ p.x, p.y, p.z },
-					{ n.x, n.y, n.z },
-					0.025f,
-					6,
-					Color::red(),
-					true);
+				lowDensityPoints.push_back(p);
+				lowDensityNormals.push_back(n);
+				lowDensityColors.push_back(c);
 			}
 			else
 			{
-				//VD::AddSphere("LDE",
-				//	{ p.x, p.y, p.z },
-				//	{ n.x, n.y, n.z },
-				//	0.05f,
-				//	{ (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f });
-
-				VD::AddDisk("LDE_Billboard",
-					{ p.x, p.y, p.z },
-					{ n.x, n.y, n.z },
-					0.025f,
-					6,
-					{ (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f },
-					true);
+				VD::AddDisk("LDE", { p.x, p.y, p.z }, { n.x, n.y, n.z }, 0.01f, 16, { (float)c.x / 255.0f, (float)c.y / 255.0f, (float)c.z / 255.0f, 1.0f }, true);
 			}
 		}
+
+		TS(BuildArrowBlocks);
+		CuPointCloud lowDensityPointCloud;
+		lowDensityPointCloud.FromHostVectors(lowDensityPoints, lowDensityNormals, lowDensityColors);
+
+		CuSparseDataBlock sparseDataBlockForLowDensityPointCloud;
+		sparseDataBlockForLowDensityPointCloud.Build(&lowDensityPointCloud, 10.0f);
+		TE(BuildArrowBlocks);
+
+		////////sparseDataBlockForLowDensityPointCloud.ColorizePointsByCell(&lowDensityPointCloud);
+		//////// -> 이후 myCloud를 렌더링하면 알록달록하게 복셀 단위로 구분되어 보임
+
+		//////// 3. 그리드(복셀) 가시화 (Wireframe)
+		//////std::vector<std::pair<float3, float3>> boxes = sparseDataBlockForLowDensityPointCloud.GetActiveCellBounds();
+
+		//////for (const auto& box : boxes)
+		//////{
+		//////	float3 minP = box.first;
+		//////	float3 maxP = box.second;
+
+		//////	VD::AddWiredBox("LDE_SparseDataBlocks",
+		//////		{ (minP.x + maxP.x) * 0.5f, (minP.y + maxP.y) * 0.5f, (minP.z + maxP.z) * 0.5f },
+		//////		{ maxP.x - minP.x, maxP.y - minP.y, maxP.z - minP.z },
+		//////		Color::green());
+
+		//////	// 렌더링 엔진의 Line Drawing 함수 호출 (예시)
+		//////	// DrawWireBox(minP, maxP, Color::Green); 
+
+		//////	// 혹은 GL_LINES 등을 이용해 12개의 선분을 그립니다.
+		//////	// (min.x, min.y, min.z) -> (max.x, min.y, min.z) ...
+		//////}
+
+		TS(GetActiveCellStats);
+		auto cellStats = sparseDataBlockForLowDensityPointCloud.GetActiveCellStats(&lowDensityPointCloud);
+		TE(GetActiveCellStats);
+
+		for (const auto& cellStat : cellStats)
+		{
+			VD::AddWiredBox("LDE_SparseDataBlocks",
+				{ (cellStat.cellMin.x + cellStat.cellMax.x) * 0.5f,
+				  (cellStat.cellMin.y + cellStat.cellMax.y) * 0.5f,
+				  (cellStat.cellMin.z + cellStat.cellMax.z) * 0.5f },
+				{ cellStat.cellMax.x - cellStat.cellMin.x,
+				  cellStat.cellMax.y - cellStat.cellMin.y,
+				  cellStat.cellMax.z - cellStat.cellMin.z },
+				Color::green());
+
+			// cellStat.pointCentroid 위치에서 가장 먼 코너에서 부터 cellStat.pointCentroid 방향으로 화살표 그리기
+			float3 corner;
+			corner.x = (fabsf(cellStat.pointCentroid.x - cellStat.cellMin.x) > fabsf(cellStat.pointCentroid.x - cellStat.cellMax.x)) ? cellStat.cellMin.x : cellStat.cellMax.x;
+			corner.y = (fabsf(cellStat.pointCentroid.y - cellStat.cellMin.y) > fabsf(cellStat.pointCentroid.y - cellStat.cellMax.y)) ? cellStat.cellMin.y : cellStat.cellMax.y;
+			corner.z = (fabsf(cellStat.pointCentroid.z - cellStat.cellMin.z) > fabsf(cellStat.pointCentroid.z - cellStat.cellMax.z)) ? cellStat.cellMin.z : cellStat.cellMax.z;
+			VD::AddArrow("LDE_LowDensityPointNormals",
+				{ corner.x, corner.y, corner.z },
+				{ cellStat.pointCentroid.x - corner.x,
+				  cellStat.pointCentroid.y - corner.y,
+				  cellStat.pointCentroid.z - corner.z },
+				5.0f,
+				Color::blue());
+
+
+			//VD::AddArrow("LDE_LowDensityPointNormals",
+			//	{ cellStat.pointCentroid.x, cellStat.pointCentroid.y, cellStat.pointCentroid.z },
+			//	{ cellStat.pcaNormal.x, cellStat.pcaNormal.y, cellStat.pcaNormal.z },
+			//	5.0f,
+			//	Color::blue());
+		}
+		TE(LDE);
 	}
-	CheckDeviceMemory("After");
 
 	//{
 	//	TS(NND);
@@ -316,6 +366,32 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		}
 
 		{
+			auto entity = Helium.CreateEntity("main");
+			Helium.CreateEventCallback<KeyEvent>(entity, "3D", [](Entity e, const KeyEvent& event) {
+				if (event.action == 1 && KeyCode::Plus == event.keyCode)
+				{
+					auto scale = VD::GetInstanceScale("LDE");
+					printf("Scale X: %f\n", scale.x());
+
+					VD::SetInstanceScale("LDE", scale * 1.1f);
+				}
+				else if (event.action == 1 && KeyCode::Minus == event.keyCode)
+				{
+					auto scale = VD::GetInstanceScale("LDE");
+					printf("Scale X: %f\n", scale.x());
+
+					VD::SetInstanceScale("LDE", scale * 0.9f);
+				}
+				else if (event.action == 0 && KeyCode::Tilde == event.keyCode)
+				{
+					//VD::ToggleVisibility("LDE_LowDensityPoints");
+					//VD::ToggleVisibility("LDE_LowDensityPointNormals");
+					VD::ToggleVisibility("LDE_SparseDataBlocks");
+				}
+				});
+		}
+
+		{
 			auto entity = Helium.CreateEntity("Button");
 			auto button = Helium.CreateComponent<GUIRectangle>(entity, 100.0f, 100.0f, 200.0f, 50.0f, Color::blue());
 		}
@@ -371,8 +447,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	Cu_Shutdown();
 
 	CheckDeviceMemory("After Shutdown");
-
-	system("pause");
 
 	return (int)msg.wParam;
 }

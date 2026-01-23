@@ -206,6 +206,13 @@ void Renderable::AddInstanceNormal(const Eigen::Vector3f& normal)
     instanceNormals.AddData(normal);
 }
 
+inline Eigen::Matrix4f Renderable::GetInstanceTransform(size_t index) const
+{
+    if (index < instanceTransforms.Size())
+        return instanceTransforms[index];
+    return Eigen::Matrix4f::Identity();
+}
+
 void Renderable::SetInstanceTransform(unsigned int index, const Eigen::Matrix4f& transform)
 {
 	instanceTransforms.SetData(index, transform);

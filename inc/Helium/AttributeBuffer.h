@@ -93,6 +93,9 @@ public:
     const std::vector<T>& GetCpuData() const { return data; }
     size_t Size() const { return data.size(); }
 
+	T& operator[](size_t index) { return data[index]; }
+	const T& operator[](size_t index) const { return data[index]; }
+
     inline void SetUseInstancing(bool use) { if (use != useInstancing) { useInstancing = use; dirty = true; } }
 
 private:

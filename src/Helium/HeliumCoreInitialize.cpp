@@ -372,7 +372,7 @@ void InitializeVisualDebugging()
 	VisualDebugging::AddFrustum("Test_Frustum", fakeInvViewProj, MAGENTA);
 	x += spacing;
 
-	VisualDebugging::AddGrid("Test_Grid", 20, 1.0f, { 0.3f, 0.3f, 0.3f, 1.0f });
+	VisualDebugging::AddGrid("Test_Grid", Eigen::Vector3f::Zero(), { 0.0f, 1.0f, 0.0f }, 20, 1.0f, { 0.3f, 0.3f, 0.3f, 1.0f });
 
 	VisualDebugging::AddArrow("Axis_X", { 0.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }, 1.0f, RED);
 	VisualDebugging::AddArrow("Axis_Y", { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 1.0f, GREEN);
@@ -385,7 +385,7 @@ void HeliumCore::InitializeScene()
 		auto cameraEntity = CreateEntity("MainCamera");
 		auto camera = CreateComponent<Camera>(cameraEntity);
 		camera->SetProjectionMode(Camera::Perspective);
-		Helium.GetComponent<Camera>(cameraEntity)->SetEye(Eigen::Vector3f(0.0f, 50.0f, 50.0f));
+		Helium.GetComponent<Camera>(cameraEntity)->SetEye(Eigen::Vector3f(0.0f, -50.0f, 50.0f));
 		Helium.GetComponent<Camera>(cameraEntity)->SetTarget(Eigen::Vector3f(0.0f, 0.0f, 0.0f));
 
 		auto cameraManipulator = CreateComponent<CameraManipulatorTrackball>(cameraEntity);
@@ -421,12 +421,18 @@ void HeliumCore::InitializeScene()
 		auto renderable = CreateComponent<Renderable>(entity);
 		renderable->Initialize(Renderable::Lines);
 
+		renderable->SetVisible(false); //////////////////////////////////////////////////////////
+
 		GeometryBuilder::BuildGrid(
 			renderable,
 			500.0f,
 			50,
 			Eigen::Vector4f(0.5f, 0.5f, 0.5f, 1.0f)
 		);
+
+		auto transform = CreateComponent<Transform>(entity);
+		Eigen::Quaternionf rotationQuaternion = Eigen::Quaternionf::FromTwoVectors(Eigen::Vector3f::UnitY(), Eigen::Vector3f::UnitZ());
+		transform->SetLocalRotation(rotationQuaternion);
 
 		Helium.CreateComponent<Transform>(entity)->SetLocalPosition(Eigen::Vector3f(0.0f, 0.0f, 0.0f));
 		renderable->AddShader(CreateShader("Line", File("../../res/Shaders/Line.vs"), File("../../res/Shaders/Line.fs")));

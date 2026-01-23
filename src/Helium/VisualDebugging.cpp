@@ -5,6 +5,10 @@
 
 #include <entt/entt.hpp>
 
+const float PI = 3.14159265359f;
+const float TWO_PI = 2.0f * PI;
+const float HALF_PI = PI * 0.5f;
+
 // ============================================================================
 // Static Member Initialization
 // ============================================================================
@@ -92,7 +96,7 @@ void VisualDebugging::DispatchCommands()
 
     if (pendingCommands.empty()) return;
 
-    constexpr long long kMaxExecutionTimeMicros = 2000; // 2ms limit
+    constexpr long long kMaxExecutionTimeMicros = 10000; // 10ms limit
     auto startTime = std::chrono::high_resolution_clock::now();
 
     size_t processedCount = 0;
@@ -548,19 +552,47 @@ void VisualDebugging::AddFrustum(const std::string& tag, const Eigen::Matrix4f& 
     AddLine(tag, worldCorners[3], worldCorners[7], color);
 }
 
-void VisualDebugging::AddGrid(const std::string& tag, int divisions, float spacing, const Eigen::Vector4f& color)
+void VisualDebugging::AddGrid(const std::string& tag, const Eigen::Vector3f& center, const Eigen::Vector3f& normal, int divisions, float spacing, const Eigen::Vector4f& color)
 {
     float halfSize = (divisions * spacing) * 0.5f;
+
+    Eigen::Matrix3f rotation = Eigen::Matrix3f::Identity();
+    Eigen::Vector3f defaultUp = Eigen::Vector3f::UnitY();
+    Eigen::Vector3f targetNormal = normal.normalized();
+
+    if ((targetNormal - defaultUp).norm() > 0.0001f)
+    {
+        if ((targetNormal + defaultUp).norm() < 0.0001f) {
+            rotation = Eigen::AngleAxisf(PI, Eigen::Vector3f::UnitX()).toRotationMatrix();
+        }
+        else {
+            rotation = Eigen::Quaternionf::FromTwoVectors(defaultUp, targetNormal).toRotationMatrix();
+        }
+    }
 
     for (int i = 0; i <= divisions; ++i)
     {
         float offset = -halfSize + (i * spacing);
 
-        // X Axis Lines
-        AddLine(tag, { -halfSize, 0.0f, offset }, { halfSize, 0.0f, offset }, color);
+        // 2. 로컬 좌표 생성 (XZ 평면 기준)
+        // X축 평행 라인
+        Eigen::Vector3f xLineStart(-halfSize, 0.0f, offset);
+        Eigen::Vector3f xLineEnd(halfSize, 0.0f, offset);
 
-        // Z Axis Lines
-        AddLine(tag, { offset, 0.0f, -halfSize }, { offset, 0.0f, halfSize }, color);
+        // Z축 평행 라인
+        Eigen::Vector3f zLineStart(offset, 0.0f, -halfSize);
+        Eigen::Vector3f zLineEnd(offset, 0.0f, halfSize);
+
+        // 3. 회전 및 이동 적용 (Rotation * Point + Translation)
+        Eigen::Vector3f p1 = center + (rotation * xLineStart);
+        Eigen::Vector3f p2 = center + (rotation * xLineEnd);
+
+        Eigen::Vector3f p3 = center + (rotation * zLineStart);
+        Eigen::Vector3f p4 = center + (rotation * zLineEnd);
+
+        // 4. 라인 추가
+        AddLine(tag, p1, p2, color);
+        AddLine(tag, p3, p4, color);
     }
 }
 
@@ -757,4 +789,80 @@ unsigned int VisualDebugging::ShowPreviousSelection()
 
     SetVisibility(true, selectionRenderables[selectionIndex]);
     return selectionIndex;
+}
+
+Eigen::Vector3f VisualDebugging::GetInstanceScale(const std::string& tag, size_t index)
+{
+    std::lock_guard<std::mutex> lock(commandMutex);
+
+    if (debuggingRenderables.find(tag) == debuggingRenderables.end())
+    {
+        return Eigen::Vector3f::Ones();
+    }
+
+    auto renderable = debuggingRenderables[tag];
+
+    if (index >= renderable->GetInstanceCount())
+    {
+        return Eigen::Vector3f::Ones();
+    }
+
+    Eigen::Matrix4f mat = renderable->GetInstanceTransform(index);
+
+    // 행렬의 열 벡터 길이 = 스케일 (Scale X, Y, Z)
+    float sx = mat.col(0).head<3>().norm();
+    float sy = mat.col(1).head<3>().norm();
+    float sz = mat.col(2).head<3>().norm();
+
+    return Eigen::Vector3f(sx, sy, sz);
+}
+
+void VisualDebugging::SetInstanceScale(const std::string& tag, const Eigen::Vector3f& newScale, size_t index)
+{
+    // Setter는 렌더링 안전성을 위해 Command Queue에 넣습니다.
+    std::lock_guard<std::mutex> lock(commandMutex);
+    commandQueue.emplace_back([=]()
+        {
+            if (debuggingRenderables.find(tag) == debuggingRenderables.end()) return;
+
+            auto renderable = debuggingRenderables[tag];
+            if (index >= renderable->GetInstanceCount()) return;
+
+            Eigen::Matrix4f mat = renderable->GetInstanceTransform(index);
+
+            // Column 0 (Right / X)
+            mat.col(0).head<3>() = mat.col(0).head<3>().normalized() * newScale.x();
+
+            // Column 1 (Up / Y)
+            mat.col(1).head<3>() = mat.col(1).head<3>().normalized() * newScale.y();
+
+            // Column 2 (Forward / Z)
+            mat.col(2).head<3>() = mat.col(2).head<3>().normalized() * newScale.z();
+
+            renderable->SetInstanceTransform(index, mat);
+        });
+}
+
+void VisualDebugging::SetInstanceScale(const std::string& tag, const Eigen::Vector3f& newScale)
+{
+	std::lock_guard<std::mutex> lock(commandMutex);
+    commandQueue.emplace_back([=]()
+        {
+            if (debuggingRenderables.find(tag) == debuggingRenderables.end()) return;
+
+            auto renderable = debuggingRenderables[tag];
+            size_t instanceCount = renderable->GetInstanceCount();
+
+            for (size_t index = 0; index < instanceCount; ++index)
+            {
+                Eigen::Matrix4f mat = renderable->GetInstanceTransform(index);
+                // Column 0 (Right / X)
+                mat.col(0).head<3>() = mat.col(0).head<3>().normalized() * newScale.x();
+                // Column 1 (Up / Y)
+                mat.col(1).head<3>() = mat.col(1).head<3>().normalized() * newScale.y();
+                // Column 2 (Forward / Z)
+                mat.col(2).head<3>() = mat.col(2).head<3>().normalized() * newScale.z();
+                renderable->SetInstanceTransform(index, mat);
+            }
+		});
 }

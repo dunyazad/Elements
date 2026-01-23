@@ -200,6 +200,8 @@ public:
 
 	static void AddGrid(
 		const std::string& tag,
+		const Eigen::Vector3f& center,
+		const Eigen::Vector3f& normal,
 		int divisions,
 		float spacing,
 		const Eigen::Vector4f& color);
@@ -208,6 +210,10 @@ public:
 	static void AddToSelectionList(const std::string& tag);
 	static unsigned int ShowNextSelection();
 	static unsigned int ShowPreviousSelection();
+
+	static Eigen::Vector3f GetInstanceScale(const std::string& tag, size_t index = 0);
+	static void SetInstanceScale(const std::string& tag, const Eigen::Vector3f& newScale, size_t index);
+	static void SetInstanceScale(const std::string& tag, const Eigen::Vector3f& newScale);
 
 private:
 	static bool initialized;

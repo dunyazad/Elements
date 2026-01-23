@@ -7,6 +7,16 @@
 
 struct CuPointCloud;
 
+struct CuCellStats
+{
+    float3 cellMin;
+    float3 cellMax;
+    int pointCount;
+    float3 pointCentroid;
+    float3 avgNormal;
+    float3 pcaNormal;
+};
+
 struct COPPER_API CuSparseDataBlock
 {
     int3 gridSize;
@@ -33,6 +43,12 @@ struct COPPER_API CuSparseDataBlock
 
     //thrust::device_vector<float> ApplyKDE(CuPointCloud* cloud, float bandwidth);
 
+    std::vector<std::pair<float3, float3>> GetActiveCellBounds();
+
+    void ColorizePointsByCell(CuPointCloud* cloud);
+
+    std::vector<CuCellStats> GetActiveCellStats(CuPointCloud* cloud);
+    
 private:
     float computeAutoCellSize(const thrust::device_vector<float3>& points, float multiplier);
 };
