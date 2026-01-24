@@ -106,6 +106,7 @@
     <ClInclude Include="..\..\inc\Helium\Components\Shader.h" />
     <ClInclude Include="..\..\inc\Helium\Components\Texture.h" />
     <ClInclude Include="..\..\inc\Helium\Components\Transform.h" />
+    <ClInclude Include="..\..\inc\Helium\DeviceInformation.h" />
     <ClInclude Include="..\..\inc\Helium\EventCallback.hpp" />
     <ClInclude Include="..\..\inc\Helium\File.h" />
     <ClInclude Include="..\..\inc\Helium\GeometryBuilder.h" />
@@ -160,6 +161,7 @@
     <ClCompile Include="Components\Shader.cpp" />
     <ClCompile Include="Components\Texture.cpp" />
     <ClCompile Include="Components\Transform.cpp" />
+    <ClCompile Include="DeviceInformation.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="File.cpp" />
     <ClCompile Include="GeometryBuilder.cpp" />

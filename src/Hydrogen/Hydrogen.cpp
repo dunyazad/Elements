@@ -8,6 +8,7 @@ using VD = VisualDebugging;
 #include <thread>
 
 #include <Helium/Serialization.hpp>
+#include <Helium/DeviceInformation.h>
 
 #include <ShellScalingApi.h>
 #pragma comment(lib, "Shcore.lib")
@@ -53,11 +54,32 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 	HWND hWnd = FindWindowW(szWindowClass, szTitle);
 
-	AllocConsole();
-	freopen("CONOUT$", "w", stdout);
-	MaximizeConsoleWindowOnMonitor(3);
+	std::string cpuId = CPUInformation::GetCpuID();
+	std::string vendor = CPUInformation::GetVendorString();
+	
+	if("000B0671BFEBFBFF" != cpuId)
+	{
+		AllocConsole();
+		freopen("CONOUT$", "w", stdout);
+		MaximizeConsoleWindowOnMonitor(3);
 
-	MaximizeWindowOnMonitor(hWnd, 2);
+		MaximizeWindowOnMonitor(hWnd, 2);
+	
+		std::cout << "CPU Vendor: " << vendor << std::endl;
+		std::cout << "CPU ID (Signature): " << cpuId << std::endl;
+	}
+	else
+	{
+		AllocConsole();
+		freopen("CONOUT$", "w", stdout);
+		//MaximizeConsoleWindowOnMonitor(0);
+		SetConsoleToHalfOfScreen(0, 1);
+
+		MaximizeWindowOnMonitor(hWnd, 1);
+	
+		std::cout << "CPU Vendor: " << vendor << std::endl;
+		std::cout << "CPU ID (Signature): " << cpuId << std::endl;
+	}
 
 	Cu_Initialize();
 
