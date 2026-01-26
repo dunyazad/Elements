@@ -3,6 +3,7 @@
 #include <vector>
 #include <Eigen/Dense>
 #include <manifold/manifold.h>
+#include <manifold/cross_section.h>
 
 // 폰트 파일 로딩을 위한 포워드 선언
 struct stbtt_fontinfo;
