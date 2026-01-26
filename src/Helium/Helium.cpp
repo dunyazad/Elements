@@ -21,6 +21,16 @@ bool He_Initialize(HWND hwnd, int backendType)
 	return Helium.Initialize(hwnd, backendType);
 }
 
+void He_InitializeScene2D()
+{
+	Helium.InitializeScene2D();
+}
+
+void He_InitializeScene3D()
+{
+	Helium.InitializeScene3D();
+}
+
 void He_Resize(int width, int height)
 {
 	std::lock_guard<std::mutex> lock(commandMutex);

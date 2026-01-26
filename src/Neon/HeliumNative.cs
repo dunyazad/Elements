@@ -9,6 +9,12 @@ internal static class HeliumNative
     public static extern bool He_Initialize(IntPtr hwnd, int backendType);
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void He_InitializeScene2D();
+
+    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void He_InitializeScene3D();
+
+    [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern void He_Update(float dt);
 
     [DllImport("Helium.dll", CallingConvention = CallingConvention.Cdecl)]

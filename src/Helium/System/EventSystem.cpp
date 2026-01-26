@@ -22,7 +22,7 @@ void EventSystem::Update(float timeDelta)
     }
 }
 
-void EventSystem::AddLayer(const std::string& name, int priority)
+EventSystem::EventLayer* EventSystem::AddLayer(const std::string& name, int priority)
 {
     auto layer = std::make_shared<EventLayer>();
     layer->name = name;
@@ -34,6 +34,8 @@ void EventSystem::AddLayer(const std::string& name, int priority)
     std::sort(layers.begin(), layers.end(), [](const std::shared_ptr<EventLayer>& a, const std::shared_ptr<EventLayer>& b) {
         return a->priority > b->priority;
         });
+
+	return layer.get();
 }
 
 EventSystem::EventLayer* EventSystem::GetLayer(const std::string& name)

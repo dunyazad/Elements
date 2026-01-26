@@ -15,6 +15,8 @@ using VD = VisualDebugging;
 
 #include <Monitor.h>
 
+#include "TextMeshGenerator.h"
+
 #define MAX_LOADSTRING 100
 
 HINSTANCE hInst;
@@ -408,6 +410,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	g_renderingThread = std::thread([&]() {
 		He_Initialize(hWnd, 0);
 
+		He_InitializeScene3D();
+
 		RECT rect;
 		if (GetClientRect(hWnd, &rect))
 		{
@@ -521,6 +525,138 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		{
 			auto entity = Helium.CreateEntity("Circle");
 			auto circle = Helium.CreateComponent<GUICircle>(entity, 500.0f, 500.0f, 50.0f, Color::red());
+		}
+
+		{
+			auto entity = Helium.CreateEntity("3DTextBooleanExample");
+			auto renderable = Helium.CreateComponent<Renderable>(entity);
+			renderable->Initialize(Renderable::Triangles);
+			renderable->AddShader(Helium.CreateShader("Default", File("../../res/Shaders/Default.vs"), File("../../res/Shaders/Default.fs")));
+
+			// 1. Generator 초기화
+			TextMeshGenerator generator;
+			std::string fontPath = "C:\\Windows\\Fonts\\arial.ttf";
+			//std::string fontPath = "../../res/Fonts/NanumGothic/NanumGothic.ttf";
+			if (!generator.LoadFont(fontPath)) {
+				printf("!!! [ERROR] Font Load Failed: %s\n", fontPath.c_str());
+				return;
+			}
+
+			float targetScale = 0.1f; // 0.05f -> 1.0f 변경 테스트
+			float depth = 20.0f;
+
+			// 2. 3D 텍스트 생성
+			printf(">>> [DEBUG] Generating Text Mesh ('Hydrogen')...\n");
+			auto textManifold = generator.Create3DText("Hydrogen", depth, targetScale);
+
+			// [중요 확인 포인트 1] 텍스트 자체가 생성되었는가?
+			int textVerts = textManifold.NumVert();
+			printf(">>> [CHECK 1] Text Manifold Verts: %d\n", textVerts);
+
+			if (textVerts == 0) {
+				printf("!!! [CRITICAL] Text Mesh is EMPTY! (Check Scale or Font)\n");
+				// 빈 메쉬라도 죽지 않게 빈 Manifold 유지
+			}
+
+			// 중앙 정렬
+			auto bbox = textManifold.BoundingBox();
+			float textCenterX = (bbox.max.x + bbox.min.x) * 0.5f;
+			float textCenterY = (bbox.max.y + bbox.min.y) * 0.5f;
+
+			// 큐브 앞면으로 이동 (Z = 25.0f 근처)
+			textManifold = textManifold.Translate({ -textCenterX, -textCenterY, 50.0f });
+
+			// 3. 타겟 큐브 생성
+			manifold::Manifold cubeManifold = manifold::Manifold::Cube({ 200.0f, 200.0f, 100.0f }, true);
+			printf(">>> [CHECK 2] Cube Verts: %d\n", cubeManifold.NumVert());
+
+			// 4. Boolean 연산 (합집합)
+			printf(">>> [DEBUG] Running Boolean Operation...\n");
+			manifold::Manifold resultManifold = cubeManifold - textManifold;
+
+			printf(">>> [CHECK 3] Result Manifold Verts: %d\n", resultManifold.NumVert());
+
+			// 5. 결과를 MeshGL로 변환
+			manifold::MeshGL resultMesh = resultManifold.GetMeshGL();
+			int triCount = (int)resultMesh.triVerts.size() / 3;
+			printf(">>> [CHECK 4] Result Mesh Triangles: %d\n", triCount);
+
+			if (triCount == 0) {
+				printf("!!! [CRITICAL] Final Mesh has 0 Triangles! Loop will NOT run.\n");
+			}
+			else {
+				// -------------------------------------------------------------------------
+				// Flat Shading 루프
+				// -------------------------------------------------------------------------
+				std::vector<Eigen::Vector3f> flatPositions;
+				std::vector<Eigen::Vector3f> flatNormals;
+				std::vector<Eigen::Vector4f> flatColors;
+				std::vector<unsigned int> flatIndices;
+
+				auto GetPos = [&](int idx) -> Eigen::Vector3f {
+					return Eigen::Vector3f(
+						resultMesh.vertProperties[idx * 3 + 0],
+						resultMesh.vertProperties[idx * 3 + 1],
+						resultMesh.vertProperties[idx * 3 + 2]
+					);
+					};
+
+				printf(">>> [DEBUG] Starting Vertex Loop...\n");
+
+				for (size_t i = 0; i < resultMesh.triVerts.size(); i += 3)
+				{
+					unsigned int i0 = resultMesh.triVerts[i + 0];
+					unsigned int i1 = resultMesh.triVerts[i + 1];
+					unsigned int i2 = resultMesh.triVerts[i + 2];
+
+					Eigen::Vector3f v0 = GetPos(i0);
+					Eigen::Vector3f v1 = GetPos(i1);
+					Eigen::Vector3f v2 = GetPos(i2);
+
+					// 첫 번째 삼각형만 출력
+					if (i == 0) {
+						printf(">>> [LOOP RUNNING] V0: %f, %f, %f\n", v0.x(), v0.y(), v0.z());
+					}
+
+					Eigen::Vector3f faceNormal = (v1 - v0).cross(v2 - v0).normalized();
+
+					flatPositions.push_back(v0);
+					flatPositions.push_back(v1);
+					flatPositions.push_back(v2);
+
+					flatNormals.push_back(faceNormal);
+					flatNormals.push_back(faceNormal);
+					flatNormals.push_back(faceNormal);
+
+					flatColors.push_back({ 1.0f, 1.0f, 1.0f, 1.0f });
+					flatColors.push_back({ 1.0f, 1.0f, 1.0f, 1.0f });
+					flatColors.push_back({ 1.0f, 1.0f, 1.0f, 1.0f });
+
+					unsigned int currentIdx = (unsigned int)flatIndices.size();
+					flatIndices.push_back(currentIdx + 0);
+					flatIndices.push_back(currentIdx + 1);
+					flatIndices.push_back(currentIdx + 2);
+
+					// 디버깅: 선 그리기 (필요하면 주석 해제)
+					// VD::AddLine("Normal", v0, v0 + faceNormal * 5.0f, Color::red());
+				}
+
+				printf(">>> [DEBUG] Loop Finished. Total Verts Generated: %d\n", (int)flatPositions.size());
+
+				// 6. Renderable에 데이터 설정
+				renderable->SetVertices(flatPositions);
+				renderable->SetNormals(flatNormals);
+				renderable->SetColors4(flatColors);
+				renderable->SetIndices(flatIndices);
+
+				Helium.CreateEventCallback<KeyEvent>(entity, "3D", [](Entity e, const KeyEvent& event) {
+					if (event.action == 1 && KeyCode::Space == event.keyCode)
+					{
+						auto renderable = Helium.GetComponent<Renderable>(e);
+						renderable->NextDrawingMode();
+					}
+				});
+			}
 		}
 
 		while (g_isRendering)

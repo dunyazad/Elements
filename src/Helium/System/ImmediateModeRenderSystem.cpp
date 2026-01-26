@@ -4,7 +4,7 @@
 #include <Helium/Components/Components.h>
 #include <Helium/Components/Camera.h>
 #include <glad/glad.h>
-#include <Eigen/Dense> // Eigen »ç¿ë (Helium)
+#include <Eigen/Dense>
 
 ImmediateModeRenderSystem::ImmediateModeRenderSystem(HeliumCore* core)
     : HeliumSystem(core)
@@ -31,6 +31,31 @@ void ImmediateModeRenderSystem::Update(float dt)
 
     glPointSize(10.0f);
     glLineWidth(2.0f);
+
+    if (gridGizmoEnabled)
+    {
+        glPushMatrix();
+
+        Eigen::Quaternionf rotation = Eigen::Quaternionf::FromTwoVectors(Eigen::Vector3f::UnitZ(), gridNormal.normalized());
+        Eigen::Matrix4f gridTransform = Eigen::Matrix4f::Identity();
+        gridTransform.block<3, 3>(0, 0) = rotation.toRotationMatrix();
+
+        glMultMatrixf(gridTransform.data());
+
+        glColor4f(gridGizmoColor.x(), gridGizmoColor.y(), gridGizmoColor.z(), gridGizmoColor.w());
+        glBegin(GL_LINES);
+        for (float i = -100.0f; i <= 100.0f; i += gridSpacing)
+        {
+            // Lines parallel to X-axis
+            glVertex3f(-100.0f, i, 0.0f);
+            glVertex3f(100.0f, i, 0.0f);
+            // Lines parallel to Y-axis
+            glVertex3f(i, -100.0f, 0.0f);
+            glVertex3f(i, 100.0f, 0.0f);
+        }
+        glEnd();
+        glPopMatrix();
+    }
 
     if (axisGizmoEnabled)
     {

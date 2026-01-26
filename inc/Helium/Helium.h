@@ -12,6 +12,10 @@ extern "C"
 {
     HELIUM_API bool He_Initialize(HWND hwnd, int backendType);
 
+    HELIUM_API void He_InitializeScene2D();
+
+    HELIUM_API void He_InitializeScene3D();
+
     HELIUM_API void He_Resize(int width, int height);
     
     HELIUM_API void He_Update(float dt);

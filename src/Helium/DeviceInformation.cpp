@@ -45,7 +45,7 @@ std::string CPUInformation::GetVendorString()
 #endif
 
 	// Vendor string is stored in EBX, EDX, ECX
-	* reinterpret_cast<int*>(vendor) = regs[1];     // EBX
+	*reinterpret_cast<int*>(vendor) = regs[1];     // EBX
 	*reinterpret_cast<int*>(vendor + 4) = regs[3]; // EDX
 	*reinterpret_cast<int*>(vendor + 8) = regs[2]; // ECX
 	vendor[12] = '\0';

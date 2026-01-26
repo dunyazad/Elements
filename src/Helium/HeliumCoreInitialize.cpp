@@ -379,7 +379,127 @@ void InitializeVisualDebugging()
 	VisualDebugging::AddArrow("Axis_Z", { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, 1.0f, BLUE);
 }
 
-void HeliumCore::InitializeScene()
+void HeliumCore::InitializeScene2D()
+{
+	{
+		auto cameraEntity = CreateEntity("MainCamera");
+		auto camera = CreateComponent<Camera>(cameraEntity);
+		camera->SetProjectionMode(Camera::Orthogonal);
+		Helium.GetComponent<Camera>(cameraEntity)->SetEye(Eigen::Vector3f(0.0f, 0.0f, 50.0f));
+		Helium.GetComponent<Camera>(cameraEntity)->SetTarget(Eigen::Vector3f(0.0f, 0.0f, 0.0f));
+
+		auto cameraManipulator = CreateComponent<CameraManipulator2DOrtho>(cameraEntity);
+		cameraManipulator->SetCamera(camera);
+
+		auto eventSystem = GetEventSystem();
+		if (eventSystem)
+		{
+			eventSystem->Subscribe<MousePositionEvent>("2D", [cameraEntity](const MousePositionEvent& e) {
+				auto cameraManipulator = Helium.GetComponent<CameraManipulator2DOrtho>(cameraEntity);
+				if (cameraManipulator) cameraManipulator->OnMousePosition(e);
+				});
+
+			eventSystem->Subscribe<MouseButtonEvent>("2D", [cameraEntity](const MouseButtonEvent& e) {
+				auto cameraManipulator = Helium.GetComponent<CameraManipulator2DOrtho>(cameraEntity);
+				if (cameraManipulator) cameraManipulator->OnMouseButton(e);
+				});
+
+			eventSystem->Subscribe<MouseWheelEvent>("2D", [cameraEntity](const MouseWheelEvent& e) {
+				auto cameraManipulator = Helium.GetComponent<CameraManipulator2DOrtho>(cameraEntity);
+				if (cameraManipulator) cameraManipulator->OnMouseWheel(e);
+				});
+
+			eventSystem->Subscribe<KeyEvent>("2D", [cameraEntity](const KeyEvent& e) {
+				auto cameraManipulator = Helium.GetComponent<CameraManipulator2DOrtho>(cameraEntity);
+				if (cameraManipulator) cameraManipulator->OnKey(e);
+				});
+		}
+	}
+
+	//{
+	//	auto entity = CreateEntity("Grid");
+	//	auto renderable = CreateComponent<Renderable>(entity);
+	//	renderable->Initialize(Renderable::Lines);
+
+	//	renderable->SetVisible(false); //////////////////////////////////////////////////////////
+
+	//	GeometryBuilder::BuildGrid(
+	//		renderable,
+	//		500.0f,
+	//		50,
+	//		Eigen::Vector4f(0.5f, 0.5f, 0.5f, 1.0f)
+	//	);
+
+	//	auto transform = CreateComponent<Transform>(entity);
+	//	Eigen::Quaternionf rotationQuaternion = Eigen::Quaternionf::FromTwoVectors(Eigen::Vector3f::UnitY(), Eigen::Vector3f::UnitZ());
+	//	transform->SetLocalRotation(rotationQuaternion);
+
+	//	Helium.CreateComponent<Transform>(entity)->SetLocalPosition(Eigen::Vector3f(0.0f, 0.0f, 0.0f));
+	//	renderable->AddShader(CreateShader("Line", File("../../res/Shaders/Line.vs"), File("../../res/Shaders/Line.fs")));
+	//}
+
+	{
+		auto entity = CreateEntity("Main");
+		Helium.CreateEventCallback<CustomEvent>(entity, "2D", [](Entity e, const CustomEvent& event) {
+			json j = json::parse(event.jsonString);
+			if (j.contains("PointPicked"))
+			{
+				auto pointCloudID = j["PointPicked"]["PointCloudID"].get<int>();
+				auto pickedIndex = j["PointPicked"]["PickedIndex"].get<int>();
+				auto isCtrlPressed = j["PointPicked"]["IsCtrlPressed"].get<bool>();
+				auto isShiftPressed = j["PointPicked"]["IsShiftPressed"].get<bool>();
+
+				auto pointCloud = Helium.GetPointCloud(pointCloudID);
+				if (nullptr != pointCloud)
+				{
+					Eigen::Vector3f pickedPosition = pointCloud->GetPosition(pickedIndex);
+					Eigen::Vector3f pickedNormal = pointCloud->GetNormal(pickedIndex);
+
+					if (isCtrlPressed)
+					{
+						auto cameraEntity = Helium.GetEntityByName("MainCamera");
+						auto cameraManipulator = Helium.GetComponent<CameraManipulator2DOrtho>(cameraEntity);
+						if (cameraManipulator)
+						{
+							//cameraManipulator->SetCenter(pickedPosition);
+						}
+					}
+
+					if (isShiftPressed)
+					{
+						VD::Clear("Selected Point");
+						VD::AddSphere("Selected Point", pickedPosition, pickedNormal, 1.0f, { 0.0f, 0.0f, 1.0f, 0.5f });
+					}
+				}
+			}
+			});
+
+		Helium.CreateEventCallback<KeyEvent>(entity, "2D", [](Entity e, const KeyEvent& event) {
+			if (event.action == 0 && KeyCode::Enter == event.keyCode)
+			{
+				Helium.NotifyMessage("Enter key pressed!");
+			}
+			else if (event.action == 0 && KeyCode::F1 <= event.keyCode && KeyCode::F8 >= event.keyCode)
+			{
+				json j;
+				j["EventType"] = "TogglePointCloud";
+				j["Parameters"]["Order"] = (int)event.keyCode - (int)KeyCode::F1;
+				if (event.IsShiftPressed())
+				{
+					j["Parameters"]["Exclusive"] = true;
+				}
+				else
+				{
+					j["Parameters"]["Exclusive"] = false;
+				}
+
+				Helium.NativeToManaged(j.dump().c_str());
+			}
+			});
+	}
+}
+
+void HeliumCore::InitializeScene3D()
 {
 	{
 		auto cameraEntity = CreateEntity("MainCamera");

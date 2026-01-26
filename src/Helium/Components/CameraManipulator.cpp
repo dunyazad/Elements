@@ -591,3 +591,172 @@ void CameraManipulatorTrackball::SetCenterFromScreenPoint(float x, float y, floa
 	this->radius = (camera->GetEye() - worldPos).norm();
 	camera->SetDirty(true);
 }
+
+CameraManipulator2DOrtho::CameraManipulator2DOrtho()
+{
+}
+
+CameraManipulator2DOrtho::~CameraManipulator2DOrtho()
+{
+}
+
+void CameraManipulator2DOrtho::Reset()
+{
+	if (!camera) return;
+
+	// 1. 카메라를 Z축 상단에서 아래를 내려다보도록 설정 (2D 평면 뷰)
+	// 드로잉 앱에서는 보통 XY 평면을 사용하므로 Eye(0,0,100), Target(0,0,0), Up(0,1,0)
+	camera->SetEye(Eigen::Vector3f(0.0f, 0.0f, 100.0f));
+	camera->SetTarget(Eigen::Vector3f(0.0f, 0.0f, 0.0f));
+	camera->SetUp(Eigen::Vector3f(0.0f, 1.0f, 0.0f));
+
+	// 2. Orthographic 모드 강제 설정
+	camera->SetProjectionMode(Camera::Orthogonal);
+
+	// 3. 기본 줌 영역 설정 (화면 비율에 맞춤)
+	float width = (float)HeliumCore::GetStaticInstance().GetWidth();
+	float height = (float)HeliumCore::GetStaticInstance().GetHeight();
+	if (height < 1.0f) height = 1.0f;
+
+	// 화면 해상도의 절반 크기로 초기 월드 영역 설정 (예시)
+	float halfW = width * 0.5f;
+	float halfH = height * 0.5f;
+
+	auto& ortho = camera->GetOrthogonalSettings();
+	ortho.SetLeft(-halfW);
+	ortho.SetRight(halfW);
+	ortho.SetBottom(-halfH);
+	ortho.SetTop(halfH);
+	ortho.SetZNear(-1000.0f); // 2D 레이어 깊이 확보
+	ortho.SetZFar(1000.0f);
+
+	camera->SetDirty(true);
+}
+
+void CameraManipulator2DOrtho::OnMouseButton(const MouseButtonEvent& event)
+{
+	// 휠 버튼(Middle) 또는 우클릭(Right)을 Panning으로 사용
+	if (event.button == MouseButton::Middle || event.button == MouseButton::Right)
+	{
+		isPanning = (event.action == 1); // Press=1, Release=0
+	}
+}
+
+void CameraManipulator2DOrtho::OnMousePosition(const MousePositionEvent& event)
+{
+	if (!camera) return;
+
+	double currentX = event.xpos;
+	double currentY = event.ypos;
+
+	if (isPanning)
+	{
+		// 1. 마우스 델타 계산 (스크린 픽셀 단위)
+		double dx = currentX - lastMouseX;
+		double dy = currentY - lastMouseY;
+
+		// 2. 현재 뷰포트 및 Ortho 설정 가져오기
+		int screenW = HeliumCore::GetStaticInstance().GetWidth();
+		int screenH = HeliumCore::GetStaticInstance().GetHeight();
+
+		auto& ortho = camera->GetOrthogonalSettings();
+		float worldWidth = ortho.GetRight() - ortho.GetLeft();
+		float worldHeight = ortho.GetTop() - ortho.GetBottom();
+
+		// 3. 픽셀 당 월드 좌표 비율 계산
+		// 마우스를 오른쪽으로 드래그하면 카메라는 왼쪽으로 이동해야 화면이 따라옴 (반대 방향)
+		float pixelToWorldX = worldWidth / (float)screenW;
+		float pixelToWorldY = worldHeight / (float)screenH;
+
+		// 4. 이동 벡터 계산 (카메라 Right, Up 벡터 기준)
+		// 2D Ortho라 해도 회전이 들어갈 수 있으므로 카메라의 Local Axis를 사용
+		Eigen::Matrix4f view = camera->GetViewMatrix();
+		// View Matrix의 역행렬에서 Right(col 0), Up(col 1) 추출
+		Eigen::Matrix4f invView = view.inverse();
+		Eigen::Vector3f camRight = invView.col(0).head<3>().normalized();
+		Eigen::Vector3f camUp = invView.col(1).head<3>().normalized();
+
+		// dx가 양수(마우스 우측 이동) -> 카메라는 좌측 이동 -> -dx
+		// dy가 양수(마우스 하단 이동, 윈도우 좌표계) -> 카메라는 상단 이동 -> +dy (OpenGL 좌표계 고려)
+		// * 주의: GLFW/Window 좌표계에서 Y는 아래로 증가하지만, 
+		//   카메라 이동 시 마우스를 내리면 화면이 올라가야 하므로(카메라는 내려감) 
+		//   좌표계 변환에 유의. 보통 Panning은 마우스 델타의 반대방향으로 Eye/Target 이동.
+
+		Eigen::Vector3f translation = -camRight * (float)dx * pixelToWorldX
+			+ camUp * (float)dy * pixelToWorldY;
+
+		camera->SetEye(camera->GetEye() + translation);
+		camera->SetTarget(camera->GetTarget() + translation);
+		camera->SetDirty(true);
+	}
+
+	lastMouseX = currentX;
+	lastMouseY = currentY;
+}
+
+void CameraManipulator2DOrtho::OnMouseWheel(const MouseWheelEvent& event)
+{
+	if (!camera) return;
+	if (camera->GetProjectionMode() != Camera::Orthogonal) return;
+
+	// 1. 줌 스케일 결정 (Wheel Up: 확대(0.9), Wheel Down: 축소(1.1))
+	float scaleFactor = (event.yoffset > 0) ? 0.9f : 1.1f;
+
+	auto& ortho = camera->GetOrthogonalSettings();
+
+	// 최소/최대 줌 제한 (너무 작아지거나 커지는 것 방지)
+	float currentW = ortho.GetRight() - ortho.GetLeft();
+	if (currentW < 0.1f && scaleFactor < 1.0f) return; // 너무 확대됨
+	if (currentW > 100000.0f && scaleFactor > 1.0f) return; // 너무 축소됨
+
+	// 2. 마우스 커서 위치 기준으로 줌 (Zoom to Cursor) 구현
+	// 현재 마우스 위치가 월드 좌표계의 어디인지 비율(Ratio) 계산
+	int screenW = HeliumCore::GetStaticInstance().GetWidth();
+	int screenH = HeliumCore::GetStaticInstance().GetHeight();
+
+	// 마우스 포인터의 화면상 비율 (0.0 ~ 1.0)
+	// Y좌표는 윈도우(Top-Left 0,0)와 OpenGL(Bottom-Left 0,0) 차이 고려
+	float ratioX = (float)lastMouseX / (float)screenW;
+	float ratioY = 1.0f - ((float)lastMouseY / (float)screenH);
+
+	float left = ortho.GetLeft();
+	float right = ortho.GetRight();
+	float bottom = ortho.GetBottom();
+	float top = ortho.GetTop();
+
+	float w = right - left;
+	float h = top - bottom;
+
+	// 마우스가 가리키는 현재 월드 좌표 (투영 전의 논리적 위치)
+	float mouseWorldX = left + w * ratioX;
+	float mouseWorldY = bottom + h * ratioY;
+
+	// 3. 새로운 너비/높이 계산
+	float newW = w * scaleFactor;
+	float newH = h * scaleFactor;
+
+	// 4. 마우스 월드 좌표가 줌 후에도 같은 화면 비율 위치에 오도록 Bounds 재설정
+	// mouseWorldX = newLeft + newW * ratioX
+	// => newLeft = mouseWorldX - newW * ratioX
+	float newLeft = mouseWorldX - (newW * ratioX);
+	float newRight = newLeft + newW;
+
+	float newBottom = mouseWorldY - (newH * ratioY);
+	float newTop = newBottom + newH;
+
+	ortho.SetLeft(newLeft);
+	ortho.SetRight(newRight);
+	ortho.SetBottom(newBottom);
+	ortho.SetTop(newTop);
+
+	camera->SetDirty(true);
+}
+
+void CameraManipulator2DOrtho::OnKey(const KeyEvent& event)
+{
+	// 필요 시 키보드 단축키 추가 (예: F 키를 누르면 원점 복귀 등)
+	if (event.keyCode == KeyCode::F && event.action == 1)
+	{
+		Reset();
+	}
+}

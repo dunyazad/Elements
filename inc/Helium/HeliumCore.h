@@ -72,7 +72,8 @@ public:
     }
 
     bool Initialize(HWND hwnd, int backendType);
-    void InitializeScene();
+    void InitializeScene2D();
+    void InitializeScene3D();
     void Update(float dt);
     void Render();
     void Resize(int width, int height);

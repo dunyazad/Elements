@@ -10,6 +10,8 @@ using VD = VisualDebugging;
 #include <Helium/Serialization.hpp>
 #include <Helium/DeviceInformation.h>
 
+#include "TextMeshGenerator.h"
+
 #include <ShellScalingApi.h>
 #pragma comment(lib, "Shcore.lib")
 
@@ -86,6 +88,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	g_renderingThread = std::thread([&]() {
 		He_Initialize(hWnd, 0);
 
+		He_InitializeScene2D();
+
 		RECT rect;
 		if (GetClientRect(hWnd, &rect))
 		{
@@ -110,6 +114,102 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		{
 			auto entity = Helium.CreateEntity("Circle");
 			auto circle = Helium.CreateComponent<GUICircle>(entity, 500.0f, 500.0f, 50.0f, Color::red());
+		}
+
+
+		{
+			auto entity = Helium.CreateEntity("3DTextBooleanExample");
+			auto renderable = Helium.CreateComponent<Renderable>(entity);
+			renderable->Initialize(Renderable::Triangles);
+
+			// 1. Generator 초기화
+			TextMeshGenerator generator;
+			// 경로 주의! 실제 폰트 파일이 있어야 합니다.
+			if (!generator.LoadFont("../../res/Fonts/NanumGothic/NanumGothic.ttf")) {
+				return;
+			}
+
+			// 2. 3D 텍스트 생성 (Manifold 객체)
+			// 텍스트: "HELIUM", 두께: 20.0f, 크기: 0.5f
+			auto textManifold = generator.Create3DText("HELIUM", 20.0f, 0.5f);
+
+			// 3. 타겟 큐브 생성 (Manifold 객체)
+			// 크기 100x100x100 큐브
+			auto cubeManifold = manifold::Manifold::Cube({ 100.0f, 100.0f, 50.0f }, true);
+
+			// 4. 위치 조정
+			// 텍스트를 큐브 중앙으로 이동 (Rotate 등도 가능)
+			// Manifold는 Translate, Rotate, Scale 함수를 제공합니다.
+			textManifold = textManifold.Translate({ -80.0f, -10.0f, 15.0f });
+
+			// 5. Boolean 연산 (각인: Cube - Text)
+			// (-) 연산자가 차집합(Difference)입니다.
+			auto resultManifold = cubeManifold - textManifold;
+			// 합치려면: auto resultManifold = cubeManifold + textManifold;
+
+			// 6. 결과를 Helium 메쉬로 변환하여 렌더링
+			manifold::MeshGL resultMesh = resultManifold.GetMeshGL();
+
+			// Helium::Mesh 구조체에 데이터 복사
+			std::vector<Eigen::Vector3f> positions;
+			std::vector<Eigen::Vector3f> normals;
+			std::vector<Eigen::Vector4f> colors;
+			std::vector<unsigned int> indices;
+
+			// A. 정점(Vertices) 변환
+			// meshGL.vertProperties는 [x, y, z, x, y, z...] 순서로 들어있음
+			size_t numVerts = resultMesh.vertProperties.size() / 3;
+
+			positions.reserve(numVerts);
+			normals.reserve(numVerts);
+			colors.reserve(numVerts);
+
+			for (size_t i = 0; i < numVerts; ++i)
+			{
+				float x = resultMesh.vertProperties[i * 3 + 0];
+				float y = resultMesh.vertProperties[i * 3 + 1];
+				float z = resultMesh.vertProperties[i * 3 + 2];
+
+				// 1. 위치
+				positions.emplace_back(x, y, z);
+
+				// 2. 법선 (Normal)
+				// Manifold 결과에는 Normal이 없습니다. 
+				// Boolean 연산 후에는 면이 쪼개지므로 Flat Shading을 위해 
+				// 나중에 면(Face) 단위로 계산하거나, 임시로 기본값(Z-up)을 넣습니다.
+				// *제대로 하려면: 각 삼각형 면의 Normal을 계산해서 정점에 할당해야 함 (Flat Shading)
+				normals.emplace_back(0.0f, 0.0f, 1.0f);
+
+				// 3. 색상 (Color) - 흰색
+				colors.emplace_back(1.0f, 1.0f, 1.0f, 1.0f);
+			}
+
+			// B. 인덱스(Indices) 변환
+			indices.reserve(resultMesh.triVerts.size());
+			for (const auto& idx : resultMesh.triVerts)
+			{
+				indices.push_back((unsigned int)idx);
+			}
+
+			for (size_t i = 0; i < indices.size(); i += 3) {
+				unsigned int i0 = indices[i];
+				unsigned int i1 = indices[i+1];
+				unsigned int i2 = indices[i+2];
+
+				Eigen::Vector3f v0 = positions[i0];
+				Eigen::Vector3f v1 = positions[i1];
+				Eigen::Vector3f v2 = positions[i2];
+
+				Eigen::Vector3f faceNormal = (v1 - v0).cross(v2 - v0).normalized();
+				normals[i0] = faceNormal;
+				normals[i1] = faceNormal;
+				normals[i2] = faceNormal;
+			}
+
+			renderable->SetVertices(positions);
+			renderable->SetNormals(normals);
+			renderable->SetColors4(colors);
+			renderable->SetIndices(indices);
 		}
 
 		while (g_isRendering)

@@ -58,22 +58,6 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
 
     hWnd = hwnd;
 
-    // EventSystem 초기화 (내부에서 기본 레이어 생성)
-    eventSystem = std::make_unique<EventSystem>(this);
-    eventSystem->Initialize();
-
-    guiSystem = std::make_unique<GUISystem>(this);
-    guiSystem->Initialize();
-
-    inputSystem = std::make_unique<InputSystem>(this);
-    inputSystem->Initialize();
-
-    renderSystem = std::make_unique<RenderSystem>(this);
-    renderSystem->Initialize();
-
-    immediateModeRenderSystem = std::make_unique<ImmediateModeRenderSystem>(this);
-    immediateModeRenderSystem->Initialize();
-
     BackendType type = static_cast<BackendType>(backendType);
     if (type == BackendType::Vulkan)
     {
@@ -92,9 +76,23 @@ bool HeliumCore::Initialize(HWND hwnd, int backendType)
         return false;
     }
 
-    VisualDebugging::Initialize();
+    // EventSystem 초기화 (내부에서 기본 레이어 생성)
+    eventSystem = std::make_unique<EventSystem>(this);
+    eventSystem->Initialize();
 
-    InitializeScene();
+    guiSystem = std::make_unique<GUISystem>(this);
+    guiSystem->Initialize();
+
+    inputSystem = std::make_unique<InputSystem>(this);
+    inputSystem->Initialize();
+
+    renderSystem = std::make_unique<RenderSystem>(this);
+    renderSystem->Initialize();
+
+    immediateModeRenderSystem = std::make_unique<ImmediateModeRenderSystem>(this);
+    immediateModeRenderSystem->Initialize();
+
+    VisualDebugging::Initialize();
 
     for (auto& callback : onInitializeCallbacks)
     {

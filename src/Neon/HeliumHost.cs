@@ -65,6 +65,8 @@ namespace Neon.Controls
         {
             HeliumNative.He_Initialize(_hwnd, 0);
 
+            HeliumNative.He_InitializeScene3D();
+
             var stopwatch = new Stopwatch();
             stopwatch.Start();
             long lastTicks = 0;

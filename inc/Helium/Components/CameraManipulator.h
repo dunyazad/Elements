@@ -145,3 +145,29 @@ private:
 	Eigen::Quaternionf orbitRot = Eigen::Quaternionf::Identity();
 	float minPitchCos = 0.01f;
 };
+
+class HELIUM_API CameraManipulator2DOrtho : public CameraManipulatorBase
+{
+public:
+	CameraManipulator2DOrtho();
+	virtual ~CameraManipulator2DOrtho();
+
+	void OnMousePosition(const MousePositionEvent& event);
+	void OnMouseButton(const MouseButtonEvent& event);
+	void OnMouseWheel(const MouseWheelEvent& event);
+	void OnKey(const KeyEvent& event);
+
+	virtual void PushCameraHistory() override {}
+	virtual void PopCameraHistory() override {}
+	virtual void JumpCameraHistory(int index) override {}
+	virtual void JumpToPreviousCameraHistory() override {}
+	virtual void JumpToNextCameraHistory() override {}
+
+	virtual void Reset() override;
+	virtual void SyncRadius() override {}
+
+private:
+	double lastMouseX = 0.0;
+	double lastMouseY = 0.0;
+	bool isPanning = false;
+};

@@ -42,7 +42,7 @@ public:
     virtual void Initialize();
     virtual void Update(float timeDelta);
 
-    void AddLayer(const std::string& name, int priority);
+    EventSystem::EventLayer* AddLayer(const std::string& name, int priority);
 
     template<typename EventType, typename Handler>
     void Subscribe(const std::string& layerName, Handler&& handler)
@@ -50,7 +50,7 @@ public:
         EventLayer* layer = GetLayer(layerName);
         if (nullptr == layer)
         {
-			AddLayer(layerName, 0);
+            layer = AddLayer(layerName, 0);
         }
 
         auto wrapper = std::make_shared<EventHandlerWrapper<EventType>>();
