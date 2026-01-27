@@ -2,7 +2,7 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <CudaCompile Include="CuPointCloud.cu" />
-    <CudaCompile Include="CuSparseDataBlock.cu" />
+    <CudaCompile Include="CuSparseCells.cu" />
     <CudaCompile Include="kernel.cu" />
     <CudaCompile Include="OperatorCollection\CuOperatorCollection.cu">
       <Filter>OperatorCollection</Filter>
@@ -37,7 +37,7 @@
     <ClInclude Include="..\..\inc\Copper\CopperCommon.h" />
     <ClInclude Include="..\..\inc\Copper\CopperCore.h" />
     <ClInclude Include="..\..\inc\Copper\CuPointCloud.h" />
-    <ClInclude Include="..\..\inc\Copper\CuSparseDataBlock.h" />
+    <ClInclude Include="..\..\inc\Copper\CuSparseCells.h" />
     <ClInclude Include="..\..\inc\Copper\CuTransferFunction.h" />
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCollection.h">
       <Filter>OperatorCollection</Filter>

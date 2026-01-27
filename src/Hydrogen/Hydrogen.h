@@ -10,7 +10,7 @@
 
 #include <Copper/Copper.h>
 #include <Copper/CuPointCloud.h>
-#include <Copper/CuSparseDatablock.h>
+#include <Copper/CuSparseCells.h>
 #include <Copper/OperatorCollection/CuOperatorCollection.h>
 
 #include "resource.h"

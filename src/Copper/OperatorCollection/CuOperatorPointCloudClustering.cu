@@ -1,7 +1,7 @@
 #include <Copper/OperatorCollection/CuOperatorPointCloudClustering.h>
 #include <Copper/OperatorCollection/CuOperatorCommonDevice.h>
 #include <Copper/CuPointCloud.h>
-#include <Copper/CuSparseDataBlock.h>
+#include <Copper/CuSparseCells.h>
 #include <Copper/CuTransferFunction.h>
 
 #include <thrust/sort.h>
@@ -177,7 +177,7 @@ thrust::device_vector<uint64_t> CuOperatorPointCloudClustering::ExecuteDevice(co
     thrust::device_vector<uint64_t> deviceResult;
 
     CuPointCloud* pointCloud = params.GetParameter("pointCloud", static_cast<CuPointCloud*>(nullptr));
-    CuSparseDataBlock* sparseBlock = params.GetParameter("sparseDataBlock", static_cast<CuSparseDataBlock*>(nullptr));
+    CuSparseCells* sparseBlock = params.GetParameter("sparseCells", static_cast<CuSparseCells*>(nullptr));
 
     float radius = params.GetParameter("radius", 0.5f);
     int minClusterSize = params.GetParameter("minClusterSize", 10);

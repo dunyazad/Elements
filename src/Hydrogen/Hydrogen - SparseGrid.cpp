@@ -84,7 +84,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	Cu_Initialize();
 
 	CuPointCloud pointCloud;
-	CuSparseCells sparseDataBlock;
+	CuSparseDataBlock sparseDataBlock;
 
 #if 0
 	//{
@@ -93,7 +93,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 //	CuOperatorPointCloudKDE op;
 //	CuOperatorParameters params;
 //	params.SetParameter<CuPointCloud*>("pointCloud", &pointCloud);
-//	params.SetParameter<CuSparseCells*>("sparseCells", &sparseDataBlock);
+//	params.SetParameter<CuSparseDataBlock*>("sparseDataBlock", &sparseDataBlock);
 //	params.SetParameter<int>("k", 30);
 //	params.SetParameter<float>("bandwidth", 0.2f);
 //	std::vector<float> densities;
@@ -166,7 +166,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 			CuOperatorPointCloudLDE op;
 			CuOperatorParameters params;
 			params.SetParameter<CuPointCloud*>("pointCloud", &pointCloud);
-			params.SetParameter<CuSparseCells*>("sparseCells", &sparseDataBlock);
+			params.SetParameter<CuSparseDataBlock*>("sparseDataBlock", &sparseDataBlock);
 			params.SetParameter<float>("radius", 0.5f);
 			std::vector<float> densities;
 			TS(Execute);
@@ -211,7 +211,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 			CuPointCloud lowDensityPointCloud;
 			lowDensityPointCloud.FromHostVectors(lowDensityPoints, lowDensityNormals, lowDensityColors);
 
-			CuSparseCells sparseDataBlockForLowDensityPointCloud;
+			CuSparseDataBlock sparseDataBlockForLowDensityPointCloud;
 			sparseDataBlockForLowDensityPointCloud.Build(&lowDensityPointCloud, 10.0f);
 			TE(BuildArrowBlocks);
 
@@ -257,7 +257,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 			clusteringParams.SetParameter<CuPointCloud*>("pointCloud", &lowDensityPointCloud);
 
-			clusteringParams.SetParameter<CuSparseCells*>("sparseCells", &sparseDataBlockForLowDensityPointCloud);
+			clusteringParams.SetParameter<CuSparseDataBlock*>("sparseDataBlock", &sparseDataBlockForLowDensityPointCloud);
 			clusteringParams.SetParameter<float>("radius", 3.0f);
 			clusteringParams.SetParameter<int>("minClusterSize", 10);
 			clusteringParams.SetParameter<int>("maxClusterSize", 2000000000);

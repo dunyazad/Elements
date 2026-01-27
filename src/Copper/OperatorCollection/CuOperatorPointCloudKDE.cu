@@ -1,7 +1,7 @@
 #include <Copper/OperatorCollection/CuOperatorPointCloudKDE.h>
 #include <Copper/OperatorCollection/CuOperatorCommonDevice.h>
 #include <Copper/CuPointCloud.h>
-#include <Copper/CuSparseDataBlock.h>
+#include <Copper/CuSparseCells.h>
 #include <Copper/CuTransferFunction.h>
 
 //#include <thrust/transform_reduce.h>
@@ -25,10 +25,10 @@ void CuOperatorPointCloudKDE::Execute(const CuOperatorParameters& params, std::v
 		return;
 	}
 
-	CuSparseDataBlock* sparseBlock = params.GetParameter("sparseDataBlock", static_cast<CuSparseDataBlock*>(nullptr));
+	CuSparseCells* sparseBlock = params.GetParameter("sparseCells", static_cast<CuSparseCells*>(nullptr));
 	if (!sparseBlock)
 	{
-		printf("CuOperatorPointCloudKDE: sparseDataBlock parameter is missing.\n");
+		printf("CuOperatorPointCloudKDE: sparseCells parameter is missing.\n");
 
 		return;
 	}

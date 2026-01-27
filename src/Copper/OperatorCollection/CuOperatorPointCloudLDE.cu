@@ -1,7 +1,7 @@
 #include <Copper/OperatorCollection/CuOperatorPointCloudLDE.h>
 #include <Copper/OperatorCollection/CuOperatorCommonDevice.h>
 #include <Copper/CuPointCloud.h>
-#include <Copper/CuSparseDataBlock.h>
+#include <Copper/CuSparseCells.h>
 #include <Copper/CuTransferFunction.h>
 
 //#include <thrust/transform_reduce.h>
@@ -25,10 +25,10 @@ void CuOperatorPointCloudLDE::Execute(const CuOperatorParameters& params, std::v
         return;
     }
 
-    CuSparseDataBlock* sparseBlock = params.GetParameter("sparseDataBlock", static_cast<CuSparseDataBlock*>(nullptr));
+    CuSparseCells* sparseBlock = params.GetParameter("sparseCells", static_cast<CuSparseCells*>(nullptr));
     if (!sparseBlock)
     {
-        printf("CuOperatorPointCloudLDE: sparseDataBlock parameter is missing.\n");
+        printf("CuOperatorPointCloudLDE: sparseCells parameter is missing.\n");
 
         return;
     }
@@ -84,10 +84,10 @@ thrust::device_vector<float> CuOperatorPointCloudLDE::ExecuteDevice(const CuOper
         return deviceResult;
     }
 
-    CuSparseDataBlock* sparseBlock = params.GetParameter("sparseDataBlock", static_cast<CuSparseDataBlock*>(nullptr));
+    CuSparseCells* sparseBlock = params.GetParameter("sparseCells", static_cast<CuSparseCells*>(nullptr));
     if (!sparseBlock)
     {
-        printf("CuOperatorPointCloudLDE: sparseDataBlock parameter is missing.\n");
+        printf("CuOperatorPointCloudLDE: sparseCells parameter is missing.\n");
 
         return deviceResult;
     }

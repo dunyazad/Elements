@@ -17,7 +17,7 @@ struct CuCellStats
     float3 pcaNormal;
 };
 
-struct COPPER_API CuSparseDataBlock
+struct COPPER_API CuSparseCells
 {
     int3 gridSize;
     int numberOfCells = 0;
@@ -28,7 +28,7 @@ struct COPPER_API CuSparseDataBlock
     thrust::device_vector<int> cellStartIndices;
     thrust::device_vector<int> cellEndIndices;
 
-    CuSparseDataBlock();
+    CuSparseCells();
 
     void Build(CuPointCloud* cloud);
     void Build(CuPointCloud* cloud, float cellSize);
