@@ -414,12 +414,13 @@ void BusinessLogic()
 		// 6-1. 복셀 그리기
 		for (uint32_t i = 0; i < limit; i++)
 		{
-			if (host_out[i].weight >= 1.0f)
+			//if (host_out[i].weight >= 1.0f)
 			{
 				Eigen::Vector3f center(host_out[i].position.x, host_out[i].position.y, host_out[i].position.z);
 				Eigen::Vector4f col(host_out[i].color[0] / 255.f, host_out[i].color[1] / 255.f, host_out[i].color[2] / 255.f, 1.f);
 
-				// 형님 말씀대로 half가 아닌 full dimension(v_draw)을 그대로 전달
+				//if (0 < center.x() || 0 < center.y() || 0 < center.z())
+				//	continue;
 				VD::AddWiredBox("Voxels", center, Eigen::Vector3f(v_draw, v_draw, v_draw), col);
 			}
 		}
@@ -437,7 +438,8 @@ void BusinessLogic()
 				VVV::Vector3f b_pos = morton.ToPosition(b_size);
 				Eigen::Vector3f block_center(b_pos.x, b_pos.y, b_pos.z);
 
-				// 블록 크기도 Full Size(b_size) 그대로 전달
+				//if (0 < block_center.x() || 0 < block_center.y() || 0 < block_center.z())
+				//	continue;
 				VD::AddWiredBox("LDE_SparseDataBlocks", block_center, Eigen::Vector3f(b_size, b_size, b_size), Eigen::Vector4f(0, 1, 0, 0.2f));
 			}
 		}
