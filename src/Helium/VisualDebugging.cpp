@@ -438,6 +438,97 @@ void VisualDebugging::AddDisk(const std::string& tag, const Eigen::Vector3f& cen
         }, center, normal, scale, color);
 }
 
+void VisualDebugging::AddDiskBatch(
+    const std::string& tag,
+    const std::vector<Eigen::Vector3f>& positions,
+    const std::vector<Eigen::Vector3f>& normals,
+    float radius,
+    unsigned int slices,
+    const Eigen::Vector4f& color,
+    bool isBillboard)
+{
+    if (positions.empty())
+    {
+        return;
+    }
+
+	std::vector<Eigen::Vector4f> colors(positions.size(), color);
+
+	AddDiskBatch(tag, positions, normals, radius, slices, colors, isBillboard);
+}
+
+void VisualDebugging::AddDiskBatch(
+    const std::string& tag,
+    const std::vector<Eigen::Vector3f>& positions,
+    const std::vector<Eigen::Vector3f>& normals,
+    float radius,
+    unsigned int slices,
+    const std::vector<Eigen::Vector4f>& colors,
+    bool isBillboard)
+{
+    if (positions.empty())
+    {
+        return;
+    }
+
+    // 1. 커맨드 큐에 넣기 전, 무거운 계산(Scale Matrix 등)을 미리 수행합니다.
+    size_t count = positions.size();
+    Eigen::Vector3f scaleVec(radius * 2.0f, 1.0f, radius * 2.0f);
+    Eigen::Matrix4f baseScale = Scale(scaleVec);
+
+    std::lock_guard<std::mutex> lock(commandMutex);
+    commandQueue.emplace_back([=]()
+        {
+            if (false == initialized) Initialize();
+
+            // 2. 엔티티 및 렌더러 생성 (최초 1회)
+            if (entities.find(tag) == entities.end())
+            {
+                // 인스턴싱용 기본 모델은 반지름 0.5f로 생성하여 스케일 조절이 용이하게 함
+                CreateDiskEntity(tag, 0.5f, slices, isBillboard);
+            }
+
+            auto it = debuggingRenderables.find(tag);
+            if (it == debuggingRenderables.end())
+            {
+                return;
+            }
+
+            auto& renderable = it->second;
+
+            // 3. 인스턴스 데이터 대량 예약을 통해 재할당 방지
+            // ReserveInstances는 내부 인스턴싱 벡터들의 reserve()를 호출하는 함수여야 합니다.
+            renderable->ReserveInstances(renderable->GetInstanceCount() + count);
+
+            // 4. 루프를 돌며 인스턴스 데이터 삽입
+            for (size_t i = 0; i < count; ++i)
+            {
+                Eigen::Matrix4f rot = Eigen::Matrix4f::Identity();
+
+                // 노말 방향으로 회전 행렬 계산
+                if (normals[i].norm() > 0.0001f)
+                {
+                    Eigen::Quaternionf q;
+                    q.setFromTwoVectors(Eigen::Vector3f::UnitY(), normals[i].normalized());
+                    rot.block<3, 3>(0, 0) = q.toRotationMatrix();
+                }
+
+                Eigen::Matrix4f tm = Translate(positions[i]) * rot * baseScale;
+
+                renderable->AddInstanceTransform(tm);
+                renderable->AddInstanceColor(colors[i]);
+                renderable->AddInstanceNormal(normals[i]);
+            }
+
+            if (1.0f > colors[0].w())
+            {
+                renderable->SetUseAlpha(true);
+            }
+
+            renderable->EnableInstancing();
+        });
+}
+
 void VisualDebugging::AddCylinder(const std::string& tag, const Eigen::Vector3f& center, const Eigen::Vector3f& normal, float radius, float height, const Eigen::Vector4f& color)
 {
     unsigned int slices = 16;
@@ -594,6 +685,76 @@ void VisualDebugging::AddGrid(const std::string& tag, const Eigen::Vector3f& cen
         AddLine(tag, p1, p2, color);
         AddLine(tag, p3, p4, color);
     }
+}
+
+void VisualDebugging::AddFrustum(
+    const std::string& tag,
+    const Eigen::Matrix4f& cameraPose, // .mat에서 읽어온 카메라 Pose (World 위치/회전)
+    float fovDegrees,
+    float aspectRatio,
+    float nearPlane,
+    float farPlane,
+    const Eigen::Vector4f& color)
+{
+    // 1. 카메라의 World 위치 및 회전축 추출 (정석적인 Pose 해석)
+    Eigen::Vector3f camPos = cameraPose.block<3, 1>(0, 3);
+    Eigen::Matrix3f camRot = cameraPose.block<3, 3>(0, 0);
+
+    // 카메라의 로컬 축 (일반적으로 Z가 앞, Y가 위, X가 오른쪽)
+    // 데이터셋에 따라 앞방향이 -Z일 수도 있으므로, 이상하게 나오면 아래 forward의 부호를 바꾸세요.
+    Eigen::Vector3f forward = camRot.col(2); // 보통 Pose의 3번째 열이 Forward
+    Eigen::Vector3f up = camRot.col(1);
+    Eigen::Vector3f right = camRot.col(0);
+
+    // 2. FOV 및 거리값에 따른 Near/Far 평면의 크기 계산
+    float halfFovRad = (fovDegrees * PI / 180.0f) * 0.5f;
+    float tanHalfFov = tanf(halfFovRad);
+
+    float nearHalfHeight = nearPlane * tanHalfFov;
+    float nearHalfWidth = nearHalfHeight * aspectRatio;
+
+    float farHalfHeight = farPlane * tanHalfFov;
+    float farHalfWidth = farHalfHeight * aspectRatio;
+
+    // 3. 8개 모서리 좌표 직접 계산 (World Space)
+    // Near Plane 모서리
+    Eigen::Vector3f nearCenter = camPos + forward * nearPlane;
+    Eigen::Vector3f ntl = nearCenter + (up * nearHalfHeight) - (right * nearHalfWidth);
+    Eigen::Vector3f ntr = nearCenter + (up * nearHalfHeight) + (right * nearHalfWidth);
+    Eigen::Vector3f nbl = nearCenter - (up * nearHalfHeight) - (right * nearHalfWidth);
+    Eigen::Vector3f nbr = nearCenter - (up * nearHalfHeight) + (right * nearHalfWidth);
+
+    // Far Plane 모서리
+    Eigen::Vector3f farCenter = camPos + forward * farPlane;
+    Eigen::Vector3f ftl = farCenter + (up * farHalfHeight) - (right * farHalfWidth);
+    Eigen::Vector3f ftr = farCenter + (up * farHalfHeight) + (right * farHalfWidth);
+    Eigen::Vector3f fbl = farCenter - (up * farHalfHeight) - (right * farHalfWidth);
+    Eigen::Vector3f fbr = farCenter - (up * farHalfHeight) + (right * farHalfWidth);
+
+    // 4. 선 그리기
+    // Near Plane
+    AddLine(tag, ntl, ntr, color);
+    AddLine(tag, ntr, nbr, color);
+    AddLine(tag, nbr, nbl, color);
+    AddLine(tag, nbl, ntl, color);
+
+    // Far Plane
+    AddLine(tag, ftl, ftr, color);
+    AddLine(tag, ftr, fbr, color);
+    AddLine(tag, fbr, fbl, color);
+    AddLine(tag, fbl, ftl, color);
+
+    // Side Edges (Near to Far)
+    AddLine(tag, ntl, ftl, color);
+    AddLine(tag, ntr, ftr, color);
+    AddLine(tag, nbl, fbl, color);
+    AddLine(tag, nbr, fbr, color);
+
+    // 5. 꼭짓점(카메라 위치) 연결 (이미지처럼 뿔 모양 만들기)
+    AddLine(tag, camPos, ntl, color);
+    AddLine(tag, camPos, ntr, color);
+    AddLine(tag, camPos, nbl, color);
+    AddLine(tag, camPos, nbr, color);
 }
 
 // ============================================================================

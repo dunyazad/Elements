@@ -71,7 +71,7 @@
       <Include>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\nvapi510\include</Include>
       <Defines>COPPER_EXPORTS</Defines>
       <CodeGeneration>compute_60,sm_60</CodeGeneration>
-      <AdditionalOptions>--expt-extended-lambda -std=c++17 -Wno-deprecated-gpu-targets --diag-suppress=177,20012 -Xcompiler "/Zc:preprocessor /wd4819 /permissive-" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>--expt-extended-lambda -std=c++17 -Wno-deprecated-gpu-targets --diag-suppress=177,20012 -Xcompiler "/Zc:preprocessor /wd4819 /permissive-" --expt-relaxed-constexpr %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
     <CudaLink>
       <AdditionalLibraryDirectories>$(SolutionDir)External\nvapi510\amd64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -106,7 +106,7 @@
       <Include>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\nvapi510\include</Include>
       <Defines>COPPER_EXPORTS</Defines>
       <CodeGeneration>compute_60,sm_60</CodeGeneration>
-      <AdditionalOptions>--expt-extended-lambda -std=c++17 -Wno-deprecated-gpu-targets --diag-suppress=177,20012 -Xcompiler "/Zc:preprocessor /wd4819 /permissive-" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>--expt-extended-lambda -std=c++17 -Wno-deprecated-gpu-targets --diag-suppress=177,20012 -Xcompiler "/Zc:preprocessor /wd4819 /permissive-" --expt-relaxed-constexpr %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
     <CudaLink>
       <AdditionalLibraryDirectories>$(SolutionDir)External\nvapi510\amd64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -118,6 +118,7 @@
   <ItemGroup>
     <CudaCompile Include="CuPointCloud.cu" />
     <CudaCompile Include="CuSparseCells.cu" />
+    <CudaCompile Include="CuVoxelStreaming.cu" />
     <CudaCompile Include="kernel.cu" />
     <CudaCompile Include="OperatorCollection\CuOperatorCollection.cu" />
     <CudaCompile Include="OperatorCollection\CuOperatorCommon.cu" />
@@ -135,6 +136,7 @@
     <ClInclude Include="..\..\inc\Copper\CuPointCloud.h" />
     <ClInclude Include="..\..\inc\Copper\CuSparseCells.h" />
     <ClInclude Include="..\..\inc\Copper\CuTransferFunction.h" />
+    <ClInclude Include="..\..\inc\Copper\CuVoxelStreaming.h" />
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCollection.h" />
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCommon.h" />
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCommonDevice.h" />

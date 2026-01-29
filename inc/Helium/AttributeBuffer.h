@@ -30,6 +30,11 @@ public:
         dirty = true;
     }
 
+    void Reserve(size_t capacity)
+    {
+        data.reserve(capacity);
+	}
+
     size_t AddData(const T& element)
     {
         data.push_back(element);

@@ -28,6 +28,7 @@
     <CudaCompile Include="OperatorCollection\CuOperatorPointCloudClustering.cu">
       <Filter>OperatorCollection</Filter>
     </CudaCompile>
+    <CudaCompile Include="CuVoxelStreaming.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Copper.cpp" />
@@ -66,6 +67,7 @@
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorPointCloudClustering.h">
       <Filter>OperatorCollection</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\inc\Copper\CuVoxelStreaming.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="OperatorCollection">

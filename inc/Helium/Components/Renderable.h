@@ -100,6 +100,7 @@ public:
     // Instancing
 	bool IsInstancingEnabled() const;
     void EnableInstancing(bool enable = true);
+    void ReserveInstances(size_t capacity);
     void AddInstanceTransform(const Eigen::Matrix4f& transform);
     void AddInstanceColor(const Eigen::Vector4f& color);
     void AddInstanceNormal(const Eigen::Vector3f& normal);

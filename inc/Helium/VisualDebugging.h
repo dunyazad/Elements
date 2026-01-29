@@ -142,6 +142,24 @@ public:
 		const Eigen::Vector4f& color,
 		bool isBillboard = false);
 
+	static void AddDiskBatch(
+		const std::string& tag,
+		const std::vector<Eigen::Vector3f>& positions,
+		const std::vector<Eigen::Vector3f>& normals,
+		float radius,
+		unsigned int slices,
+		const Eigen::Vector4f& color,
+		bool isBillboard = false);
+
+	static void AddDiskBatch(
+		const std::string& tag,
+		const std::vector<Eigen::Vector3f>& positions,
+		const std::vector<Eigen::Vector3f>& normals,
+		float radius,
+		unsigned int slices,
+		const std::vector<Eigen::Vector4f>& colors,
+		bool isBillboard = false);
+
 	static void AddCylinder(
 		const std::string& tag,
 		const Eigen::Vector3f& center,
@@ -196,6 +214,15 @@ public:
 	static void AddFrustum(
 		const std::string& tag,
 		const Eigen::Matrix4f& invViewProj,
+		const Eigen::Vector4f& color);
+
+	static void AddFrustum(
+		const std::string& tag,
+		const Eigen::Matrix4f& viewMatrix,
+		float fovDegrees,
+		float aspectRatio,
+		float nearPlane,
+		float farPlane,
 		const Eigen::Vector4f& color);
 
 	static void AddGrid(

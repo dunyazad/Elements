@@ -68,7 +68,7 @@
     cudaEventSynchronize(time_##name##_stop);\
     float time_##name##_miliseconds = 0.0f;\
     cudaEventElapsedTime(&time_##name##_miliseconds, time_##name##_start, time_##name##_stop);\
-    printf("[%s] %f ms\n", #name, time_##name##_miliseconds);\
+    printf("[<[%s]>] %f ms\n", #name, time_##name##_miliseconds);\
     cudaEventDestroy(time_##name##_start);\
     cudaEventDestroy(time_##name##_stop);
 #endif

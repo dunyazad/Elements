@@ -47,6 +47,13 @@ void Renderable::EnableInstancing(bool enable)
     instanceTransforms.SetUseInstancing(enable);
 }
 
+void Renderable::ReserveInstances(size_t capacity)
+{
+    instanceTransforms.Reserve(capacity);
+    instanceColors.Reserve(capacity);
+    instanceNormals.Reserve(capacity);
+}
+
 void Renderable::Clear()
 {
     vertices.Clear();
