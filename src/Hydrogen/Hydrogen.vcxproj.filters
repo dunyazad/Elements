@@ -47,6 +47,12 @@
     <ClCompile Include="Apps\AppVoxelDataBaseMemoryUsageCheck.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
+    <ClCompile Include="Apps\AppDensityAnalyzing.cpp">
+      <Filter>Apps</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppTSDF.cpp">
+      <Filter>Apps</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Hydrogen.rc">

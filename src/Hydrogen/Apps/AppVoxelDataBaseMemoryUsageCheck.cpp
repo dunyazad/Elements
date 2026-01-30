@@ -5,18 +5,12 @@ class AppVoxelDataBaseMemoryUsageCheck : public App
 	public:
 		virtual void Execute() override
 		{
-			printf("\n==========================================================\n");
-			printf("[디버그] 박스 크기 교정 및 블록 최적화 모드 시작\n");
-			printf("==========================================================\n");
-
 			auto start_time = std::chrono::high_resolution_clock::now();
 
-			// 1. 초기 상태 측정
 			auto [initial_used, total_gpu] = CheckDeviceMemory("초기 상태");
 
 			VVV::VoxelDataBase voxel_db;
 
-			// 실제 사용량(3.4만) 대비 효율적인 64K 할당
 			uint32_t max_blocks = 65536;
 
 			size_t block_bytes = sizeof(VVV::VoxelBlock) * (size_t)max_blocks;
@@ -27,11 +21,9 @@ class AppVoxelDataBaseMemoryUsageCheck : public App
 			printf("    - 설정 블록 수       : %u 개\n", max_blocks);
 			printf("    - 예상 메모리 점유   : %.4f GB\n", theory_total / (1024.0 * 1024.0 * 1024.0));
 
-			// 2. GPU 메모리 할당
 			VVV_Allocate(voxel_db, max_blocks);
 			auto [after_alloc_used, ignore1] = CheckDeviceMemory("할당 완료");
 
-			// 3. PLY 데이터 로드
 			PLYFormat ply;
 			if (!ply.Deserialize("D:\\Resources\\Debug\\3D\\VoxelValues_Unlock.ply"))
 			{
@@ -64,7 +56,6 @@ class AppVoxelDataBaseMemoryUsageCheck : public App
 
 			float b_size = 0.8f;
 
-			// 4. GPU 업데이트 (시간 측정 포함)
 			printf("\n>>> [GPU 연산] 복셀 데이터 생성 중...\n");
 			TS(VVV_UpdateVoxelFromPoints);
 			VVV_UpdateVoxelFromPoints(voxel_db, points.data(), colors.data(), (uint32_t)n_points, b_size, 1);
@@ -73,12 +64,10 @@ class AppVoxelDataBaseMemoryUsageCheck : public App
 
 			CheckDeviceMemory("업데이트 완료");
 
-			// 5. 데이터 추출
 			uint32_t max_out = 50000000;
 			std::vector<VVV::ExtractedVoxel> host_out(max_out);
 			uint32_t final_cnt = VVV_ExtractActiveVoxelsToHost(voxel_db, b_size, host_out.data(), max_out);
 
-			// 6. 가시화 (Full Dimension 적용)
 			if (final_cnt > 0)
 			{
 				// 복셀 한 변의 길이 (Full Size)
@@ -86,9 +75,6 @@ class AppVoxelDataBaseMemoryUsageCheck : public App
 
 				uint32_t limit = (final_cnt > max_out) ? max_out : final_cnt;
 
-				printf("\n>>> [가시화] 박스 크기 교정 적용 중...\n");
-
-				// 6-1. 복셀 그리기
 				for (uint32_t i = 0; i < limit; i++)
 				{
 					//if (host_out[i].weight >= 1.0f)
@@ -102,7 +88,6 @@ class AppVoxelDataBaseMemoryUsageCheck : public App
 					}
 				}
 
-				// 6-2. 블록 경계 그리기
 				std::vector<uint64_t> host_hash_table(max_blocks);
 				cudaMemcpy(host_hash_table.data(), voxel_db.d_hashTable, sizeof(uint64_t) * max_blocks, cudaMemcpyDeviceToHost);
 
@@ -122,7 +107,6 @@ class AppVoxelDataBaseMemoryUsageCheck : public App
 				}
 			}
 
-			// 7. 분석 리포트 및 정리
 			uint32_t active_blocks_count = 0;
 			cudaMemcpy(&active_blocks_count, voxel_db.d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
 

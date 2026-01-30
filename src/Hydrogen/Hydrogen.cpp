@@ -101,7 +101,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		{
 			cudaFree(0);
 
-			Apps::Run("AppVoxelDataBaseMemoryUsageCheck");
+			//Apps::Run("AppVoxelDataBaseMemoryUsageCheck");
+			//Apps::Run("AppVoxelDataBaseMemoryUsageCheck");
+			Apps::Run("AppTSDF");
 		}
 
 		{
@@ -109,17 +111,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 			Helium.CreateEventCallback<KeyEvent>(entity, "3D", [](Entity e, const KeyEvent& event) {
 				if (event.action == 1 && KeyCode::Plus == event.keyCode)
 				{
-					auto scale = VD::GetInstanceScale("LDE");
-					VD::SetInstanceScale("LDE", scale * 1.1f);
+					auto scale = VD::GetInstanceScale("PointCloud");
+					VD::SetInstanceScale("PointCloud", scale * 1.1f);
 				}
 				else if (event.action == 1 && KeyCode::Minus == event.keyCode)
 				{
-					auto scale = VD::GetInstanceScale("LDE");
-					VD::SetInstanceScale("LDE", scale * 0.9f);
+					auto scale = VD::GetInstanceScale("PointCloud");
+					VD::SetInstanceScale("PointCloud", scale * 0.9f);
 				}
 				else if (event.action == 0 && KeyCode::Tilde == event.keyCode)
 				{
-					VD::ToggleVisibility("LDE_SparseDataBlocks");
+					VD::ToggleVisibility("PointCloud");
 				}
 				});
 		}

@@ -126,12 +126,36 @@ public:
 		const Eigen::Vector3f& dimensions,
 		const Eigen::Vector4f& color);
 
+	static void AddWiredBoxBatch(
+		const std::string& tag,
+		const std::vector<Eigen::Vector3f>& centers,
+		const Eigen::Vector3f& dimensions,
+		const Eigen::Vector4f& color);
+
+	static void AddWiredBoxBatch(
+		const std::string& tag,
+		const std::vector<Eigen::Vector3f>& centers,
+		const Eigen::Vector3f& dimensions,
+		const std::vector<Eigen::Vector4f>& colors);
+
 	static void AddSphere(
 		const std::string& tag,
 		const Eigen::Vector3f& center,
 		const Eigen::Vector3f& normal,
 		float radius,
 		const Eigen::Vector4f& color);
+
+	static void AddSphereBatch(
+		const std::string& tag,
+		const std::vector<Eigen::Vector3f>& centers,
+		float radius,
+		const Eigen::Vector4f& color);
+
+	static void AddSphereBatch(
+		const std::string& tag,
+		const std::vector<Eigen::Vector3f>& centers,
+		float radius,
+		const std::vector<Eigen::Vector4f>& colors);
 
 	static void AddDisk(
 		const std::string& tag,

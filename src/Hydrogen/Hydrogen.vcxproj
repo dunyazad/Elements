@@ -157,6 +157,8 @@
     <ClInclude Include="TextMeshGenerator.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Apps\AppDensityAnalyzing.cpp" />
+    <ClCompile Include="Apps\AppTSDF.cpp" />
     <ClCompile Include="Apps\AppVoxelDataBaseMemoryUsageCheck.cpp" />
     <ClCompile Include="Hydrogen.cpp" />
     <ClCompile Include="TextMeshGenerator.cpp" />
