@@ -149,6 +149,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Apps\Apps.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Hydrogen.h" />
     <ClInclude Include="Resource.h" />
@@ -156,6 +157,7 @@
     <ClInclude Include="TextMeshGenerator.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Apps\AppVoxelDataBaseMemoryUsageCheck.cpp" />
     <ClCompile Include="Hydrogen.cpp" />
     <ClCompile Include="TextMeshGenerator.cpp" />
   </ItemGroup>
