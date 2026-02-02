@@ -941,6 +941,26 @@ __global__ void flattenLabelsKernel(unsigned int* labels, bool* changed, int num
     }
 }
 
+__global__ void flattenLabelsFinalKernel(unsigned int* labels, int numPoints)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= numPoints)
+    {
+        return;
+    }
+
+    unsigned int curr = labels[index];
+    unsigned int next = labels[curr];
+
+    // 포인터 점핑: 최종 루트를 찾을 때까지 커널 내부에서 추적
+    while (curr != next)
+    {
+        curr = next;
+        next = labels[curr];
+    }
+    labels[index] = curr;
+}
+
 void CuSparseCells::ApplyClustering(CuPointCloud* cloud, unsigned int* d_outLabels, float clusterDistance)
 {
     if (cloud == nullptr || cloud->size() == 0 || d_outLabels == nullptr)
@@ -952,14 +972,14 @@ void CuSparseCells::ApplyClustering(CuPointCloud* cloud, unsigned int* d_outLabe
 
     int numPoints = (int)cloud->size();
     float clusterDistSq = clusterDistance * clusterDistance;
-    int blockSize = 4;
+    int blockSize = 256; // 스레드 효율 최적화
     int numBlocks = (numPoints + blockSize - 1) / blockSize;
 
-    // 1. 초기화
+    // 1. 초기화 (각 점은 자기 자신을 부모로 가짐)
     initUnionFindKernel << <numBlocks, blockSize >> > (d_outLabels, numPoints);
-    cudaDeviceSynchronize();
 
-    // 2. Union: 근접한 점들끼리 부모 연결
+    // 2. Union: 근접한 점들끼리 원자적으로 연결
+    // 이 커널 내부에서 Path Halving을 수행하여 트리의 깊이를 이미 크게 줄여놓습니다.
     unionClustersKernel << <numBlocks, blockSize >> > (
         thrust::raw_pointer_cast(cloud->points.data()),
         thrust::raw_pointer_cast(cellStartIndices.data()),
@@ -971,30 +991,11 @@ void CuSparseCells::ApplyClustering(CuPointCloud* cloud, unsigned int* d_outLabe
         gridSize,
         worldOrigin
         );
-    cudaDeviceSynchronize();
 
-    // 3. Flatten: 경로 압축을 통한 최종 레이블 결정 (반복 수행)
-    bool h_changed = true;
-    bool* d_changed;
-    cudaMalloc(&d_changed, sizeof(bool));
+    // 3. Single-Pass Flatten: CPU 루프 없이 한 번에 모든 경로 단축
+    flattenLabelsFinalKernel << <numBlocks, blockSize >> > (d_outLabels, numPoints);
 
-
-
-    int iter = 0;
-    while (h_changed && iter < 100)
-    {
-        h_changed = false;
-        cudaMemcpy(d_changed, &h_changed, sizeof(bool), cudaMemcpyHostToDevice);
-
-        flattenLabelsKernel << <numBlocks, blockSize >> > (d_outLabels, d_changed, numPoints);
-
-        cudaMemcpy(&h_changed, d_changed, sizeof(bool), cudaMemcpyDeviceToHost);
-        iter++;
-    }
-
-    cudaFree(d_changed);
-
-    // 시각화를 위한 색상 입히기
+    // 4. 시각화 색상 입히기
     colorizeByHashKernel << <numBlocks, blockSize >> > (
         (uchar3*)thrust::raw_pointer_cast(cloud->colors.data()),
         (int*)d_outLabels,

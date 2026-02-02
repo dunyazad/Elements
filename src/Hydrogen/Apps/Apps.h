@@ -76,17 +76,22 @@ public:
 
     static void Run(const std::string& name)
     {
-        auto& registry = GetRegistry();
-        auto it = registry.find(name);
+        //auto t = std::thread([name]()
+            {
+                auto& registry = GetRegistry();
+                auto it = registry.find(name);
 
-        if (it != registry.end())
-        {
-            it->second->Execute();
-        }
-        else
-        {
-            std::cout << "오류: '" << name << "' 을(를) 찾을 수 없습니다." << std::endl;
-        }
+                if (it != registry.end())
+                {
+                    it->second->Execute();
+                }
+                else
+                {
+                    std::cout << "오류: '" << name << "' 을(를) 찾을 수 없습니다." << std::endl;
+                }
+            }
+        //);
+		//t.detach();
     }
 
     static void Clear()
