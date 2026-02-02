@@ -33,6 +33,8 @@ struct COPPER_API CuSparseCells
     void Build(CuPointCloud* cloud);
     void Build(CuPointCloud* cloud, float cellSize);
 
+    void ApplyClustering(CuPointCloud* cloud, unsigned int* d_outLabels, float clusterDistance = 0.1f);
+
     thrust::device_vector<float> ApplySOR(CuPointCloud* cloud, int k = 30, float stdDevMult = 1.0f);
 
     thrust::device_vector<float> ApplyPFOR(CuPointCloud* cloud, int k = 30, float distanceThreshold = 0.085f);

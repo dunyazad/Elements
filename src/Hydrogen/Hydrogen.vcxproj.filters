@@ -53,6 +53,21 @@
     <ClCompile Include="Apps\AppTSDF.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
+    <ClCompile Include="Apps\AppClustering.cpp">
+      <Filter>Apps</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppSDFFiltering.cpp">
+      <Filter>Apps</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppMorphology.cpp">
+      <Filter>Apps</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppMorphologyDebug.cpp">
+      <Filter>Apps</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppClusteringDevice.cpp">
+      <Filter>Apps</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Hydrogen.rc">

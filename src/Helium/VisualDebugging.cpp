@@ -433,6 +433,105 @@ void VisualDebugging::AddSphereBatch(
     const std::string& tag,
     const std::vector<Eigen::Vector3f>& centers,
     float radius,
+    const Eigen::Vector4f& color)
+{
+    if (centers.empty()) return;
+
+    size_t count = centers.size();
+
+    // Unit Sphere(반지름 0.5) 기준 스케일
+    Eigen::Vector3f scaleVec(radius * 2.0f, radius * 2.0f, radius * 2.0f);
+    Eigen::Matrix4f baseScale = Scale(scaleVec);
+
+    std::lock_guard<std::mutex> lock(commandMutex);
+    commandQueue.emplace_back([=]()
+        {
+            if (!initialized) Initialize();
+
+            if (entities.find(tag) == entities.end())
+            {
+                // Base Model: radius 0.5, low poly (debug용)
+                CreateSphereEntity(tag, 0.5f, 6, 6);
+            }
+
+            auto it = debuggingRenderables.find(tag);
+            if (it == debuggingRenderables.end()) return;
+
+            auto& renderable = it->second;
+            renderable->ReserveInstances(renderable->GetInstanceCount() + count);
+
+            for (size_t i = 0; i < count; ++i)
+            {
+                Eigen::Matrix4f tm = Translate(centers[i]) * baseScale;
+
+                renderable->AddInstanceTransform(tm);
+                renderable->AddInstanceColor(color);
+                renderable->AddInstanceNormal(Eigen::Vector3f::UnitY());
+            }
+
+            if (color.w() < 1.0f)
+            {
+                renderable->SetUseAlpha(true);
+            }
+
+            renderable->EnableInstancing();
+        });
+}
+
+void VisualDebugging::AddSphereBatch(
+    const std::string& tag,
+    const std::vector<Eigen::Vector3f>& centers,
+    const std::vector<Eigen::Vector3f>& normals,
+    float radius,
+    const Eigen::Vector4f& color)
+{
+    if (centers.empty()) return;
+
+    size_t count = centers.size();
+
+    // Unit Sphere(반지름 0.5) 기준 스케일
+    Eigen::Vector3f scaleVec(radius * 2.0f, radius * 2.0f, radius * 2.0f);
+    Eigen::Matrix4f baseScale = Scale(scaleVec);
+
+    std::lock_guard<std::mutex> lock(commandMutex);
+    commandQueue.emplace_back([=]()
+        {
+            if (!initialized) Initialize();
+
+            if (entities.find(tag) == entities.end())
+            {
+                // Base Model: radius 0.5, low poly (debug용)
+                CreateSphereEntity(tag, 0.5f, 6, 6);
+            }
+
+            auto it = debuggingRenderables.find(tag);
+            if (it == debuggingRenderables.end()) return;
+
+            auto& renderable = it->second;
+            renderable->ReserveInstances(renderable->GetInstanceCount() + count);
+
+            for (size_t i = 0; i < count; ++i)
+            {
+                Eigen::Matrix4f tm = Translate(centers[i]) * baseScale;
+
+                renderable->AddInstanceTransform(tm);
+                renderable->AddInstanceColor(color);
+                renderable->AddInstanceNormal(normals[i]);
+            }
+
+            if (color.w() < 1.0f)
+            {
+                renderable->SetUseAlpha(true);
+            }
+
+            renderable->EnableInstancing();
+        });
+}
+
+void VisualDebugging::AddSphereBatch(
+    const std::string& tag,
+    const std::vector<Eigen::Vector3f>& centers,
+    float radius,
     const std::vector<Eigen::Vector4f>& colors)
 {
     if (centers.empty()) return;
@@ -478,6 +577,55 @@ void VisualDebugging::AddSphereBatch(
         });
 }
 
+void VisualDebugging::AddSphereBatch(
+    const std::string& tag,
+    const std::vector<Eigen::Vector3f>& centers,
+    const std::vector<Eigen::Vector3f>& normals,
+    float radius,
+    const std::vector<Eigen::Vector4f>& colors)
+{
+    if (centers.empty()) return;
+
+    size_t count = centers.size();
+
+    // Unit Sphere(반지름 0.5) 기준 스케일
+    Eigen::Vector3f scaleVec(radius * 2.0f, radius * 2.0f, radius * 2.0f);
+    Eigen::Matrix4f baseScale = Scale(scaleVec);
+
+    std::lock_guard<std::mutex> lock(commandMutex);
+    commandQueue.emplace_back([=]()
+        {
+            if (!initialized) Initialize();
+
+            if (entities.find(tag) == entities.end())
+            {
+                // Base Model: radius 0.5, low poly (debug용)
+                CreateSphereEntity(tag, 0.5f, 6, 6);
+            }
+
+            auto it = debuggingRenderables.find(tag);
+            if (it == debuggingRenderables.end()) return;
+
+            auto& renderable = it->second;
+            renderable->ReserveInstances(renderable->GetInstanceCount() + count);
+
+            for (size_t i = 0; i < count; ++i)
+            {
+                Eigen::Matrix4f tm = Translate(centers[i]) * baseScale;
+
+                renderable->AddInstanceTransform(tm);
+                renderable->AddInstanceColor(colors[i]);
+                renderable->AddInstanceNormal(normals[i]);
+            }
+
+            if (colors[0].w() < 1.0f)
+            {
+                renderable->SetUseAlpha(true);
+            }
+
+            renderable->EnableInstancing();
+        });
+}
 
 void VisualDebugging::AddDisk(const std::string& tag, const Eigen::Vector3f& center, const Eigen::Vector3f& normal, float radius, unsigned int slices, const Eigen::Vector4f& color, bool isBillboard)
 {

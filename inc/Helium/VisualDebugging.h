@@ -154,6 +154,20 @@ public:
 	static void AddSphereBatch(
 		const std::string& tag,
 		const std::vector<Eigen::Vector3f>& centers,
+		const std::vector<Eigen::Vector3f>& normals,
+		float radius,
+		const Eigen::Vector4f& color);
+
+	static void AddSphereBatch(
+		const std::string& tag,
+		const std::vector<Eigen::Vector3f>& centers,
+		float radius,
+		const std::vector<Eigen::Vector4f>& colors);
+
+	static void AddSphereBatch(
+		const std::string& tag,
+		const std::vector<Eigen::Vector3f>& centers,
+		const std::vector<Eigen::Vector3f>& normals,
 		float radius,
 		const std::vector<Eigen::Vector4f>& colors);
 

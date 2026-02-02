@@ -606,4 +606,45 @@ namespace Color
 			return Eigen::Vector4f(localT, 1.0f - localT, 0.0f, alpha);
 		}
 	}
+
+	//inline Eigen::Vector4f Random(float alpha = 1.0f)
+	//{
+	//	// thread-safe, 초기화 1회
+	//	static thread_local std::mt19937 rng{ std::random_device{}() };
+	//	static thread_local std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+
+	//	return Eigen::Vector4f(
+	//		dist(rng),
+	//		dist(rng),
+	//		dist(rng),
+	//		alpha
+	//	);
+	//}
+
+	//inline Eigen::Vector4f RandomHSV(
+	//	float sMin = 0.6f, float sMax = 1.0f,
+	//	float vMin = 0.6f, float vMax = 1.0f,
+	//	float alpha = 1.0f)
+	//{
+	//	static thread_local std::mt19937 rng{ std::random_device{}() };
+	//	std::uniform_real_distribution<float> hueDist(0.0f, 1.0f);
+	//	std::uniform_real_distribution<float> satDist(sMin, sMax);
+	//	std::uniform_real_distribution<float> valDist(vMin, vMax);
+
+	//	return FromHSV(
+	//		hueDist(rng),
+	//		satDist(rng),
+	//		valDist(rng),
+	//		alpha
+	//	);
+	//}
+
+	inline Eigen::Vector4f RandomFromIndex(size_t index, float alpha = 1.0f)
+	{
+		// Golden ratio 기반 Hue 분산
+		const float goldenRatio = 0.61803398875f;
+		float h = fract(index * goldenRatio);
+
+		return FromHSV(h, 0.75f, 0.95f, alpha);
+	}
 }

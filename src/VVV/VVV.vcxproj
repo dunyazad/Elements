@@ -96,7 +96,7 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="kernel.cu" />
+    <CudaCompile Include="VVV.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\inc\VVV\VVV.h" />

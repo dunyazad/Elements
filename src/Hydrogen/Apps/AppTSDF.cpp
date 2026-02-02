@@ -282,7 +282,7 @@ struct VDB
             }
         }
         //VisualDebugging::AddDiskBatch(tag, positions, normals, voxelSize * 0.7f, 8, colors, false);
-        VisualDebugging::AddSphereBatch(tag, positions, voxelSize * 0.7f, colors);
+        VisualDebugging::AddSphereBatch(tag, positions, normals, voxelSize * 0.7f, colors);
     }
 };
 

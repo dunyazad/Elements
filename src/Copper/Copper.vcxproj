@@ -118,6 +118,7 @@
   <ItemGroup>
     <CudaCompile Include="CuPointCloud.cu" />
     <CudaCompile Include="CuSparseCells.cu" />
+    <CudaCompile Include="CuUniformGrid.cu" />
     <CudaCompile Include="CuVoxelStreaming.cu" />
     <CudaCompile Include="kernel.cu" />
     <CudaCompile Include="OperatorCollection\CuOperatorCollection.cu" />
@@ -136,6 +137,7 @@
     <ClInclude Include="..\..\inc\Copper\CuPointCloud.h" />
     <ClInclude Include="..\..\inc\Copper\CuSparseCells.h" />
     <ClInclude Include="..\..\inc\Copper\CuTransferFunction.h" />
+    <ClInclude Include="..\..\inc\Copper\CuUniformGrid.h" />
     <ClInclude Include="..\..\inc\Copper\CuVoxelStreaming.h" />
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCollection.h" />
     <ClInclude Include="..\..\inc\Copper\OperatorCollection\CuOperatorCommon.h" />

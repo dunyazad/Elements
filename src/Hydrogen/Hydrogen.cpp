@@ -19,6 +19,14 @@
 
 #include "Apps/Apps.h"
 
+////const std::string  appName = "AppTSDF";
+//const std::string  appName = "AppVoxelDataBaseMemoryUsageCheck";
+//const std::string  appName = "AppClustering";
+const std::string  appName = "AppClusteringDevice";
+//const std::string  appName = "AppSDFFiltering";
+//const std::string  appName = "AppMorphology";
+//const std::string  appName = "AppMorphologyDebug";
+
 #define MAX_LOADSTRING 100
 
 HINSTANCE hInst;
@@ -31,8 +39,6 @@ std::atomic<int> g_resizeWidth = 0;
 std::atomic<int> g_resizeHeight = 0;
 
 std::thread g_renderingThread;
-
-void BusinessLogic();
 
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
@@ -98,13 +104,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 			}
 		}
 
-		{
-			cudaFree(0);
-
-			//Apps::Run("AppVoxelDataBaseMemoryUsageCheck");
-			//Apps::Run("AppVoxelDataBaseMemoryUsageCheck");
-			Apps::Run("AppTSDF");
-		}
+		cudaFree(0);
+		Apps::Run(appName);
 
 		{
 			auto entity = Helium.CreateEntity("main");

@@ -9,7 +9,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="kernel.cu">
+    <CudaCompile Include="VVV.cu">
       <Filter>소스 파일</Filter>
     </CudaCompile>
   </ItemGroup>
