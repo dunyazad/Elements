@@ -139,3 +139,48 @@ public:
 //};
 //
 //REGISTER_APP(NetworkMonitor, "NetworkMonitor");
+
+typedef struct CamInfo_
+{
+    float cfx;
+    float cfy;
+    float ccx;
+    float ccy;
+    int cx;
+    int cy;
+    int img_width;
+    int img_height;
+    double R[9];
+    double T[3];
+    Eigen::Vector3f dlpPos;
+    Eigen::Vector3f camPos;
+    Eigen::Matrix3f invMatTilt;
+    Eigen::Matrix3f matTilt;
+
+    Eigen::Matrix4f GetViewMatrix(const CamInfo_& info)
+    {
+        Eigen::Matrix4f view = Eigen::Matrix4f::Identity();
+        for (int i = 0; i < 3; ++i)
+        {
+            for (int j = 0; j < 3; ++j)
+            {
+                view(i, j) = (float)info.R[i * 3 + j];
+            }
+            view(i, 3) = (float)info.T[i];
+        }
+        return view;
+    }
+
+    Eigen::Matrix4f GetProjectionMatrix(const CamInfo_& info, float n, float f)
+    {
+        Eigen::Matrix4f proj = Eigen::Matrix4f::Zero();
+        proj(0, 0) = 2.0f * info.cfx / info.img_width;
+        proj(0, 2) = 1.0f - (2.0f * info.ccx / info.img_width);
+        proj(1, 1) = 2.0f * info.cfy / info.img_height;
+        proj(1, 2) = (2.0f * info.ccy / info.img_height) - 1.0f;
+        proj(2, 2) = -(f + n) / (f - n);
+        proj(2, 3) = -(2.0f * f * n) / (f - n);
+        proj(3, 2) = -1.0f;
+        return proj;
+    }
+} CamInfo_;

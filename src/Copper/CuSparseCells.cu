@@ -4,18 +4,17 @@
 
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include <device_functions.h> // __ldg, rsqrtf 등을 위해 추가
+#include <device_functions.h> // __ldg, rsqrtf
 
 #include <thrust/transform_reduce.h>
 #include <thrust/sort.h>
 #include <thrust/fill.h>
-#include <thrust/extrema.h>   // minmax_element를 위해 반드시 필요
+#include <thrust/extrema.h>   // minmax_element
 #include <thrust/iterator/zip_iterator.h>
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/tuple.h>
 #include <thrust/pair.h>
 
-// max, min 식별자 오류 해결을 위한 전역 네임스페이스 정의
 #include <algorithm>
 #ifdef __CUDACC__
 using std::max;
@@ -28,7 +27,6 @@ using std::min;
 #define LDG(ptr, idx) (ptr)[idx]
 #endif
 
-// Helper for float3 type (using __ldg)
 namespace
 {
     template <typename T>
@@ -576,7 +574,6 @@ namespace
         }
     };
 
-    // float3 addition
     struct Float3SumOp
     {
         __host__ __device__ float3 operator()(const float3& a, const float3& b) const
@@ -733,7 +730,12 @@ float CuSparseCells::computeAutoCellSize(const thrust::device_vector<float3>& po
     {
         maxDim = 1.0f;
     }
-    return (maxDim / powf((float)points.size(), 1.0f / 3.0f)) * multiplier;
+
+    float cellSize = (maxDim / powf((float)points.size(), 1.0f / 3.0f)) * multiplier;
+
+	printf("Auto cell size computed: %f\n", cellSize);
+
+    return cellSize;
 }
 
 void CuSparseCells::Build(CuPointCloud* cloud)
@@ -900,14 +902,13 @@ __global__ void unionClustersKernel(
                         int end = FETCH(cellEnd, hash);
                         for (int j = start; j < end; ++j)
                         {
-                            if (j <= index) continue; // 중복 검사 방지 (작은 인덱스가 큰 인덱스를 병합)
+                            if (j <= index) continue;
 
                             float3 otherPos = FETCH(positions, j);
                             float d2 = getDistSq(myPos, otherPos);
 
                             if (d2 <= clusterDistSq)
                             {
-                                // Union 연산: 큰 인덱스의 부모를 작은 인덱스의 부모로 설정
                                 unsigned int rootA = index;
                                 unsigned int rootB = j;
 
@@ -925,7 +926,6 @@ __global__ void unionClustersKernel(
     }
 }
 
-// 3. 압축: 모든 노드가 루트를 직접 가리키도록 갱신 (Path Compression)
 __global__ void flattenLabelsKernel(unsigned int* labels, bool* changed, int numPoints)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -952,7 +952,6 @@ __global__ void flattenLabelsFinalKernel(unsigned int* labels, int numPoints)
     unsigned int curr = labels[index];
     unsigned int next = labels[curr];
 
-    // 포인터 점핑: 최종 루트를 찾을 때까지 커널 내부에서 추적
     while (curr != next)
     {
         curr = next;
@@ -972,14 +971,11 @@ void CuSparseCells::ApplyClustering(CuPointCloud* cloud, unsigned int* d_outLabe
 
     int numPoints = (int)cloud->size();
     float clusterDistSq = clusterDistance * clusterDistance;
-    int blockSize = 256; // 스레드 효율 최적화
+    int blockSize = 256;
     int numBlocks = (numPoints + blockSize - 1) / blockSize;
 
-    // 1. 초기화 (각 점은 자기 자신을 부모로 가짐)
     initUnionFindKernel << <numBlocks, blockSize >> > (d_outLabels, numPoints);
 
-    // 2. Union: 근접한 점들끼리 원자적으로 연결
-    // 이 커널 내부에서 Path Halving을 수행하여 트리의 깊이를 이미 크게 줄여놓습니다.
     unionClustersKernel << <numBlocks, blockSize >> > (
         thrust::raw_pointer_cast(cloud->points.data()),
         thrust::raw_pointer_cast(cellStartIndices.data()),
@@ -992,15 +988,13 @@ void CuSparseCells::ApplyClustering(CuPointCloud* cloud, unsigned int* d_outLabe
         worldOrigin
         );
 
-    // 3. Single-Pass Flatten: CPU 루프 없이 한 번에 모든 경로 단축
     flattenLabelsFinalKernel << <numBlocks, blockSize >> > (d_outLabels, numPoints);
 
-    // 4. 시각화 색상 입히기
-    colorizeByHashKernel << <numBlocks, blockSize >> > (
-        (uchar3*)thrust::raw_pointer_cast(cloud->colors.data()),
-        (int*)d_outLabels,
-        numPoints
-        );
+    //colorizeByHashKernel << <numBlocks, blockSize >> > (
+    //    (uchar3*)thrust::raw_pointer_cast(cloud->colors.data()),
+    //    (int*)d_outLabels,
+    //    numPoints
+    //    );
 
     cudaDeviceSynchronize();
     CUDA_TE(Clustering_UnionFind);

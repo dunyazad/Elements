@@ -414,6 +414,106 @@ void VisualDebugging::AddWiredBox(const std::string& tag, const Eigen::Vector3f&
     AddGeometryInstance(tag, CreateWiredBoxEntity, center, normal, dimensions, color);
 }
 
+void VisualDebugging::AddWiredBoxBatch(
+    const std::string& tag,
+    const std::vector<Eigen::Vector3f>& centers,
+    const Eigen::Vector3f& dimensions,
+    const Eigen::Vector4f& color)
+{
+    if (centers.empty())
+    {
+        return;
+    }
+
+    size_t count = centers.size();
+    Eigen::Matrix4f baseScale = Scale(dimensions);
+
+    std::lock_guard<std::mutex> lock(commandMutex);
+    commandQueue.emplace_back([=]()
+        {
+            if (false == initialized) Initialize();
+
+            if (entities.find(tag) == entities.end())
+            {
+                CreateWiredBoxEntity(tag);
+            }
+
+            auto it = debuggingRenderables.find(tag);
+            if (it == debuggingRenderables.end())
+            {
+                return;
+            }
+
+            auto& renderable = it->second;
+
+            renderable->ReserveInstances(renderable->GetInstanceCount() + count);
+
+            for (size_t i = 0; i < count; ++i)
+            {
+                Eigen::Matrix4f tm = Translate(centers[i]) * baseScale;
+
+                renderable->AddInstanceTransform(tm);
+                renderable->AddInstanceColor(color);
+                renderable->AddInstanceNormal(Eigen::Vector3f::UnitY());
+            }
+
+            if (1.0f > color.w())
+            {
+                renderable->SetUseAlpha(true);
+            }
+
+            renderable->EnableInstancing();
+        });
+}
+
+void VisualDebugging::AddWiredBoxBatch(
+    const std::string& tag,
+    const std::vector<Eigen::Vector3f>& centers,
+    const Eigen::Vector3f& dimensions,
+    const std::vector<Eigen::Vector4f>& colors)
+{
+    if (centers.empty() || centers.size() != colors.size())
+    {
+        return;
+    }
+
+    size_t count = centers.size();
+    Eigen::Matrix4f baseScale = Scale(dimensions);
+
+    std::lock_guard<std::mutex> lock(commandMutex);
+    commandQueue.emplace_back([=]()
+        {
+            if (false == initialized) Initialize();
+
+            if (entities.find(tag) == entities.end())
+            {
+                CreateWiredBoxEntity(tag);
+            }
+
+            auto it = debuggingRenderables.find(tag);
+            if (it == debuggingRenderables.end()) return;
+
+            auto& renderable = it->second;
+            renderable->ReserveInstances(renderable->GetInstanceCount() + count);
+
+            for (size_t i = 0; i < count; ++i)
+            {
+                Eigen::Matrix4f tm = Translate(centers[i]) * baseScale;
+
+                renderable->AddInstanceTransform(tm);
+                renderable->AddInstanceColor(colors[i]);
+                renderable->AddInstanceNormal(Eigen::Vector3f::UnitY());
+            }
+
+            if (1.0f > colors[0].w())
+            {
+                renderable->SetUseAlpha(true);
+            }
+
+            renderable->EnableInstancing();
+        });
+}
+
 void VisualDebugging::AddSphere(const std::string& tag, const Eigen::Vector3f& center, const Eigen::Vector3f& normal, float radius, const Eigen::Vector4f& color)
 {
     // 기본 품질(slices=16, stacks=16) 사용

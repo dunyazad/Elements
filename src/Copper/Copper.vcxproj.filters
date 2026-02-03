@@ -29,7 +29,6 @@
       <Filter>OperatorCollection</Filter>
     </CudaCompile>
     <CudaCompile Include="CuVoxelStreaming.cu" />
-    <CudaCompile Include="CuUniformGrid.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Copper.cpp" />
@@ -69,7 +68,6 @@
       <Filter>OperatorCollection</Filter>
     </ClInclude>
     <ClInclude Include="..\..\inc\Copper\CuVoxelStreaming.h" />
-    <ClInclude Include="..\..\inc\Copper\CuUniformGrid.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="OperatorCollection">

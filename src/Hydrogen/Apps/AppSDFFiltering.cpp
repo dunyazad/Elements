@@ -209,7 +209,7 @@ public:
 	{
 		// 1. 데이터 로드
 		PLYFormat ply;
-		ply.Deserialize("D:\\Resources\\Debug\\3D\\BasePoints.ply");
+		ply.Deserialize("D:\\Resources\\Default\\BasePoints.ply");
 
 		std::vector<Eigen::Vector3f> rawPoints = ply.GetPoints();
 		if (rawPoints.empty()) {

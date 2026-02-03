@@ -222,7 +222,7 @@ public:
 	virtual void Execute() override
 	{
 		PLYFormat ply;
-		ply.Deserialize("D:\\Resources\\Debug\\3D\\BasePoints.ply");
+		ply.Deserialize("D:\\Resources\\Default\\BasePoints.ply");
 		if (ply.GetPoints().empty()) return;
 
 		TS(Total);

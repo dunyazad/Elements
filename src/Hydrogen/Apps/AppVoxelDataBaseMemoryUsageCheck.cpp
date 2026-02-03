@@ -2,128 +2,168 @@
 
 class AppVoxelDataBaseMemoryUsageCheck : public App
 {
-	public:
-		virtual void Execute() override
-		{
-			auto start_time = std::chrono::high_resolution_clock::now();
+public:
+    virtual void Execute() override
+    {
+        auto startTime = std::chrono::high_resolution_clock::now();
 
-			auto [initial_used, total_gpu] = CheckDeviceMemory("초기 상태");
+        // 1. 초기 메모리 상태 기록
+        auto [initialUsed, totalGpu] = CheckDeviceMemory("초기 상태");
 
-			VVV::VoxelDataBase voxel_db;
+        VVV::VoxelDataBase voxelDb;
+        uint32_t maxBlocks = 80000;
 
-			uint32_t max_blocks = 65536;
+        PrintAllocationPrediction(maxBlocks);
 
-			size_t block_bytes = sizeof(VVV::VoxelBlock) * (size_t)max_blocks;
-			size_t hash_bytes = sizeof(uint64_t) * (size_t)max_blocks;
-			size_t theory_total = block_bytes + hash_bytes + sizeof(uint32_t);
+        // 2. 할당 및 증분량 체크
+        VVV_Allocate(voxelDb, maxBlocks);
+        auto [afterAllocUsed, ignore1] = CheckDeviceMemory("할당 완료");
+        PrintMemoryDelta("할당 후 증분", (size_t)initialUsed, (size_t)afterAllocUsed);
 
-			printf("\n>>> [메모리 분석: 할당 예측]\n");
-			printf("    - 설정 블록 수       : %u 개\n", max_blocks);
-			printf("    - 예상 메모리 점유   : %.4f GB\n", theory_total / (1024.0 * 1024.0 * 1024.0));
+        // 3. 데이터 로드 및 업데이트
+        if (!ProcessVoxelData(voxelDb, maxBlocks, (size_t)initialUsed))
+        {
+            VVV_Free(voxelDb);
+            return;
+        }
 
-			VVV_Allocate(voxel_db, max_blocks);
-			auto [after_alloc_used, ignore1] = CheckDeviceMemory("할당 완료");
+        // 4. 해제 및 최종 누수 점검
+        VVV_Free(voxelDb);
+        auto [finalUsed, ignore2] = CheckDeviceMemory("해제 완료");
+        PrintMemoryDelta("최종 잔류량", (size_t)initialUsed, (size_t)finalUsed);
 
-			PLYFormat ply;
-			if (!ply.Deserialize("D:\\Resources\\Debug\\3D\\VoxelValues_Unlock.ply"))
-			{
-				printf("!!! PLY 파일 로드 실패\n");
-				VVV_Free(voxel_db);
-				return;
-			}
+        PrintFinalSummary((size_t)initialUsed, (size_t)finalUsed, startTime);
+    }
 
-			size_t n_points = ply.GetPoints().size();
-			std::vector<VVV::Vector3f> points(n_points);
-			std::vector<VVV::Vector3b> colors(n_points);
+private:
+    void PrintMemoryDelta(const std::string& label, size_t initial, size_t current)
+    {
+        double deltaGb = (double)(current - initial) / (1024.0 * 1024.0 * 1024.0);
+        printf("    [Delta] %-15s : %+.4f GB\n", label.c_str(), deltaGb);
+    }
 
-			for (size_t i = 0; i < n_points; i++)
-			{
-				auto& p = ply.GetPoints()[i];
-				points[i] = { p.x(), p.y(), p.z() };
+    void PrintAllocationPrediction(uint32_t maxBlocks)
+    {
+        size_t blockBytes = sizeof(VVV::VoxelBlock) * (size_t)maxBlocks;
+        size_t hashBytes = sizeof(uint64_t) * (size_t)maxBlocks;
+        size_t theoryTotal = blockBytes + hashBytes + sizeof(uint32_t);
 
-				if (!ply.GetColors().empty())
-				{
-					auto& c = ply.GetColors()[i];
-					colors[i].x = static_cast<uint8_t>(c.x() * 255.0f);
-					colors[i].y = static_cast<uint8_t>(c.y() * 255.0f);
-					colors[i].z = static_cast<uint8_t>(c.z() * 255.0f);
-				}
-				else
-				{
-					colors[i] = { 255, 255, 255 };
-				}
-			}
+        printf("\n>>> [메모리 분석: 할당 예측]\n");
+        printf("    - 설정 블록 수       : %u 개\n", maxBlocks);
+        printf("    - 예상 메모리 점유   : %.4f GB\n", (double)theoryTotal / (1024.0 * 1024.0 * 1024.0));
+    }
 
-			float b_size = 0.8f;
+    bool ProcessVoxelData(VVV::VoxelDataBase& voxelDb, uint32_t maxBlocks, size_t initialUsed)
+    {
+        PLYFormat ply;
+        if (!ply.Deserialize("D:\\Resources\\Default\\VoxelValues_Unlock.ply"))
+        {
+            printf("!!! PLY 파일 로드 실패\n");
+            return false;
+        }
 
-			printf("\n>>> [GPU 연산] 복셀 데이터 생성 중...\n");
-			TS(VVV_UpdateVoxelFromPoints);
-			VVV_UpdateVoxelFromPoints(voxel_db, points.data(), colors.data(), (uint32_t)n_points, b_size, 1);
-			cudaDeviceSynchronize();
-			TE(VVV_UpdateVoxelFromPoints);
+        size_t nPoints = ply.GetPoints().size();
+        std::vector<VVV::Vector3f> points(nPoints);
+        std::vector<VVV::Vector3b> colors(nPoints);
 
-			CheckDeviceMemory("업데이트 완료");
+        for (size_t i = 0; i < nPoints; i++)
+        {
+            auto& p = ply.GetPoints()[i];
+            points[i] = { p.x(), p.y(), p.z() };
 
-			uint32_t max_out = 50000000;
-			std::vector<VVV::ExtractedVoxel> host_out(max_out);
-			uint32_t final_cnt = VVV_ExtractActiveVoxelsToHost(voxel_db, b_size, host_out.data(), max_out);
+            if (!ply.GetColors().empty())
+            {
+                auto& c = ply.GetColors()[i];
+                colors[i] = {
+                    static_cast<uint8_t>(c.x() * 255.0f),
+                    static_cast<uint8_t>(c.y() * 255.0f),
+                    static_cast<uint8_t>(c.z() * 255.0f)
+                };
+            }
+            else
+            {
+                colors[i] = { 255, 255, 255 };
+            }
+        }
 
-			if (final_cnt > 0)
-			{
-				// 복셀 한 변의 길이 (Full Size)
-				float v_draw = (b_size / 8.0f) * 0.9f;
+        float blockSize = 0.8f;
 
-				uint32_t limit = (final_cnt > max_out) ? max_out : final_cnt;
+        printf("\n>>> [GPU 연산] 복셀 데이터 생성 중...\n");
+        TS(VVV_UpdateVoxelFromPoints);
+        VVV_UpdateVoxelFromPoints(voxelDb, points.data(), colors.data(), (uint32_t)nPoints, blockSize, 1);
+        cudaDeviceSynchronize();
+        TE(VVV_UpdateVoxelFromPoints);
 
-				for (uint32_t i = 0; i < limit; i++)
-				{
-					//if (host_out[i].weight >= 1.0f)
-					{
-						Eigen::Vector3f center(host_out[i].position.x, host_out[i].position.y, host_out[i].position.z);
-						Eigen::Vector4f col(host_out[i].color[0] / 255.f, host_out[i].color[1] / 255.f, host_out[i].color[2] / 255.f, 1.f);
+        // 사용된 블록 수 확인
+        uint32_t activeBlocksCount = 0;
+        cudaMemcpy(&activeBlocksCount, voxelDb.d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
 
-						//if (0 < center.x() || 0 < center.y() || 0 < center.z())
-						//	continue;
-						VD::AddWiredBox("Voxels", center, Eigen::Vector3f(v_draw, v_draw, v_draw), col);
-					}
-				}
+        auto [afterUpdateUsed, ignore] = CheckDeviceMemory("업데이트 완료");
+        printf("    - 사용 중인 블록 수  : %u / %u\n", activeBlocksCount, maxBlocks);
+        PrintMemoryDelta("업데이트 후 증분", (size_t)initialUsed, (size_t)afterUpdateUsed);
 
-				std::vector<uint64_t> host_hash_table(max_blocks);
-				cudaMemcpy(host_hash_table.data(), voxel_db.d_hashTable, sizeof(uint64_t) * max_blocks, cudaMemcpyDeviceToHost);
+        VisualizeVoxelsBatch(voxelDb, maxBlocks, blockSize, activeBlocksCount);
 
-				for (uint32_t i = 0; i < max_blocks; ++i)
-				{
-					uint64_t m_key = host_hash_table[i];
-					if (m_key != 0 && m_key != 0xFFFFFFFFFFFFFFFFULL)
-					{
-						VVV::Morton64 morton(m_key);
-						VVV::Vector3f b_pos = morton.ToPosition(b_size);
-						Eigen::Vector3f block_center(b_pos.x, b_pos.y, b_pos.z);
+        return true;
+    }
 
-						//if (0 < block_center.x() || 0 < block_center.y() || 0 < block_center.z())
-						//	continue;
-						VD::AddWiredBox("LDE_SparseDataBlocks", block_center, Eigen::Vector3f(b_size, b_size, b_size), Eigen::Vector4f(0, 1, 0, 0.2f));
-					}
-				}
-			}
+    void VisualizeVoxelsBatch(VVV::VoxelDataBase& voxelDb, uint32_t maxBlocks, float blockSize, uint32_t activeBlocksCount)
+    {
+        uint32_t maxOut = 50000000;
+        std::vector<VVV::ExtractedVoxel> hostOut(maxOut);
+        uint32_t finalCnt = VVV_ExtractActiveVoxelsToHost(voxelDb, blockSize, hostOut.data(), maxOut);
 
-			uint32_t active_blocks_count = 0;
-			cudaMemcpy(&active_blocks_count, voxel_db.d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+        if (finalCnt > 0)
+        {
+            uint32_t limit = (finalCnt > maxOut) ? maxOut : finalCnt;
+            float voxelDrawSize = (blockSize / 8.0f) * 0.9f;
+            Eigen::Vector3f voxelDimensions(voxelDrawSize, voxelDrawSize, voxelDrawSize);
 
-			printf("\n>>> [최종 리포트]\n");
-			printf("    - 추출된 복셀 수     : %u 개\n", final_cnt);
-			printf("    - 해시 적재율        : %.2f%% (%u / %u)\n",
-				(double)active_blocks_count / max_blocks * 100.0, active_blocks_count, max_blocks);
+            std::vector<Eigen::Vector3f> voxelCenters;
+            std::vector<Eigen::Vector4f> voxelColors;
+            voxelCenters.reserve(limit);
+            voxelColors.reserve(limit);
 
-			VVV_Free(voxel_db);
-			auto [final_used, ignore3] = CheckDeviceMemory("해제 완료");
+            for (uint32_t i = 0; i < limit; i++)
+            {
+                voxelCenters.emplace_back(hostOut[i].position.x, hostOut[i].position.y, hostOut[i].position.z);
+                voxelColors.emplace_back(hostOut[i].color[0] / 255.f, hostOut[i].color[1] / 255.f, hostOut[i].color[2] / 255.f, 1.f);
+            }
+            VD::AddWiredBoxBatch("Voxels", voxelCenters, voxelDimensions, voxelColors);
 
-			printf("\n>>> [메모리 점검]\n");
-			printf("    - 잔류 누수량        : %.4f MB\n", (final_used - initial_used) / (1024.0 * 1024.0));
-			printf("    - 총 소요 시간       : %.4fs\n", std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - start_time).count());
-			printf("==========================================================\n");
-		}
+            std::vector<uint64_t> hostHashTable(maxBlocks);
+            cudaMemcpy(hostHashTable.data(), voxelDb.d_hashTable, sizeof(uint64_t) * maxBlocks, cudaMemcpyDeviceToHost);
 
+            std::vector<Eigen::Vector3f> blockCenters;
+            blockCenters.reserve(activeBlocksCount); // 실제 사용된 수만큼 예약
+
+            for (uint32_t i = 0; i < maxBlocks; ++i)
+            {
+                uint64_t mKey = hostHashTable[i];
+                if (mKey != 0 && mKey != 0xFFFFFFFFFFFFFFFFULL)
+                {
+                    VVV::Morton64 morton(mKey);
+                    VVV::Vector3f bPos = morton.ToPosition(blockSize);
+                    blockCenters.emplace_back(bPos.x, bPos.y, bPos.z);
+                }
+            }
+            VD::AddWiredBoxBatch("LDE_SparseDataBlocks", blockCenters, Eigen::Vector3f(blockSize, blockSize, blockSize), Eigen::Vector4f(0, 1, 0, 0.2f));
+        }
+
+        printf("\n>>> [최종 리포트]\n");
+        printf("    - 추출된 복셀 수     : %u 개\n", finalCnt);
+        printf("    - 해시 적재율        : %.2f%% (%u / %u)\n",
+            (double)activeBlocksCount / maxBlocks * 100.0, activeBlocksCount, maxBlocks);
+    }
+
+    void PrintFinalSummary(size_t initialUsed, size_t finalUsed, std::chrono::steady_clock::time_point startTime)
+    {
+        auto endTime = std::chrono::high_resolution_clock::now();
+        printf("\n>>> [최종 메모리 점검]\n");
+        printf("    - 초기 대비 잔류량   : %+.4f MB\n", (double)(finalUsed - initialUsed) / (1024.0 * 1024.0));
+        printf("    - 총 소요 시간       : %.4fs\n", std::chrono::duration<double>(endTime - startTime).count());
+        printf("==========================================================\n");
+    }
 };
 
 REGISTER_APP(AppVoxelDataBaseMemoryUsageCheck, "AppVoxelDataBaseMemoryUsageCheck");

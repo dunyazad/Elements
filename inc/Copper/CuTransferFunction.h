@@ -50,7 +50,6 @@ struct CuTransferFunction
         );
     }
 #else
-    // Host에서는 절대 사용되지 않도록 더미 선언만 둠
     uchar4 Map(float value) const = delete;
 #endif
 
@@ -111,7 +110,6 @@ private:
         if (t <= points[0].t) return points[0].color;
         if (t >= points[pointCount - 1].t) return points[pointCount - 1].color;
 
-        // Binary Search 대신 Linear Scan (N이 작으므로 더 빠름)
         for (int i = 0; i < pointCount - 1; ++i) {
             if (t >= points[i].t && t <= points[i + 1].t) {
                 float range = points[i + 1].t - points[i].t;

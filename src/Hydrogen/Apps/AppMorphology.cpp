@@ -198,7 +198,7 @@ public:
 	{
 		// 1. 데이터 로드
 		PLYFormat ply;
-		ply.Deserialize("D:\\Resources\\Debug\\3D\\BasePoints.ply"); // 파일 경로
+		ply.Deserialize("D:\\Resources\\Default\\BasePoints.ply"); // 파일 경로
 		if (ply.GetPoints().empty()) return;
 
 		// 원본 시각화 (빨간색, 반투명)
