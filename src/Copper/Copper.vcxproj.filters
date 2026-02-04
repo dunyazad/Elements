@@ -68,6 +68,7 @@
       <Filter>OperatorCollection</Filter>
     </ClInclude>
     <ClInclude Include="..\..\inc\Copper\CuVoxelStreaming.h" />
+    <ClInclude Include="..\..\inc\Copper\CUDAMath.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="OperatorCollection">

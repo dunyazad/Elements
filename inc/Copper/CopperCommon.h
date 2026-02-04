@@ -1,11 +1,30 @@
 #pragma once
 
+#pragma warning(disable: 4068)
 #pragma warning(disable: 4251)
 
-#include <iostream>
-#include <tuple>
-
+// === CUDA Headers (먼저 포함) ===
 #include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <cuda_fp16.h>
+
+// === Eigen CUDA 충돌 방지 (CRITICAL!) ===
+#ifndef EIGEN_NO_CUDA
+#define EIGEN_NO_CUDA
+#endif
+
+#ifndef EIGEN_DONT_VECTORIZE
+#define EIGEN_DONT_VECTORIZE
+#endif
+
+#ifndef EIGEN_DONT_PARALLELIZE
+#define EIGEN_DONT_PARALLELIZE
+#endif
+
+#include <Copper/CUDAMath.h>
+
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
 
 #ifdef COPPER_EXPORTS
 #define COPPER_API __declspec(dllexport)
@@ -249,3 +268,30 @@ inline std::tuple<double, double> CheckDeviceMemory(const char* tag = nullptr)
     }
     return { used_db, total_db };
 }
+
+#ifdef __CUDACC__
+#define LDG(ptr, idx) __ldg(&(ptr)[idx])
+#else
+#define LDG(ptr, idx) (ptr)[idx]
+#endif
+
+#ifdef __CUDACC__
+namespace
+{
+    template <typename T>
+    __device__ __forceinline__ T fetch_val(const T* ptr, int idx)
+    {
+        return __ldg(&ptr[idx]);
+    }
+    template <>
+    __device__ __forceinline__ float3 fetch_val(const float3* ptr, int idx)
+    {
+        float3 ret;
+        ret.x = __ldg(&ptr[idx].x);
+        ret.y = __ldg(&ptr[idx].y);
+        ret.z = __ldg(&ptr[idx].z);
+        return ret;
+    }
+}
+#define FETCH(ptr, idx) fetch_val(ptr, idx)
+#endif

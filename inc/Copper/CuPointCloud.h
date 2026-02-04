@@ -9,6 +9,9 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
+#include <Eigen/Core>
+#include <Eigen/Dense>
+
 struct COPPER_API PickResult
 {
     float distance;
@@ -18,6 +21,9 @@ struct COPPER_API PickResult
 
 struct COPPER_API CuPointCloud
 {
+    float3 aabbMin = make_float3(FLT_MAX, FLT_MAX, FLT_MAX);
+	float3 aabbMax = make_float3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
     thrust::device_vector<float3> points;
     thrust::device_vector<float3> normals;
     thrust::device_vector<uchar3> colors;
@@ -37,19 +43,25 @@ struct COPPER_API CuPointCloud
     void FromHostVectors(
         const std::vector<float3>& h_points,
         const std::vector<float3>& h_normals,
-		const std::vector<uchar3>& h_colors);
+		const std::vector<uchar3>& h_colors,
+        const float3& h_aabbMin,
+        const float3& h_aabbMax);
 
     void FromHostPointers(
         const float3* h_points,
         const float3* h_normals,
         const uchar3* h_colors,
-        size_t n);
+        size_t n,
+        const float3& h_aabbMin,
+        const float3& h_aabbMax);
 
     void FromHostPointers(
         const float3* h_points,
         const float3* h_normals,
         const float4* h_colors,
-        size_t n);
+        size_t n,
+        const float3& h_aabbMin,
+        const float3& h_aabbMax);
 
     void ToHostVectors(
         std::vector<float3>& h_points,
@@ -62,4 +74,6 @@ struct COPPER_API CuPointCloud
         std::vector<float4>& h_colors);
 
     PickResult Pick(const float3& rayOrigin, const float3& rayDir, float tolerance);
+
+	void GlobalRegistration(CuPointCloud& targetCloud, Eigen::Matrix4f& outTransform, float maxCorrespondenceDistance = 0.1f, int maxIterations = 50);
 };

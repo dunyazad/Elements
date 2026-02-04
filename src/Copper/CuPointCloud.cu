@@ -1,4 +1,5 @@
 #include <Copper/CuPointCloud.h>
+#include <Copper/CuSparseCells.h>
 
 #include <thrust/count.h>
 #include <thrust/copy.h>
@@ -41,7 +42,9 @@ float3* CuPointCloud::getPointsPtr()
 void CuPointCloud::FromHostVectors(
     const std::vector<float3>& h_points,
     const std::vector<float3>& h_normals,
-    const std::vector<uchar3>& h_colors)
+    const std::vector<uchar3>& h_colors,
+    const float3& h_aabbMin,
+    const float3& h_aabbMax)
 {
     size_t n = h_points.size();
     resize(n);
@@ -60,13 +63,18 @@ void CuPointCloud::FromHostVectors(
         thrust::fill(colors.begin(), colors.end(), make_uchar3(255, 255, 255));
 
     thrust::fill(isAlive.begin(), isAlive.end(), true);
+
+	aabbMin = h_aabbMin;
+	aabbMax = h_aabbMax;
 }
 
 void CuPointCloud::FromHostPointers(
     const float3* h_points,
     const float3* h_normals,
     const uchar3* h_colors,
-    size_t numPoints)
+    size_t numPoints,
+    const float3& h_aabbMin,
+    const float3& h_aabbMax)
 {
     resize(numPoints);
 
@@ -84,13 +92,18 @@ void CuPointCloud::FromHostPointers(
         thrust::fill(colors.begin(), colors.end(), make_uchar3(255, 255, 255));
 
     thrust::fill(isAlive.begin(), isAlive.end(), true);
+
+    aabbMin = h_aabbMin;
+    aabbMax = h_aabbMax;
 }
 
 void CuPointCloud::FromHostPointers(
     const float3* h_points,
     const float3* h_normals,
     const float4* h_colors,
-    size_t numPoints)
+    size_t numPoints,
+    const float3& h_aabbMin,
+    const float3& h_aabbMax)
 {
     resize(numPoints);
 
@@ -120,6 +133,9 @@ void CuPointCloud::FromHostPointers(
     }
 
     thrust::fill(isAlive.begin(), isAlive.end(), true);
+
+    aabbMin = h_aabbMin;
+    aabbMax = h_aabbMax;
 }
 
 void CuPointCloud::ToHostVectors(
@@ -274,4 +290,79 @@ PickResult CuPointCloud::Pick(const float3& rayOrigin, const float3& rayDir, flo
     );
 
     return result;
+}
+
+void CuPointCloud::GlobalRegistration(CuPointCloud& targetCloud, Eigen::Matrix4f& outTransform, float maxCorrespondenceDistance, int maxIterations)
+{
+    outTransform = Eigen::Matrix4f::Identity();
+    if (this->size() == 0 || targetCloud.size() == 0) return;
+
+    float currentCellSize = maxCorrespondenceDistance * 1.5f;
+
+    // 1. [핵심] Build와 Stats 추출은 루프 밖에서 딱 한 번만 수행
+    CuSparseCells targetCells;
+    targetCells.Build(&targetCloud, currentCellSize);
+    std::vector<CuCellStats> targetStats = targetCells.GetActiveCellStats(&targetCloud);
+
+    CuSparseCells sourceCells;
+    sourceCells.Build(this, currentCellSize);
+    std::vector<CuCellStats> sourceStats = sourceCells.GetActiveCellStats(this);
+
+    if (sourceStats.empty() || targetStats.empty()) return;
+
+    const float maxDistSq = maxCorrespondenceDistance * maxCorrespondenceDistance;
+
+    // 2. ICP 루프 (내부에 CUDA Build/Fill 로직 절대 금지)
+    for (int iter = 0; iter < maxIterations; ++iter)
+    {
+        std::vector<Eigen::Vector3f> srcPoints;
+        std::vector<Eigen::Vector3f> dstPoints;
+
+        // Voxel Centroid Matching
+        for (const auto& sStat : sourceStats)
+        {
+            Eigen::Vector3f sPosRaw(sStat.pointCentroid.x, sStat.pointCentroid.y, sStat.pointCentroid.z);
+            Eigen::Vector4f transformedPos = outTransform * Eigen::Vector4f(sPosRaw.x(), sPosRaw.y(), sPosRaw.z(), 1.0f);
+            Eigen::Vector3f sPos = transformedPos.head<3>();
+
+            float minD2 = maxDistSq;
+            int bestIdx = -1;
+
+            // Target Active Voxel 중 최단 거리 검색
+            for (int j = 0; j < (int)targetStats.size(); ++j)
+            {
+                const auto& tStat = targetStats[j];
+                Eigen::Vector3f tPos(tStat.pointCentroid.x, tStat.pointCentroid.y, tStat.pointCentroid.z);
+
+                float d2 = (sPos - tPos).squaredNorm();
+                if (d2 < minD2)
+                {
+                    minD2 = d2;
+                    bestIdx = j;
+                }
+            }
+
+            if (bestIdx != -1)
+            {
+                srcPoints.push_back(sPosRaw);
+                dstPoints.push_back(Eigen::Vector3f(targetStats[bestIdx].pointCentroid.x, targetStats[bestIdx].pointCentroid.y, targetStats[bestIdx].pointCentroid.z));
+            }
+        }
+
+        if (srcPoints.size() < 3) break;
+
+        // 3. SVD 최적화 (Umeyama)
+        Eigen::Matrix3Xf srcMat(3, srcPoints.size());
+        Eigen::Matrix3Xf dstMat(3, dstPoints.size());
+        for (size_t i = 0; i < srcPoints.size(); ++i)
+        {
+            srcMat.col(i) = srcPoints[i];
+            dstMat.col(i) = dstPoints[i];
+        }
+
+        Eigen::Matrix4f relativeTransform = Eigen::umeyama(srcMat, dstMat, false);
+        outTransform = relativeTransform * outTransform;
+
+        if (relativeTransform.isIdentity(1e-5)) break;
+    }
 }

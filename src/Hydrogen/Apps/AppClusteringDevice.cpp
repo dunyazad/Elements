@@ -23,7 +23,9 @@ public:
             (float3*)ply.GetPoints().data(),
             (float3*)ply.GetNormals().data(),
             (float4*)ply.GetColors().data(),
-            rawCount);
+            rawCount,
+            { ply.GetAABBMin().x(), ply.GetAABBMin().y(), ply.GetAABBMin().z() },
+            { ply.GetAABBMax().x(), ply.GetAABBMax().y(), ply.GetAABBMax().z() });
 
         //auto activeBounds = cellGrid.GetActiveCellBounds();
         //for (const auto& bound : activeBounds)
@@ -109,7 +111,9 @@ public:
             (float3*)ply.GetPoints().data(),
             (float3*)ply.GetNormals().data(),
             (float4*)ply.GetColors().data(),
-            rawCount);
+            rawCount,
+            {ply.GetAABBMin().x(), ply.GetAABBMin().y(), ply.GetAABBMin().z()},
+            {ply.GetAABBMax().x(), ply.GetAABBMax().y(), ply.GetAABBMax().z()});
 
         TS(ClusteringTotal);
 

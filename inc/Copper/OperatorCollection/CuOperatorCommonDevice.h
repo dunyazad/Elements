@@ -6,25 +6,25 @@
 #include <thrust/device_vector.h>
 #include <Copper/CuTransferFunction.h>
 
-#define LDG(ptr, idx) __ldg(&(ptr)[idx])
-
-template <typename T>
-__device__ __forceinline__ T fetch_val(const T* ptr, int idx)
-{
-    return __ldg(&ptr[idx]);
-}
-
-template <>
-__device__ __forceinline__ float3 fetch_val(const float3* ptr, int idx)
-{
-    float3 ret;
-    ret.x = __ldg(&ptr[idx].x);
-    ret.y = __ldg(&ptr[idx].y);
-    ret.z = __ldg(&ptr[idx].z);
-    return ret;
-}
-
-#define FETCH(ptr, idx) fetch_val(ptr, idx)
+//#define LDG(ptr, idx) __ldg(&(ptr)[idx])
+//
+//template <typename T>
+//__device__ __forceinline__ T fetch_val(const T* ptr, int idx)
+//{
+//    return __ldg(&ptr[idx]);
+//}
+//
+//template <>
+//__device__ __forceinline__ float3 fetch_val(const float3* ptr, int idx)
+//{
+//    float3 ret;
+//    ret.x = __ldg(&ptr[idx].x);
+//    ret.y = __ldg(&ptr[idx].y);
+//    ret.z = __ldg(&ptr[idx].z);
+//    return ret;
+//}
+//
+//#define FETCH(ptr, idx) fetch_val(ptr, idx)
 
 __global__ void computeDensityKernel(
     const float3* __restrict__ positions,

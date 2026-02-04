@@ -222,8 +222,12 @@ public:
 	virtual void Execute() override
 	{
 		PLYFormat ply;
-		ply.Deserialize("D:\\Resources\\Default\\BasePoints.ply");
-		if (ply.GetPoints().empty()) return;
+		ply.Deserialize("D:\\Resources\\Default\\Compound.ply");
+		if (ply.GetPoints().empty())
+		{
+			printf("Failed to load point cloud.\n");
+			return;
+		}
 
 		TS(Total);
 

@@ -135,7 +135,7 @@ public:
 	static void AddWiredBoxBatch(
 		const std::string& tag,
 		const std::vector<Eigen::Vector3f>& centers,
-		const Eigen::Vector3f& dimensions,
+		const std::vector <Eigen::Vector3f>& dimensions,
 		const std::vector<Eigen::Vector4f>& colors);
 
 	static void AddSphere(

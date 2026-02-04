@@ -117,16 +117,18 @@ private:
         {
             uint32_t limit = (finalCnt > maxOut) ? maxOut : finalCnt;
             float voxelDrawSize = (blockSize / 8.0f) * 0.9f;
-            Eigen::Vector3f voxelDimensions(voxelDrawSize, voxelDrawSize, voxelDrawSize);
 
             std::vector<Eigen::Vector3f> voxelCenters;
+            std::vector<Eigen::Vector3f> voxelDimensions;
             std::vector<Eigen::Vector4f> voxelColors;
             voxelCenters.reserve(limit);
+			voxelDimensions.reserve(limit);
             voxelColors.reserve(limit);
 
             for (uint32_t i = 0; i < limit; i++)
             {
                 voxelCenters.emplace_back(hostOut[i].position.x, hostOut[i].position.y, hostOut[i].position.z);
+				voxelDimensions.emplace_back(voxelDrawSize, voxelDrawSize, voxelDrawSize);
                 voxelColors.emplace_back(hostOut[i].color[0] / 255.f, hostOut[i].color[1] / 255.f, hostOut[i].color[2] / 255.f, 1.f);
             }
             VD::AddWiredBoxBatch("Voxels", voxelCenters, voxelDimensions, voxelColors);

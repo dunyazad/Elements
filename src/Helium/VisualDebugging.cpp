@@ -469,7 +469,7 @@ void VisualDebugging::AddWiredBoxBatch(
 void VisualDebugging::AddWiredBoxBatch(
     const std::string& tag,
     const std::vector<Eigen::Vector3f>& centers,
-    const Eigen::Vector3f& dimensions,
+    const std::vector<Eigen::Vector3f>& dimensions,
     const std::vector<Eigen::Vector4f>& colors)
 {
     if (centers.empty() || centers.size() != colors.size())
@@ -478,7 +478,6 @@ void VisualDebugging::AddWiredBoxBatch(
     }
 
     size_t count = centers.size();
-    Eigen::Matrix4f baseScale = Scale(dimensions);
 
     std::lock_guard<std::mutex> lock(commandMutex);
     commandQueue.emplace_back([=]()
@@ -498,6 +497,8 @@ void VisualDebugging::AddWiredBoxBatch(
 
             for (size_t i = 0; i < count; ++i)
             {
+                Eigen::Matrix4f baseScale = Scale(dimensions[i]);
+
                 Eigen::Matrix4f tm = Translate(centers[i]) * baseScale;
 
                 renderable->AddInstanceTransform(tm);

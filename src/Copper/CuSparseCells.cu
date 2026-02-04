@@ -1,15 +1,16 @@
 #include <Copper/CuSparseCells.h>
 #include <Copper/CuPointCloud.h>
-#include <Copper/CuTransferFunction.h> 
+#include <Copper/CuTransferFunction.h>
+#include <Copper/CUDAMath.h>
 
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include <device_functions.h> // __ldg, rsqrtf
+#include <device_functions.h>
 
 #include <thrust/transform_reduce.h>
 #include <thrust/sort.h>
 #include <thrust/fill.h>
-#include <thrust/extrema.h>   // minmax_element
+#include <thrust/extrema.h>
 #include <thrust/iterator/zip_iterator.h>
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/tuple.h>
@@ -21,42 +22,9 @@ using std::max;
 using std::min;
 #endif
 
-#ifdef __CUDACC__
-#define LDG(ptr, idx) __ldg(&(ptr)[idx])
-#else
-#define LDG(ptr, idx) (ptr)[idx]
-#endif
-
-namespace
-{
-    template <typename T>
-    __device__ __forceinline__ T fetch_val(const T* ptr, int idx)
-    {
-        return __ldg(&ptr[idx]);
-    }
-    template <>
-    __device__ __forceinline__ float3 fetch_val(const float3* ptr, int idx)
-    {
-        float3 ret;
-        ret.x = __ldg(&ptr[idx].x);
-        ret.y = __ldg(&ptr[idx].y);
-        ret.z = __ldg(&ptr[idx].z);
-        return ret;
-    }
-}
-#define FETCH(ptr, idx) fetch_val(ptr, idx)
-
 namespace
 {
     constexpr int MAX_K = 32;
-
-    __device__ __forceinline__ float getDistSq(float3 a, float3 b)
-    {
-        float dx = a.x - b.x;
-        float dy = a.y - b.y;
-        float dz = a.z - b.z;
-        return dx * dx + dy * dy + dz * dz;
-    }
 
     __device__ __forceinline__ void solveEigen3x3_Fast(
         float xx, float xy, float xz, float yy, float yz, float zz, float3& outNormal)
@@ -69,22 +37,19 @@ namespace
         float3 r0 = make_float3(xx, xy, xz);
         float3 r1 = make_float3(xy, yy, yz);
 
-        float3 c0 = make_float3(r0.y * r1.z - r0.z * r1.y, r0.z * r1.x - r0.x * r1.z, r0.x * r1.y - r0.y * r1.x);
-        float lenSq = c0.x * c0.x + c0.y * c0.y + c0.z * c0.z;
+        float3 c0 = Cross(r0, r1);
+        float lenSq = LengthSq(c0);
 
         if (lenSq < 1e-10f)
         {
             float3 r2 = make_float3(xz, yz, zz);
-            c0 = make_float3(r0.y * r2.z - r0.z * r2.y, r0.z * r2.x - r0.x * r2.z, r0.x * r2.y - r0.y * r2.x);
-            lenSq = c0.x * c0.x + c0.y * c0.y + c0.z * c0.z;
+            c0 = Cross(r0, r2);
+            lenSq = LengthSq(c0);
         }
 
         if (lenSq > 1e-12f)
         {
-            float invLen = rsqrtf(lenSq);
-            outNormal.x = c0.x * invLen;
-            outNormal.y = c0.y * invLen;
-            outNormal.z = c0.z * invLen;
+            outNormal = Normalize(c0);
         }
         else
         {
@@ -142,7 +107,7 @@ namespace
                                     continue;
                                 }
                                 float3 otherPos = FETCH(positions, j);
-                                float d2 = getDistSq(myPos, otherPos);
+                                float d2 = DistanceSq(myPos, otherPos);
 
                                 if (d2 < currentMaxDist)
                                 {
@@ -232,7 +197,7 @@ namespace
                                     continue;
                                 }
                                 float3 p = FETCH(positions, j);
-                                float d2 = getDistSq(myPos, p);
+                                float d2 = DistanceSq(myPos, p);
 
                                 if (d2 < currentMaxDist)
                                 {
@@ -307,7 +272,7 @@ namespace
         float3 normal;
         solveEigen3x3_Fast(xx, xy, xz, yy, yz, zz, normal);
 
-        float dist = fabsf(normal.x * relCentroid.x + normal.y * relCentroid.y + normal.z * relCentroid.z);
+        float dist = fabsf(Dot(normal, relCentroid));
         outPlaneDists[index] = dist;
     }
 
@@ -351,7 +316,8 @@ namespace
     // 1. NND Kernel (Nearest Neighbor Distance) - Best K
     __global__ void computeNNDKernel(
         const float3* __restrict__ positions, const int* __restrict__ cellStart, const int* __restrict__ cellEnd,
-        float* __restrict__ outValues, int numParticles, int k, float cellSize, int3 gridSize, float3 worldOrigin)
+        float* __restrict__ outValues, int numParticles, int k, float cellSize, int3 gridSize, float3 worldOrigin
+    )
     {
         int index = blockIdx.x * blockDim.x + threadIdx.x;
         if (index >= numParticles)
@@ -396,7 +362,7 @@ namespace
                                 {
                                     continue;
                                 }
-                                float d2 = getDistSq(myPos, FETCH(positions, j));
+                                float d2 = DistanceSq(myPos, FETCH(positions, j));
                                 if (d2 < currentMaxDist)
                                 {
                                     dists[currentMaxIdx] = d2;
@@ -473,7 +439,7 @@ namespace
                             int end = FETCH(cellEnd, hash);
                             for (int j = start; j < end; ++j)
                             {
-                                float d2 = getDistSq(myPos, FETCH(positions, j));
+                                float d2 = DistanceSq(myPos, FETCH(positions, j));
                                 if (d2 <= rSq)
                                 {
                                     if (mode == 0)
@@ -508,7 +474,6 @@ namespace
 
     __device__ uchar3 hashToColor(int hash)
     {
-        // Generate random color using simple bit operations (RGB)
         unsigned char r = (hash * 1664525 + 1013904223) & 0xFF;
         unsigned char g = (hash * 25214903917 + 11) & 0xFF;
         unsigned char b = (hash * 8253729 + 2396403) & 0xFF;
@@ -528,7 +493,6 @@ namespace
         colors[index] = hashToColor(hash);
     }
 
-    // Store 6 components of 3x3 symmetric matrix
     struct CovarianceData
     {
         float xx, yy, zz, xy, yz, zx;
@@ -549,7 +513,6 @@ namespace
         }
     };
 
-    // CovarianceData Sum Operator
     struct CovarianceSumOp
     {
         __host__ __device__ CovarianceData operator()(const CovarianceData& a, const CovarianceData& b) const
@@ -565,7 +528,6 @@ namespace
         }
     };
 
-    // float3 -> CovarianceData Conversion
     struct PositionToCovariance
     {
         __host__ __device__ CovarianceData operator()(const float3& p) const
@@ -582,23 +544,17 @@ namespace
         }
     };
 
-    // [CPU Helper] Calculate smallest eigenvector (Normal) of 3x3 matrix
-    // Port logic of existing PFOR kernel to CPU
     void solveEigen3x3_CPU(float xx, float xy, float xz, float yy, float yz, float zz, float3& outNormal)
     {
-        // 1. Shift by Mean to avoid precision loss
         float m = (xx + yy + zz) * 0.333333f;
         xx -= m;
         yy -= m;
         zz -= m;
 
-        // 2. Analytical approximation for smallest eigenvector
-        // (Find vertical vector using cross product of row vectors of matrix)
         float3 r0 = make_float3(xx, xy, xz);
         float3 r1 = make_float3(xy, yy, yz);
         float3 r2 = make_float3(xz, yz, zz);
 
-        // First attempt: Row0 x Row1
         float3 c0 = make_float3(
             r0.y * r1.z - r0.z * r1.y,
             r0.z * r1.x - r0.x * r1.z,
@@ -606,10 +562,8 @@ namespace
         );
         float lenSq = c0.x * c0.x + c0.y * c0.y + c0.z * c0.z;
 
-        // If Row0 and Row1 are parallel, result is 0, so try other combinations
         if (lenSq < 1e-10f)
         {
-            // Second attempt: Row0 x Row2
             c0 = make_float3(
                 r0.y * r2.z - r0.z * r2.y,
                 r0.z * r2.x - r0.x * r2.z,
@@ -620,7 +574,6 @@ namespace
 
         if (lenSq < 1e-10f)
         {
-            // Third attempt: Row1 x Row2
             c0 = make_float3(
                 r1.y * r2.z - r1.z * r2.y,
                 r1.z * r2.x - r1.x * r2.z,
@@ -638,7 +591,6 @@ namespace
         }
         else
         {
-            // Degenerate case (all points are on one line or single point)
             outNormal = make_float3(0.0f, 1.0f, 0.0f);
         }
     }
@@ -733,7 +685,7 @@ float CuSparseCells::computeAutoCellSize(const thrust::device_vector<float3>& po
 
     float cellSize = (maxDim / powf((float)points.size(), 1.0f / 3.0f)) * multiplier;
 
-	printf("Auto cell size computed: %f\n", cellSize);
+    printf("Auto cell size computed: %f\n", cellSize);
 
     return cellSize;
 }
@@ -749,11 +701,8 @@ void CuSparseCells::Build(CuPointCloud* cloud)
 
     printf("Computed cell size: %f\n", cellSize);
 
-    thrust::pair<float3, float3> init = thrust::make_pair(make_float3(1e30f, 1e30f, 1e30f), make_float3(-1e30f, -1e30f, -1e30f));
-    thrust::pair<float3, float3> bbox = thrust::transform_reduce(cloud->points.begin(), cloud->points.end(), Float3ToPair(), init, Float3MinMax());
-
-    worldOrigin = bbox.first;
-    float3 maxP = bbox.second;
+    worldOrigin = cloud->aabbMin;
+    float3 maxP = cloud->aabbMax;
     float3 gridDimf = { (maxP.x - worldOrigin.x) / cellSize, (maxP.y - worldOrigin.y) / cellSize, (maxP.z - worldOrigin.z) / cellSize };
 
     gridSize = { (int)ceilf(gridDimf.x) + 1, (int)ceilf(gridDimf.y) + 1, (int)ceilf(gridDimf.z) + 1 };
@@ -805,11 +754,8 @@ void CuSparseCells::Build(CuPointCloud* cloud, float cellSize)
 
     this->cellSize = cellSize;
 
-    thrust::pair<float3, float3> init = thrust::make_pair(make_float3(1e30f, 1e30f, 1e30f), make_float3(-1e30f, -1e30f, -1e30f));
-    thrust::pair<float3, float3> bbox = thrust::transform_reduce(cloud->points.begin(), cloud->points.end(), Float3ToPair(), init, Float3MinMax());
-
-    worldOrigin = bbox.first;
-    float3 maxP = bbox.second;
+    worldOrigin = cloud->aabbMin;
+    float3 maxP = cloud->aabbMax;
     float3 gridDimf = { (maxP.x - worldOrigin.x) / cellSize, (maxP.y - worldOrigin.y) / cellSize, (maxP.z - worldOrigin.z) / cellSize };
 
     gridSize = { (int)ceilf(gridDimf.x) + 1, (int)ceilf(gridDimf.y) + 1, (int)ceilf(gridDimf.z) + 1 };
@@ -833,21 +779,29 @@ void CuSparseCells::Build(CuPointCloud* cloud, float cellSize)
         cellEndIndices.resize(numberOfCells);
     }
 
+    CUDA_TS(CuSParseCellsBuild_Fill);
     thrust::fill(cellStartIndices.begin(), cellStartIndices.end(), -1);
     thrust::fill(cellEndIndices.begin(), cellEndIndices.end(), -1);
+    CUDA_TE(CuSParseCellsBuild_Fill);
 
+    CUDA_TS(CuSParseCellsBuild_Hash);
     int blockSize = 256;
     int numBlocks = (int)((numPoints + blockSize - 1) / blockSize);
 
     computeHashKernel << <numBlocks, blockSize >> > (thrust::raw_pointer_cast(cloud->points.data()), thrust::raw_pointer_cast(hashCodes.data()), (int)numPoints, cellSize, gridSize, worldOrigin);
 
     cudaDeviceSynchronize();
+    CUDA_TE(CuSParseCellsBuild_Hash);
 
+    CUDA_TS(CuSParseCellsBuild_Sort);
     thrust::sort_by_key(hashCodes.begin(), hashCodes.end(), thrust::make_zip_iterator(thrust::make_tuple(cloud->points.begin(), cloud->normals.begin(), cloud->colors.begin(), cloud->isAlive.begin())));
+    CUDA_TE(CuSParseCellsBuild_Sort);
 
+    CUDA_TS(CuSParseCellsBuild_Find);
     findCellStartEndKernel << <numBlocks, blockSize >> > (thrust::raw_pointer_cast(hashCodes.data()), thrust::raw_pointer_cast(cellStartIndices.data()), thrust::raw_pointer_cast(cellEndIndices.data()), (int)numPoints);
 
     cudaDeviceSynchronize();
+    CUDA_TE(CuSParseCellsBuild_Find);
 
     CUDA_TE(CuSParseCellsBuild);
 }
@@ -861,7 +815,6 @@ __global__ void initUnionFindKernel(unsigned int* labels, int numPoints)
     }
 }
 
-// 2. 연결: 거리 내에 있는 점들을 하나의 집합으로 병합 (Union)
 __global__ void unionClustersKernel(
     const float3* __restrict__ positions,
     const int* __restrict__ cellStart,
@@ -905,7 +858,7 @@ __global__ void unionClustersKernel(
                             if (j <= index) continue;
 
                             float3 otherPos = FETCH(positions, j);
-                            float d2 = getDistSq(myPos, otherPos);
+                            float d2 = DistanceSq(myPos, otherPos);
 
                             if (d2 <= clusterDistSq)
                             {
@@ -990,12 +943,6 @@ void CuSparseCells::ApplyClustering(CuPointCloud* cloud, unsigned int* d_outLabe
 
     flattenLabelsFinalKernel << <numBlocks, blockSize >> > (d_outLabels, numPoints);
 
-    //colorizeByHashKernel << <numBlocks, blockSize >> > (
-    //    (uchar3*)thrust::raw_pointer_cast(cloud->colors.data()),
-    //    (int*)d_outLabels,
-    //    numPoints
-    //    );
-
     cudaDeviceSynchronize();
     CUDA_TE(Clustering_UnionFind);
 }
@@ -1079,7 +1026,6 @@ thrust::device_vector<float> CuSparseCells::ApplyPFOR(CuPointCloud* cloud, int k
     return planeDists;
 }
 
-// [NND] Invert=false
 thrust::device_vector<float> CuSparseCells::ApplyNND(CuPointCloud* cloud, int k)
 {
     if (cloud == nullptr || cloud->size() == 0)
@@ -1104,9 +1050,8 @@ thrust::device_vector<float> CuSparseCells::ApplyNND(CuPointCloud* cloud, int k)
 
     auto minmax = thrust::minmax_element(values.begin(), values.end());
 
-    // Create Transfer Function
     CuTransferFunction tf(*minmax.first, *minmax.second);
-    tf.invert = false; // Near=Low=Blue
+    tf.invert = false;
 
     applyTransferFunctionKernel << <numBlocks, blockSize >> > (
         (uchar3*)thrust::raw_pointer_cast(cloud->colors.data()),
@@ -1118,7 +1063,6 @@ thrust::device_vector<float> CuSparseCells::ApplyNND(CuPointCloud* cloud, int k)
     return values;
 }
 
-// [LDE] Invert=true
 thrust::device_vector<float> CuSparseCells::ApplyLDE(CuPointCloud* cloud, float radius)
 {
     if (cloud == nullptr || cloud->size() == 0)
@@ -1143,10 +1087,8 @@ thrust::device_vector<float> CuSparseCells::ApplyLDE(CuPointCloud* cloud, float 
 
     auto minmax = thrust::minmax_element(values.begin(), values.end());
 
-    // Create Transfer Function
     CuTransferFunction tf(*minmax.first, *minmax.second);
     tf.SetGray();
-    //tf.invert = true; // Density Low=Low=Red
 
     applyTransferFunctionKernel << <numBlocks, blockSize >> > (
         (uchar3*)thrust::raw_pointer_cast(cloud->colors.data()),
@@ -1158,68 +1100,21 @@ thrust::device_vector<float> CuSparseCells::ApplyLDE(CuPointCloud* cloud, float 
     return values;
 }
 
-// [KDE] Invert=true
-//thrust::device_vector<float> CuSparseCells::ApplyKDE(CuPointCloud* cloud, float bandwidth)
-//{
-//    if (cloud == nullptr || cloud->size() == 0)
-//    {
-//        return thrust::device_vector<float>();
-//    }
-//
-//    int numPoints = (int)cloud->size();
-//    int blockSize = 256;
-//    int numBlocks = (numPoints + blockSize - 1) / blockSize;
-//
-//    thrust::device_vector<float> values(numPoints);
-//    float searchRadius = bandwidth * 3.0f;
-//
-//    computeDensityKernel << <numBlocks, blockSize >> > (
-//        thrust::raw_pointer_cast(cloud->points.data()),
-//        thrust::raw_pointer_cast(cellStartIndices.data()),
-//        thrust::raw_pointer_cast(cellEndIndices.data()),
-//        thrust::raw_pointer_cast(values.data()),
-//        numPoints, searchRadius, 1, cellSize, gridSize, worldOrigin
-//        );
-//    cudaDeviceSynchronize();
-//
-//    auto minmax = thrust::minmax_element(values.begin(), values.end());
-//
-//    // Create Transfer Function
-//    CuTransferFunction tf(*minmax.first, *minmax.second);
-//    tf.SetJet();
-//    tf.invert = true; // Density Low=Low=Red
-//
-//    applyTransferFunctionKernel << <numBlocks, blockSize >> > (
-//        (uchar3*)thrust::raw_pointer_cast(cloud->colors.data()),
-//        thrust::raw_pointer_cast(values.data()),
-//        numPoints, tf
-//        );
-//    cudaDeviceSynchronize();
-//
-//    return values;
-//}
-
 std::vector<std::pair<float3, float3>> CuSparseCells::GetActiveCellBounds()
 {
     std::vector<std::pair<float3, float3>> activeBoxes;
 
-    // 1. Fetch cellStartIndices from GPU to CPU
-    // To check if cell is active (active if value is not -1)
     thrust::host_vector<int> cellStartHost = cellStartIndices;
 
-    // 2. Iterate through all grid cells to find active ones
-    // (Could compact on GPU, but CPU loop is simpler for debugging)
     for (int hash = 0; hash < numberOfCells; ++hash)
     {
-        if (cellStartHost[hash] != -1) // Cell with at least one point
+        if (cellStartHost[hash] != -1)
         {
-            // Inverse Hashing: Hash -> Grid Index (x, y, z)
             int z = hash / (gridSize.x * gridSize.y);
             int rem = hash % (gridSize.x * gridSize.y);
             int y = rem / gridSize.x;
             int x = rem % gridSize.x;
 
-            // Calculate world coordinates
             float3 minPos;
             minPos.x = worldOrigin.x + x * cellSize;
             minPos.y = worldOrigin.y + y * cellSize;
@@ -1245,7 +1140,7 @@ void CuSparseCells::ColorizePointsByCell(CuPointCloud* cloud)
     }
     if (hashCodes.empty())
     {
-        return; // Build() must be called first
+        return;
     }
 
     int numPoints = (int)cloud->size();
@@ -1275,26 +1170,15 @@ std::vector<CuCellStats> CuSparseCells::GetActiveCellStats(CuPointCloud* cloud)
 
     int numPoints = (int)cloud->size();
 
-    // -------------------------------------------------------
-    // 1. GPU: Prepare Data
-    // -------------------------------------------------------
-
-    // (A) Convert to Covariance Data (Point -> Cov Data)
     thrust::device_vector<CovarianceData> covData(numPoints);
     thrust::transform(cloud->points.begin(), cloud->points.end(), covData.begin(), PositionToCovariance());
 
-    // -------------------------------------------------------
-    // 2. GPU: Reduce By Key (Aggregate)
-    // -------------------------------------------------------
-
-    // Buffer for storing results
     thrust::device_vector<int> uniqueHashes(numPoints);
     thrust::device_vector<float3> sumPositions(numPoints);
     thrust::device_vector<float3> sumNormals(numPoints);
-    thrust::device_vector<CovarianceData> sumCov(numPoints); // [New] Covariance sum
+    thrust::device_vector<CovarianceData> sumCov(numPoints);
     thrust::device_vector<int> counts(numPoints);
 
-    // [Step A] Position Sum (for Centroid)
     auto endPairPos = thrust::reduce_by_key(
         hashCodes.begin(), hashCodes.end(),
         cloud->points.begin(),
@@ -1304,10 +1188,8 @@ std::vector<CuCellStats> CuSparseCells::GetActiveCellStats(CuPointCloud* cloud)
         Float3SumOp()
     );
 
-    // Check active cell count
     int activeCellCount = (int)(endPairPos.first - uniqueHashes.begin());
 
-    // [Step B] Normal Sum (for Orientation reference)
     thrust::reduce_by_key(
         hashCodes.begin(), hashCodes.end(),
         cloud->normals.begin(),
@@ -1317,7 +1199,6 @@ std::vector<CuCellStats> CuSparseCells::GetActiveCellStats(CuPointCloud* cloud)
         Float3SumOp()
     );
 
-    // [Step C] Covariance Sum (for PCA)
     thrust::reduce_by_key(
         hashCodes.begin(), hashCodes.end(),
         covData.begin(),
@@ -1327,7 +1208,6 @@ std::vector<CuCellStats> CuSparseCells::GetActiveCellStats(CuPointCloud* cloud)
         CovarianceSumOp()
     );
 
-    // [Step D] Count
     thrust::reduce_by_key(
         hashCodes.begin(), hashCodes.end(),
         thrust::make_constant_iterator(1),
@@ -1335,18 +1215,12 @@ std::vector<CuCellStats> CuSparseCells::GetActiveCellStats(CuPointCloud* cloud)
         counts.begin()
     );
 
-    // -------------------------------------------------------
-    // 3. Data Download (GPU -> CPU)
-    // -------------------------------------------------------
     thrust::host_vector<int> hashes(uniqueHashes.begin(), uniqueHashes.begin() + activeCellCount);
     thrust::host_vector<float3> sumPos(sumPositions.begin(), sumPositions.begin() + activeCellCount);
     thrust::host_vector<float3> sumNorm(sumNormals.begin(), sumNormals.begin() + activeCellCount);
     thrust::host_vector<CovarianceData> sumCovHost(sumCov.begin(), sumCov.begin() + activeCellCount);
     thrust::host_vector<int> countsHost(counts.begin(), counts.begin() + activeCellCount);
 
-    // -------------------------------------------------------
-    // 4. Result Generation (CPU)
-    // -------------------------------------------------------
     results.reserve(activeCellCount);
 
     for (int i = 0; i < activeCellCount; ++i)
@@ -1354,13 +1228,12 @@ std::vector<CuCellStats> CuSparseCells::GetActiveCellStats(CuPointCloud* cloud)
         int count = countsHost[i];
         if (count < 3)
         {
-            continue; // PCA requires at least 3 points
+            continue;
         }
 
         CuCellStats stats;
         stats.pointCount = count;
 
-        // 1) Centroid & Avg Normal Calculation
         float3 sp = sumPos[i];
         float3 sn = sumNorm[i];
         float invN = 1.0f / (float)count;
@@ -1368,12 +1241,10 @@ std::vector<CuCellStats> CuSparseCells::GetActiveCellStats(CuPointCloud* cloud)
         float3 c = make_float3(sp.x * invN, sp.y * invN, sp.z * invN);
         stats.pointCentroid = c;
 
-        // Avg Normal (Normalize)
         float lenN = sqrtf(sn.x * sn.x + sn.y * sn.y + sn.z * sn.z);
         float3 avgN = (lenN > 1e-6f) ? make_float3(sn.x / lenN, sn.y / lenN, sn.z / lenN) : make_float3(0, 1, 0);
         stats.avgNormal = avgN;
 
-        // 2) Covariance Matrix Calculation (E[XX] - E[X]*E[X])
         CovarianceData sumC = sumCovHost[i];
         float xx = sumC.xx * invN - c.x * c.x;
         float yy = sumC.yy * invN - c.y * c.y;
@@ -1382,11 +1253,8 @@ std::vector<CuCellStats> CuSparseCells::GetActiveCellStats(CuPointCloud* cloud)
         float yz = sumC.yz * invN - c.y * c.z;
         float zx = sumC.zx * invN - c.z * c.x;
 
-        // 3) Solve Eigen System for Normal
         solveEigen3x3_CPU(xx, xy, zx, yy, yz, zz, stats.pcaNormal);
 
-        // 4) Orient PCA Normal (Match direction)
-        // PCA Normal has no sign, so flip it to match Avg Normal direction using dot product
         float dot = stats.pcaNormal.x * avgN.x + stats.pcaNormal.y * avgN.y + stats.pcaNormal.z * avgN.z;
         if (dot < 0.0f)
         {
@@ -1395,7 +1263,6 @@ std::vector<CuCellStats> CuSparseCells::GetActiveCellStats(CuPointCloud* cloud)
             stats.pcaNormal.z = -stats.pcaNormal.z;
         }
 
-        // 5) Grid AABB Calculation
         int hash = hashes[i];
         int area = gridSize.x * gridSize.y;
         int z = hash / area;

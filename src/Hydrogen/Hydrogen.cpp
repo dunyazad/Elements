@@ -22,11 +22,11 @@
 //const std::string  appName = "AppTSDF";
 //const std::string  appName = "AppVoxelDataBaseMemoryUsageCheck";
 //const std::string  appName = "AppClustering";
-//const std::string  appName = "AppClusteringDevice";
 //const std::string  appName = "AppSDFFiltering";
 //const std::string  appName = "AppMorphology";
 //const std::string  appName = "AppMorphologyDebug";
 const std::string  appName = "AppICP";
+//const std::string  appName = "AppClusteringDevice";
 
 #define MAX_LOADSTRING 100
 
