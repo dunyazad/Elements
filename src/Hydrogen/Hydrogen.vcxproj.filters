@@ -71,6 +71,9 @@
     <ClCompile Include="Apps\AppICP.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
+    <ClCompile Include="Apps\AppTSDFDevice.cpp">
+      <Filter>Apps</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Hydrogen.rc">

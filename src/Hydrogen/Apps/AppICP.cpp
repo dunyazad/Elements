@@ -8,39 +8,101 @@ public:
 		PLYFormat ply;
 		if (!ply.Deserialize("D:\\Resources\\Default\\Compound.ply")) return;
 
-		//VD::AddSphereBatch("PointCloud", ply.GetPoints(), ply.GetNormals(), 0.05f, ply.GetColors());
+		VVV::VoxelDataBase voxelDb;
+        uint32_t maxBlocks = 80000;
 
-        CuPointCloud targetPointCloud;
-		targetPointCloud.FromHostPointers(
-            (float3*)ply.GetPoints().data(),
-            (float3*)ply.GetNormals().data(),
-            (float4*)ply.GetColors().data(),
-            ply.GetPoints().size(),
-            { ply.GetAABBMin().x(), ply.GetAABBMin().y(), ply.GetAABBMin().z() },
-            { ply.GetAABBMax().x(), ply.GetAABBMax().y(), ply.GetAABBMax().z() });
+        VVV_Allocate(voxelDb, maxBlocks);
 
-        CuSparseCells targetCells;
-        targetCells.Build(&targetPointCloud, 0.3f);
+        size_t nPoints = ply.GetPoints().size();
+        std::vector<VVV::Vector3f> points(nPoints);
+        std::vector<VVV::Vector3b> colors(nPoints);
 
-        auto activeTargetCells = targetCells.GetActiveCellStats(&targetPointCloud);
-
-        std::vector<Eigen::Vector3f> centers(activeTargetCells.size());
-        std::vector<Eigen::Vector3f> dimensions(activeTargetCells.size());
-        std::vector<Eigen::Vector4f> colors(activeTargetCells.size());
-
-        for (size_t i = 0; i < activeTargetCells.size(); i++)
+        for (size_t i = 0; i < nPoints; i++)
         {
-			auto& stat = activeTargetCells[i];
-			Eigen::Vector3f minP(stat.cellMin.x, stat.cellMin.y, stat.cellMin.z);
-			Eigen::Vector3f maxP(stat.cellMax.x, stat.cellMax.y, stat.cellMax.z);
-			centers.push_back((minP + maxP) * 0.5f);
-			dimensions.push_back(maxP - minP);
-			colors.push_back(Eigen::Vector4f(0, 1, 0, 1));
+            auto& p = ply.GetPoints()[i];
+            points[i] = { p.x(), p.y(), p.z() };
 
-			printf("dimensions : %f, %f, %f\n", maxP.x() - minP.x(), maxP.y() - minP.y(), maxP.z() - minP.z());
+            if (!ply.GetColors().empty())
+            {
+                auto& c = ply.GetColors()[i];
+                colors[i] = {
+                    static_cast<uint8_t>(c.x() * 255.0f),
+                    static_cast<uint8_t>(c.y() * 255.0f),
+                    static_cast<uint8_t>(c.z() * 255.0f)
+                };
+            }
+            else
+            {
+                colors[i] = { 255, 255, 255 };
+            }
         }
 
-        VD::AddWiredBoxBatch("TargetCell", centers, dimensions, colors);
+        float blockSize = 0.8f;
+
+        TS(VVV_UpdateVoxelFromPoints);
+        VVV_UpdateVoxelFromPoints(voxelDb, points.data(), colors.data(), (uint32_t)nPoints, blockSize, 1);
+        cudaDeviceSynchronize();
+        TE(VVV_UpdateVoxelFromPoints);
+
+        // 사용된 블록 수 확인
+        uint32_t activeBlocksCount = 0;
+        cudaMemcpy(&activeBlocksCount, voxelDb.d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+
+        uint32_t maxOut = 50000000;
+        std::vector<VVV::ExtractedVoxel> hostOut(maxOut);
+        uint32_t finalCnt = VVV_ExtractActiveVoxelsToHost(voxelDb, blockSize, hostOut.data(), maxOut);
+
+        if (finalCnt > 0)
+        {
+            uint32_t limit = (finalCnt > maxOut) ? maxOut : finalCnt;
+            float voxelDrawSize = (blockSize / 8.0f) * 0.9f;
+
+            //std::vector<Eigen::Vector3f> voxelCenters;
+            //std::vector<Eigen::Vector3f> voxelDimensions;
+            //std::vector<Eigen::Vector4f> voxelColors;
+            //voxelCenters.reserve(limit);
+            //voxelDimensions.reserve(limit);
+            //voxelColors.reserve(limit);
+
+            //for (uint32_t i = 0; i < limit; i++)
+            //{
+            //    voxelCenters.emplace_back(hostOut[i].position.x, hostOut[i].position.y, hostOut[i].position.z);
+            //    voxelDimensions.emplace_back(voxelDrawSize, voxelDrawSize, voxelDrawSize);
+            //    voxelColors.emplace_back(hostOut[i].color[0] / 255.f, hostOut[i].color[1] / 255.f, hostOut[i].color[2] / 255.f, 1.f);
+            //}
+            //VD::AddWiredBoxBatch("Voxels", voxelCenters, voxelDimensions, voxelColors);
+
+            std::vector<uint64_t> hostHashTable(maxBlocks);
+            cudaMemcpy(hostHashTable.data(), voxelDb.d_hashTable, sizeof(uint64_t) * maxBlocks, cudaMemcpyDeviceToHost);
+
+            std::vector<Eigen::Vector3f> blockCenters;
+            std::vector<Eigen::Vector3f> blockNormals;
+            blockCenters.reserve(activeBlocksCount);
+            blockNormals.reserve(activeBlocksCount);
+
+            for (uint32_t i = 0; i < maxBlocks; ++i)
+            {
+                uint64_t mKey = hostHashTable[i];
+                if (mKey != 0 && mKey != 0xFFFFFFFFFFFFFFFFULL)
+                {
+                    VVV::Morton64 morton(mKey);
+                    VVV::Vector3f bPos = morton.ToPosition(blockSize);
+                    blockCenters.emplace_back(bPos.x, bPos.y, bPos.z);
+					blockNormals.emplace_back(0, 1, 0);
+                }
+            }
+            //VD::AddWiredBoxBatch("SparseDataBlocks", blockCenters, Eigen::Vector3f(blockSize, blockSize, blockSize), Eigen::Vector4f(0, 1, 0, 0.2f));
+
+			VD::AddDiskBatch("BlockCenters", blockCenters, blockNormals, voxelDrawSize, 16, Eigen::Vector4f(1, 0, 0, 1), true);
+        }
+
+        printf("\n>>> [최종 리포트]\n");
+        printf("    - 추출된 복셀 수     : %u 개\n", finalCnt);
+        printf("    - 해시 적재율        : %.2f%% (%u / %u)\n",
+            (double)activeBlocksCount / maxBlocks * 100.0, activeBlocksCount, maxBlocks);
+
+        VVV_Free(voxelDb);
+        return;
 
 
 

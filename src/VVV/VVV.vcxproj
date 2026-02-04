@@ -100,7 +100,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\inc\VVV\VVV.h" />
-    <ClInclude Include="..\..\inc\VVV\VVVCommon.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="VVV.cpp" />

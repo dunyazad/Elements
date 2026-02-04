@@ -17,9 +17,6 @@
     <ClInclude Include="..\..\inc\VVV\VVV.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\inc\VVV\VVVCommon.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="VVV.cpp">

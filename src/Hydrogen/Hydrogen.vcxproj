@@ -165,6 +165,7 @@
     <ClCompile Include="Apps\AppMorphologyDebug.cpp" />
     <ClCompile Include="Apps\AppSDFFiltering.cpp" />
     <ClCompile Include="Apps\AppTSDF.cpp" />
+    <ClCompile Include="Apps\AppTSDFDevice.cpp" />
     <ClCompile Include="Apps\AppVoxelDataBaseMemoryUsageCheck.cpp" />
     <ClCompile Include="Hydrogen.cpp" />
     <ClCompile Include="TextMeshGenerator.cpp" />
