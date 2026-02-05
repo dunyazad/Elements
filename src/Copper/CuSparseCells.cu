@@ -1283,3 +1283,445 @@ std::vector<CuCellStats> CuSparseCells::GetActiveCellStats(CuPointCloud* cloud)
 
     return results;
 }
+
+__global__ void smoothProtrusionEdgePreservingKernel(
+    float3* __restrict__ positions,
+    const float3* __restrict__ normals,
+    const int* __restrict__ cellStart,
+    const int* __restrict__ cellEnd,
+    int numPoints,
+    float searchRadius,
+    float smoothFactor,
+    float edgeThreshold, // 0.0 ~ 1.0 (낮을수록 Edge 보호 강도가 높음, 예: 0.8)
+    float cellSize,
+    int3 gridSize,
+    float3 worldOrigin)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= numPoints) return;
+
+    float3 myPos = FETCH(positions, index);
+    float3 myNormal = FETCH(normals, index);
+    float rSq = searchRadius * searchRadius;
+    float invCellSize = 1.0f / cellSize;
+
+    int gridX = max(0, min((int)((myPos.x - worldOrigin.x) * invCellSize), gridSize.x - 1));
+    int gridY = max(0, min((int)((myPos.y - worldOrigin.y) * invCellSize), gridSize.y - 1));
+    int gridZ = max(0, min((int)((myPos.z - worldOrigin.z) * invCellSize), gridSize.z - 1));
+
+    float3 weightedSum = make_float3(0.0f, 0.0f, 0.0f);
+    float totalWeight = 0.0f;
+
+    for (int z = -1; z <= 1; ++z)
+    {
+        for (int y = -1; y <= 1; ++y)
+        {
+            for (int x = -1; x <= 1; ++x)
+            {
+                int nx = gridX + x; int ny = gridY + y; int nz = gridZ + z;
+                if (nx < 0 || nx >= gridSize.x || ny < 0 || ny >= gridSize.y || nz < 0 || nz >= gridSize.z) continue;
+
+                int hash = (nz * gridSize.y + ny) * gridSize.x + nx;
+                int start = FETCH(cellStart, hash);
+                if (start == -1) continue;
+
+                int end = FETCH(cellEnd, hash);
+                for (int j = start; j < end; ++j)
+                {
+                    float3 otherPos = FETCH(positions, j);
+                    float d2 = DistanceSq(myPos, otherPos);
+
+                    if (d2 < rSq)
+                    {
+                        float3 otherNormal = FETCH(normals, j);
+                        // 두 점 사이의 법선 벡터 유사도 (내적)
+                        float dot = fabsf(Dot(myNormal, otherNormal));
+
+                        // 1. Bilateral 가중치: 거리가 가깝고 + 법선 방향이 비슷할수록 높은 가중치
+                        // 2. 만약 법선 방향이 너무 다르면(Edge 부위), 가중치를 급격히 낮춤
+                        float weight = expf(-d2 / (0.5f * rSq)) * powf(dot, 8.0f);
+
+                        weightedSum.x += otherPos.x * weight;
+                        weightedSum.y += otherPos.y * weight;
+                        weightedSum.z += otherPos.z * weight;
+                        totalWeight += weight;
+                    }
+                }
+            }
+        }
+    }
+
+    if (totalWeight > 1e-6f)
+    {
+        float3 targetPos = make_float3(weightedSum.x / totalWeight, weightedSum.y / totalWeight, weightedSum.z / totalWeight);
+
+        // 투영(Projection) 방식: 
+        // 단순히 이동하는 게 아니라, 현재 노멀 방향 성분의 오차만 줄임으로써 평면상의 디테일 유지
+        float3 diff = make_float3(targetPos.x - myPos.x, targetPos.y - myPos.y, targetPos.z - myPos.z);
+        float distToSurface = Dot(diff, myNormal);
+
+        // Edge 부위(dot 유사도가 낮은 곳)라면 이동을 억제하는 임계치 로직
+        // 여기서는 간단하게 smoothFactor에 법선 정렬도를 곱해 적용
+        positions[index].x += myNormal.x * distToSurface * smoothFactor;
+        positions[index].y += myNormal.y * distToSurface * smoothFactor;
+        positions[index].z += myNormal.z * distToSurface * smoothFactor;
+    }
+}
+
+/**
+ * @brief Edge를 보존하면서 돌출된 노이즈를 평탄화하는 함수
+ * @param cloud 대상 포인트 클라우드 (normals 데이터가 포함되어 있어야 함)
+ * @param radius 탐색 반경 (노이즈 덩어리 크기보다 커야 함)
+ * @param factor 보정 강도 (0.0 ~ 1.0, 보통 0.5 권장)
+ * @param edgeThreshold 법선 유사도 임계치 (높을수록 모서리 보호 강함, 예: 0.9)
+ * @param iterations 반복 횟수
+ */
+void CuSparseCells::ApplyEdgePreservingSmoothing(
+    CuPointCloud* cloud,
+    float radius,
+    float factor,
+    float edgeThreshold,
+    int iterations)
+{
+    if (cloud == nullptr || cloud->size() == 0)
+    {
+        return;
+    }
+
+    // 법선 데이터가 비어있는지 체크 (Edge 보존의 핵심 데이터)
+    if (cloud->normals.size() != cloud->size())
+    {
+        printf("Error: Normals are required for edge-preserving smoothing.\n");
+        return;
+    }
+
+    int numPoints = (int)cloud->size();
+    int blockSize = 256;
+    int numBlocks = (numPoints + blockSize - 1) / blockSize;
+
+    // CUDA 타임스탬프 기록 (기존 코드 스타일 유지)
+    CUDA_TS(ApplyEdgeSmoothing);
+
+    for (int i = 0; i < iterations; ++i)
+    {
+        smoothProtrusionEdgePreservingKernel << <numBlocks, blockSize >> > (
+            thrust::raw_pointer_cast(cloud->points.data()),
+            thrust::raw_pointer_cast(cloud->normals.data()),
+            thrust::raw_pointer_cast(cellStartIndices.data()),
+            thrust::raw_pointer_cast(cellEndIndices.data()),
+            numPoints,
+            radius,
+            factor,
+            edgeThreshold,
+            cellSize,
+            gridSize,
+            worldOrigin
+            );
+
+        // 반복 사이 동기화 (다음 루프에서 수정된 좌표 참조를 위해)
+        cudaDeviceSynchronize();
+    }
+
+    CUDA_TE(ApplyEdgeSmoothing);
+}
+
+/**
+ * @brief 에너지 최소화를 통해 Edge를 보존하며 돌출 노이즈를 제거하는 커널
+ */
+__global__ void applyEnergyBasedSmoothingKernel(
+    float3* __restrict__ positions,
+    const float3* __restrict__ originalPositions,
+    const float3* __restrict__ normals,
+    const int* __restrict__ cellStart,
+    const int* __restrict__ cellEnd,
+    int numPoints,
+    float searchRadius,
+    float dataWeight,    // 원래 위치를 유지하려는 힘 (보통 0.1~0.3)
+    float smoothWeight,  // 표면을 평탄화하려는 힘 (보통 0.7~0.9)
+    float cellSize,
+    int3 gridSize,
+    float3 worldOrigin)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= numPoints) return;
+
+    float3 p_curr = positions[index];
+    float3 p_orig = originalPositions[index];
+    float3 n_curr = normals[index];
+
+    float rSq = searchRadius * searchRadius;
+    float invCellSize = 1.0f / cellSize;
+
+    int gridX = max(0, min((int)((p_curr.x - worldOrigin.x) * invCellSize), gridSize.x - 1));
+    int gridY = max(0, min((int)((p_curr.y - worldOrigin.y) * invCellSize), gridSize.y - 1));
+    int gridZ = max(0, min((int)((p_curr.z - worldOrigin.z) * invCellSize), gridSize.z - 1));
+
+    float3 smoothTarget = make_float3(0, 0, 0);
+    float totalWeight = 0.0f;
+
+    // 1. Smooth Term 계산: 주변 이웃들이 정의하는 가상의 표면 찾기
+    for (int z = -1; z <= 1; ++z)
+    {
+        for (int y = -1; y <= 1; ++y)
+        {
+            for (int x = -1; x <= 1; ++x)
+            {
+                int hash = ((gridZ + z) * gridSize.y + (gridY + y)) * gridSize.x + (gridX + x);
+                if (gridX + x < 0 || gridX + x >= gridSize.x || gridY + y < 0 || gridY + y >= gridSize.y || gridZ + z < 0 || gridZ + z >= gridSize.z) continue;
+
+                int start = FETCH(cellStart, hash);
+                if (start == -1) continue;
+                int end = FETCH(cellEnd, hash);
+
+                for (int j = start; j < end; ++j)
+                {
+                    float3 p_neigh = FETCH(originalPositions, j);
+                    float d2 = DistanceSq(p_curr, p_neigh);
+
+                    if (d2 < rSq && j != index)
+                    {
+                        float3 n_neigh = FETCH(normals, j);
+                        float dot = fabsf(Dot(n_curr, n_neigh));
+
+                        // Edge 보존 가중치: 법선이 비슷할수록 평탄화 에너지를 강하게 적용
+                        float w = expf(-d2 / (0.5f * rSq)) * powf(dot, 12.0f);
+
+                        // 이웃 점을 현재 평면에 투영시킨 위치의 기여도 계산
+                        smoothTarget.x += p_neigh.x * w;
+                        smoothTarget.y += p_neigh.y * w;
+                        smoothTarget.z += p_neigh.z * w;
+                        totalWeight += w;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 에너지 최소화 해(Solution) 업데이트
+    if (totalWeight > 1e-6f)
+    {
+        smoothTarget.x /= totalWeight;
+        smoothTarget.y /= totalWeight;
+        smoothTarget.z /= totalWeight;
+
+        // 최종 위치 = (DataWeight * 원래위치 + SmoothWeight * 평탄화타겟) / (DataWeight + SmoothWeight)
+        float invSum = 1.0f / (dataWeight + smoothWeight);
+        positions[index].x = (dataWeight * p_orig.x + smoothWeight * smoothTarget.x) * invSum;
+        positions[index].y = (dataWeight * p_orig.y + smoothWeight * smoothTarget.y) * invSum;
+        positions[index].z = (dataWeight * p_orig.z + smoothWeight * smoothTarget.z) * invSum;
+    }
+}
+
+__global__ void applyProjectedEnergySmoothingKernel(
+    float3* __restrict__ positions,
+    const float3* __restrict__ originalPositions,
+    const float3* __restrict__ normals,
+    const int* __restrict__ cellStart,
+    const int* __restrict__ cellEnd,
+    int numPoints,
+    float searchRadius,
+    float dataWeight,
+    float smoothWeight,
+    float cellSize,
+    int3 gridSize,
+    float3 worldOrigin)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= numPoints) return;
+
+    float3 p_curr = positions[index];
+    float3 p_orig = originalPositions[index];
+    float3 n_orig = normals[index]; // 원래의 정교한 법선 참조
+
+    float rSq = searchRadius * searchRadius;
+    float invCellSize = 1.0f / cellSize;
+
+    int gridX = max(0, min((int)((p_curr.x - worldOrigin.x) * invCellSize), gridSize.x - 1));
+    int gridY = max(0, min((int)((p_curr.y - worldOrigin.y) * invCellSize), gridSize.y - 1));
+    int gridZ = max(0, min((int)((p_curr.z - worldOrigin.z) * invCellSize), gridSize.z - 1));
+
+    float3 smoothTarget = make_float3(0, 0, 0);
+    float totalWeight = 0.0f;
+
+    for (int z = -1; z <= 1; ++z)
+    {
+        for (int y = -1; y <= 1; ++y)
+        {
+            for (int x = -1; x <= 1; ++x)
+            {
+                int hash = ((gridZ + z) * gridSize.y + (gridY + y)) * gridSize.x + (gridX + x);
+                if (gridX + x < 0 || gridX + x >= gridSize.x || gridY + y < 0 || gridY + y >= gridSize.y || gridZ + z < 0 || gridZ + z >= gridSize.z) continue;
+
+                int start = FETCH(cellStart, hash);
+                if (start == -1) continue;
+                int end = FETCH(cellEnd, hash);
+
+                for (int j = start; j < end; ++j)
+                {
+                    float3 p_neigh = FETCH(originalPositions, j);
+                    float d2 = DistanceSq(p_curr, p_neigh);
+
+                    if (d2 < rSq && j != index)
+                    {
+                        float3 n_neigh = FETCH(normals, j);
+                        float dot = fabsf(Dot(n_orig, n_neigh));
+
+                        // 지수를 높여(24.0f) 급격한 굴곡에서의 간섭을 원천 차단
+                        float w = expf(-d2 / (0.5f * rSq)) * powf(dot, 24.0f);
+
+                        // 주변 점들을 현재 점의 '평면'에 투영한 위치를 타겟으로 삼음
+                        float3 diff = make_float3(p_neigh.x - p_curr.x, p_neigh.y - p_curr.y, p_neigh.z - p_curr.z);
+                        float dist = Dot(diff, n_orig);
+                        float3 projectedPoint = make_float3(p_neigh.x - n_orig.x * dist, p_neigh.y - n_orig.y * dist, p_neigh.z - n_orig.z * dist);
+
+                        smoothTarget.x += projectedPoint.x * w;
+                        smoothTarget.y += projectedPoint.y * w;
+                        smoothTarget.z += projectedPoint.z * w;
+                        totalWeight += w;
+                    }
+                }
+            }
+        }
+    }
+
+    if (totalWeight > 1e-6f)
+    {
+        smoothTarget.x /= totalWeight;
+        smoothTarget.y /= totalWeight;
+        smoothTarget.z /= totalWeight;
+
+        float invSum = 1.0f / (dataWeight + smoothWeight);
+        float3 p_new;
+        p_new.x = (dataWeight * p_orig.x + smoothWeight * smoothTarget.x) * invSum;
+        p_new.y = (dataWeight * p_orig.y + smoothWeight * smoothTarget.y) * invSum;
+        p_new.z = (dataWeight * p_orig.z + smoothWeight * smoothTarget.z) * invSum;
+
+        // 핵심: 점이 옆으로 흐르지 않게, 오직 Normal 방향으로만 이동 제한
+        float3 finalDiff = make_float3(p_new.x - p_orig.x, p_new.y - p_orig.y, p_new.z - p_orig.z);
+        float projectionDist = Dot(finalDiff, n_orig);
+
+        positions[index].x = p_orig.x + n_orig.x * projectionDist;
+        positions[index].y = p_orig.y + n_orig.y * projectionDist;
+        positions[index].z = p_orig.z + n_orig.z * projectionDist;
+    }
+}
+
+__global__ void applyStableEnergySmoothingKernel(
+    float3* __restrict__ positions,
+    const float3* __restrict__ originalPositions,
+    const float3* __restrict__ normals,
+    const int* __restrict__ cellStart,
+    const int* __restrict__ cellEnd,
+    int numPoints,
+    float searchRadius,
+    float dataWeight,
+    float smoothWeight,
+    float cellSize,
+    int3 gridSize,
+    float3 worldOrigin)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= numPoints) return;
+
+    float3 p_orig = originalPositions[index];
+    float3 n_orig = normals[index]; // 기준이 되는 원래 법선
+
+    float rSq = searchRadius * searchRadius;
+    float invCellSize = 1.0f / cellSize;
+
+    int gridX = max(0, min((int)((p_orig.x - worldOrigin.x) * invCellSize), gridSize.x - 1));
+    int gridY = max(0, min((int)((p_orig.y - worldOrigin.y) * invCellSize), gridSize.y - 1));
+    int gridZ = max(0, min((int)((p_orig.z - worldOrigin.z) * invCellSize), gridSize.z - 1));
+
+    float weightedDistSum = 0.0f;
+    float totalWeight = 0.0f;
+
+    // 1. 점을 좌표로 이동시키는 대신, "법선 방향의 이동 거리(Scalar)"만 계산
+    for (int z = -1; z <= 1; ++z) {
+        for (int y = -1; y <= 1; ++y) {
+            for (int x = -1; x <= 1; ++x) {
+                int hash = ((gridZ + z) * gridSize.y + (gridY + y)) * gridSize.x + (gridX + x);
+                if (gridX + x < 0 || gridX + x >= gridSize.x || gridY + y < 0 || gridY + y >= gridSize.y || gridZ + z < 0 || gridZ + z >= gridSize.z) continue;
+
+                int start = FETCH(cellStart, hash);
+                if (start == -1) continue;
+                int end = FETCH(cellEnd, hash);
+
+                for (int j = start; j < end; ++j) {
+                    float3 p_neigh = FETCH(originalPositions, j);
+                    float d2 = DistanceSq(p_orig, p_neigh);
+
+                    if (d2 < rSq && j != index) {
+                        float3 n_neigh = FETCH(normals, j);
+                        float dot = fabsf(Dot(n_orig, n_neigh));
+
+                        // 법선 유사도가 매우 높은 점들만 참조 (치아 엣지 보존)
+                        float w = expf(-d2 / (0.5f * rSq)) * powf(dot, 32.0f);
+
+                        // 현재 점의 평면으로부터 이웃 점까지의 수직 거리 계산
+                        float3 diff = make_float3(p_neigh.x - p_orig.x, p_neigh.y - p_orig.y, p_neigh.z - p_orig.z);
+                        float dist = Dot(diff, n_orig);
+
+                        weightedDistSum += dist * w;
+                        totalWeight += w;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 최종 위치 결정
+    if (totalWeight > 1e-6f) {
+        // 목표로 하는 수직 이동 거리 (평균 평면으로의 거리)
+        float targetDist = weightedDistSum / totalWeight;
+
+        // 에너지를 고려한 최종 이동량 제어
+        // dataWeight는 0(원래 위치), smoothWeight는 1(평균 평면)로 끌어당김
+        float finalMoveDist = targetDist * (smoothWeight / (dataWeight + smoothWeight));
+
+        // 결과 반영: 오직 원래 법선 방향으로만 점을 미세하게 이동
+        // 이렇게 하면 절대 점들이 옆으로 뭉칠 수 없음
+        positions[index].x = p_orig.x + n_orig.x * finalMoveDist;
+        positions[index].y = p_orig.y + n_orig.y * finalMoveDist;
+        positions[index].z = p_orig.z + n_orig.z * finalMoveDist;
+    }
+}
+
+/**
+ * @brief 에너지 기반의 포인트 클라우드 평탄화 함수
+ * @param cloud 대상 포인트 클라우드
+ * @param radius 탐색 반경
+ * @param dataWeight 원래 위치 유지 가중치
+ * @param smoothWeight 평탄화 가중치
+ * @param iterations 반복 횟수
+ */
+void CuSparseCells::ApplyEnergySmoothing(CuPointCloud* cloud, float radius, float dataWeight, float smoothWeight, int iterations)
+{
+    if (cloud == nullptr || cloud->size() == 0) return;
+
+    int numPoints = (int)cloud->size();
+
+    // 원래 위치를 보존하기 위한 임시 버퍼
+    thrust::device_vector<float3> originalPositions = cloud->points;
+
+    int blockSize = 256;
+    int numBlocks = (numPoints + blockSize - 1) / blockSize;
+
+    CUDA_TS(EnergySmoothing);
+    for (int i = 0; i < iterations; ++i)
+    {
+        //applyEnergyBasedSmoothingKernel << <numBlocks, blockSize >> > (
+        //applyEnergyBasedSmoothingKernel << <numBlocks, blockSize >> > (
+        applyStableEnergySmoothingKernel << <numBlocks, blockSize >> > (
+            thrust::raw_pointer_cast(cloud->points.data()),
+            thrust::raw_pointer_cast(originalPositions.data()),
+            thrust::raw_pointer_cast(cloud->normals.data()),
+            thrust::raw_pointer_cast(cellStartIndices.data()),
+            thrust::raw_pointer_cast(cellEndIndices.data()),
+            numPoints, radius, dataWeight, smoothWeight,
+            cellSize, gridSize, worldOrigin
+            );
+        cudaDeviceSynchronize();
+    }
+    CUDA_TE(EnergySmoothing);
+}

@@ -50,6 +50,15 @@ struct COPPER_API CuSparseCells
     void ColorizePointsByCell(CuPointCloud* cloud);
 
     std::vector<CuCellStats> GetActiveCellStats(CuPointCloud* cloud);
+
+    void ApplyEdgePreservingSmoothing(
+        CuPointCloud* cloud,
+        float radius,
+        float factor,
+        float edgeThreshold,
+        int iterations);
+
+    void ApplyEnergySmoothing(CuPointCloud* cloud, float radius, float dataWeight, float smoothWeight, int iterations);
     
 private:
     float computeAutoCellSize(const thrust::device_vector<float3>& points, float multiplier);

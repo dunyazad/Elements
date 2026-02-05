@@ -537,6 +537,9 @@ private:
             std::vector<Eigen::Vector3f> mainNorm;
             std::vector<Eigen::Vector4f> mainCol;
 
+            aabbMin = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+            aabbMax = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
+
             for (size_t i = 0; i < rawCount; ++i)
             {
                 if (labelsHost[i] == maxClusterId && maxClusterId != 0xFFFFFFFF)
@@ -553,282 +556,79 @@ private:
                         (float)colorsHost[i].z / 255.0f,
                         1.0f
                     );
+
+					aabbMin.x = std::min(aabbMin.x, pointsHost[i].x);
+					aabbMin.y = std::min(aabbMin.y, pointsHost[i].y);
+					aabbMin.z = std::min(aabbMin.z, pointsHost[i].z);
+					aabbMax.x = std::max(aabbMax.x, pointsHost[i].x);
+					aabbMax.y = std::max(aabbMax.y, pointsHost[i].y);
+					aabbMax.z = std::max(aabbMax.z, pointsHost[i].z);
                 }
             }
 
             if (!mainPos.empty())
             {
-                VD::AddSphereBatch("PointCloud", mainPos, mainNorm, 0.025f, mainCol);
+                //VD::AddSphereBatch("PointCloud", mainPos, mainNorm, 0.05f, mainCol);
             }
 
             cudaFree(labelsDevice);
+
+            CuPointCloud filterd;
+            filterd.FromHostPointers(
+                (float3*)mainPos.data(),
+                (float3*)mainNorm.data(),
+                (float4*)mainCol.data(),
+                (uint32_t)mainPos.size(),
+                aabbMin,
+				aabbMax);
+
+			CuSparseCells filterCellGrid;
+			filterCellGrid.cellSize = 0.3f;
+			filterCellGrid.Build(&filterd, filterCellGrid.cellSize);
+
+    //        filterCellGrid.ApplyEdgePreservingSmoothing(
+    //            &filterd,
+    //            0.5f,   // radius: 주변 이웃 탐색 반경
+    //            0.7f,   // factor: 스무딩 강도 (0.0 ~ 1.0)
+    //            0.15f,  // edgeThreshold: 엣지 보존 임계값 (0.0 ~ 1.0)
+	//			  30);    // iterations: 반복 횟수 
+
+            filterCellGrid.ApplyEnergySmoothing(
+                &filterd,
+                0.5f,   // radius: 주변 이웃 탐색 반경
+                0.1f,   // dataWeight: 데이터 적합도 가중치
+                0.9f,   // smoothWeight: 스무딩 가중치
+				30);    // iterations: 반복 횟수
+
+
+            std::vector<float3> smoothPoints(mainPos.size());
+            std::vector<float3> smoothNormals(mainPos.size());
+            std::vector<uchar3> smoothColors(mainPos.size());
+            cudaMemcpy(smoothPoints.data(), (const float3*)thrust::raw_pointer_cast(filterd.points.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
+            cudaMemcpy(smoothNormals.data(), (const float3*)thrust::raw_pointer_cast(filterd.normals.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
+            cudaMemcpy(smoothColors.data(), (const uchar3*)thrust::raw_pointer_cast(filterd.colors.data()), mainPos.size() * sizeof(uchar3), cudaMemcpyDeviceToHost);
+            std::vector<Eigen::Vector3f> smoothPos;
+            std::vector<Eigen::Vector3f> smoothNorm;
+            std::vector<Eigen::Vector4f> smoothCol;
+            smoothPos.reserve(mainPos.size());
+            smoothNorm.reserve(mainPos.size());
+            smoothCol.reserve(mainPos.size());
+            for (size_t i = 0; i < mainPos.size(); ++i)
+            {
+                smoothPos.emplace_back(smoothPoints[i].x, smoothPoints[i].y, smoothPoints[i].z);
+                Eigen::Vector3f n(smoothNormals[i].x, smoothNormals[i].y, smoothNormals[i].z);
+                if (n.squaredNorm() < 0.001f) n = Eigen::Vector3f::UnitY();
+                smoothNorm.push_back(n);
+                smoothCol.emplace_back(
+                    (float)smoothColors[i].x / 255.0f,
+                    (float)smoothColors[i].y / 255.0f,
+                    (float)smoothColors[i].z / 255.0f,
+                    1.0f
+                );
+            }
+			VD::AddSphereBatch("SmoothedPointCloud", smoothPos, smoothNorm, 0.05f, smoothCol);
         }
     }
 };
 
 REGISTER_APP(AppTSDFDevice, "AppTSDFDevice");
-
-
-
-
-
-
-
-
-
-#if VALIDATION
-#include "Apps.h"
-#include <robin_hood/robin_hood.h>
-#include <cassert>
-#include <cmath>
-#include <algorithm>
-#include <vector>
-#include <fstream>
-#include <iostream>
-#include <limits>
-#include <unordered_set>
-
-class AppTSDFDevice : public App
-{
-public:
-    virtual void Execute() override
-    {
-        auto startTime = std::chrono::high_resolution_clock::now();
-
-        auto [initialUsed, totalGpu] = CheckDeviceMemory("초기 상태");
-
-        VVV::VoxelDataBase voxelDb;
-        uint32_t maxBlocks = 80000;
-
-        voxelDb.Allocate(maxBlocks);
-
-        std::ifstream ifs("D:\\Resources\\Default\\Patches.bin", std::ios::binary);
-        if (!ifs.is_open())
-        {
-            std::cout << "[Error] Failed to open Patches.bin" << std::endl;
-            return;
-        }
-
-        CamInfo_ cam;
-        Eigen::Matrix4f camRT;
-        ifs.read(reinterpret_cast<char*>(&cam), sizeof(CamInfo_));
-        ifs.read(reinterpret_cast<char*>(camRT.data()), sizeof(float) * 16);
-
-        size_t numberOfPatches = 0;
-        ifs.read(reinterpret_cast<char*>(&numberOfPatches), sizeof(size_t));
-
-        VVV::Vector3f* d_points0 = nullptr;
-        VVV::Vector3f* d_normals0 = nullptr;
-        VVV::Vector3b* d_colors0 = nullptr;
-        unsigned int numberOfPoints0 = 0;
-
-        VVV::Vector3f* d_points45 = nullptr;
-        VVV::Vector3f* d_normals45 = nullptr;
-        VVV::Vector3b* d_colors45 = nullptr;
-        unsigned int numberOfPoints45 = 0;
-
-        // 검증을 위한 CPU 측 블록 키 저장소
-        std::unordered_set<uint64_t> cpuExpectedBlockKeys;
-
-        TS(PatchTotal);
-        for (size_t i = 0; i < numberOfPatches; i++)
-        {
-            TS(patch);
-
-            size_t patchIndex = 0;
-            ifs.read(reinterpret_cast<char*>(&patchIndex), sizeof(size_t));
-            Eigen::Matrix4f rt0, rt45;
-            Eigen::Vector3f aabbMin0, aabbMax0, aabbMin45, aabbMax45;
-
-            ifs.read(reinterpret_cast<char*>(rt0.data()), sizeof(float) * 16);
-            ifs.read(reinterpret_cast<char*>(aabbMin0.data()), sizeof(float) * 3);
-            ifs.read(reinterpret_cast<char*>(aabbMax0.data()), sizeof(float) * 3);
-            ifs.read(reinterpret_cast<char*>(rt45.data()), sizeof(float) * 16);
-            ifs.read(reinterpret_cast<char*>(aabbMin45.data()), sizeof(float) * 3);
-            ifs.read(reinterpret_cast<char*>(aabbMax45.data()), sizeof(float) * 3);
-
-            size_t numPts0 = 0;
-            ifs.read(reinterpret_cast<char*>(&numPts0), sizeof(size_t));
-            std::vector<Eigen::Vector3f> pts0(numPts0), normals0(numPts0);
-            std::vector<Eigen::Vector3b> colors0(numPts0);
-            ifs.read(reinterpret_cast<char*>(pts0.data()), sizeof(Eigen::Vector3f) * numPts0);
-            ifs.read(reinterpret_cast<char*>(normals0.data()), sizeof(Eigen::Vector3f) * numPts0);
-            ifs.read(reinterpret_cast<char*>(colors0.data()), sizeof(Eigen::Vector3b) * numPts0);
-
-            size_t numPts45 = 0;
-            ifs.read(reinterpret_cast<char*>(&numPts45), sizeof(size_t));
-            std::vector<Eigen::Vector3f> pts45(numPts45), normals45(numPts45);
-            std::vector<Eigen::Vector3b> colors45(numPts45);
-            ifs.read(reinterpret_cast<char*>(pts45.data()), sizeof(Eigen::Vector3f) * numPts45);
-            ifs.read(reinterpret_cast<char*>(normals45.data()), sizeof(Eigen::Vector3f) * numPts45);
-
-            float blockSize = 0.8f;
-
-            // 검증용 데이터 수집
-            CollectExpectedBlockKeys(pts0, rt0, blockSize, cpuExpectedBlockKeys);
-            CollectExpectedBlockKeys(pts45, rt45, blockSize, cpuExpectedBlockKeys);
-
-            // GPU 통합 로직 (rt0)
-            VVV::Matrix4f gpuMatrix0;
-            std::copy(rt0.transpose().data(), rt0.data() + 16, gpuMatrix0.data);
-
-            if (numberOfPoints0 < numPts0)
-            {
-                if (d_points0) cudaFree(d_points0);
-                if (d_normals0) cudaFree(d_normals0);
-                if (d_colors0) cudaFree(d_colors0);
-                numberOfPoints0 = (unsigned int)numPts0 * 2;
-                cudaMalloc(&d_points0, sizeof(VVV::Vector3f) * numberOfPoints0);
-                cudaMalloc(&d_normals0, sizeof(VVV::Vector3f) * numberOfPoints0);
-                cudaMalloc(&d_colors0, sizeof(VVV::Vector3b) * numberOfPoints0);
-            }
-
-            cudaMemcpy(d_points0, pts0.data(), sizeof(VVV::Vector3f) * numPts0, cudaMemcpyHostToDevice);
-            cudaMemcpy(d_normals0, normals0.data(), sizeof(VVV::Vector3f) * numPts0, cudaMemcpyHostToDevice);
-            cudaMemcpy(d_colors0, colors0.data(), sizeof(VVV::Vector3b) * numPts0, cudaMemcpyHostToDevice);
-
-            voxelDb.IntegrateTSDF(gpuMatrix0, d_points0, d_normals0, d_colors0, (uint32_t)numPts0, blockSize, (unsigned int)i);
-
-            //// GPU 통합 로직 (rt45)
-            //VVV::Matrix4f gpuMatrix45;
-            //std::copy(rt45.transpose().data(), rt45.data() + 16, gpuMatrix45.data);
-
-            //if (numberOfPoints45 < numPts45)
-            //{
-            //    if (d_points45) cudaFree(d_points45);
-            //    if (d_normals45) cudaFree(d_normals45);
-            //    if (d_colors45) cudaFree(d_colors45);
-            //    numberOfPoints45 = (unsigned int)numPts45 * 2;
-            //    cudaMalloc(&d_points45, sizeof(VVV::Vector3f) * numberOfPoints45);
-            //    cudaMalloc(&d_normals45, sizeof(VVV::Vector3f) * numberOfPoints45);
-            //    cudaMalloc(&d_colors45, sizeof(VVV::Vector3b) * numberOfPoints45);
-            //}
-
-            //cudaMemcpy(d_points45, pts45.data(), sizeof(VVV::Vector3f) * numPts45, cudaMemcpyHostToDevice);
-            //cudaMemcpy(d_normals45, normals45.data(), sizeof(VVV::Vector3f) * numPts45, cudaMemcpyHostToDevice);
-            //cudaMemcpy(d_colors45, colors45.data(), sizeof(VVV::Vector3b) * numPts45, cudaMemcpyHostToDevice);
-
-            //voxelDb.IntegrateTSDF(gpuMatrix45, d_points45, d_normals45, d_colors45, (uint32_t)numPts45, blockSize, (unsigned int)i);
-
-            TE(patch);
-        }
-
-        TE(PatchTotal);
-
-        // 최종 검증 수행
-        VerifyGPUIntegrity(voxelDb, maxBlocks, (uint32_t)cpuExpectedBlockKeys.size());
-
-        uint32_t activeBlocksCount = 0;
-        cudaMemcpy(&activeBlocksCount, voxelDb.d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-        VisualizeVoxelsBatch(voxelDb, maxBlocks, 0.8f, activeBlocksCount);
-
-        if (d_points0) cudaFree(d_points0);
-        if (d_normals0) cudaFree(d_normals0);
-        if (d_colors0) cudaFree(d_colors0);
-        if (d_points45) cudaFree(d_points45);
-        if (d_normals45) cudaFree(d_normals45);
-        if (d_colors45) cudaFree(d_colors45);
-
-        voxelDb.Free();
-    }
-
-private:
-    void CollectExpectedBlockKeys(const std::vector<Eigen::Vector3f>& pts, const Eigen::Matrix4f& rt, float blockSize, std::unordered_set<uint64_t>& keys)
-    {
-        float voxelSize = blockSize / 8.0f;
-        for (const auto& p : pts)
-        {
-            // 커널과 동일한 World Transform 시뮬레이션
-            Eigen::Vector4f p_world4 = rt * Eigen::Vector4f(p.x(), p.y(), p.z(), 1.0f);
-            VVV::Vector3f p_world = { p_world4.x(), p_world4.y(), p_world4.z() };
-
-            int gx = static_cast<int>(floorf(p_world.x / voxelSize));
-            int gy = static_cast<int>(floorf(p_world.y / voxelSize));
-            int gz = static_cast<int>(floorf(p_world.z / voxelSize));
-
-            for (int lz = gz; lz <= gz + 1; ++lz)
-            {
-                for (int ly = gy; ly <= gy + 1; ++ly)
-                {
-                    for (int lx = gx; lx <= gx + 1; ++lx)
-                    {
-                        VVV::Vector3f v_pos = { lx * voxelSize, ly * voxelSize, lz * voxelSize };
-                        VVV::Morton64 blockKey = VVV::Morton64::FromPosition(v_pos, blockSize);
-                        uint64_t code = blockKey.code;
-                        if (code == 0) code = 0xFFFFFFFFFFFFFFFFULL;
-                        keys.insert(code);
-                    }
-                }
-            }
-        }
-    }
-
-    void VerifyGPUIntegrity(VVV::VoxelDataBase& voxelDb, uint32_t maxBlocks, uint32_t cpuExpectedCount)
-    {
-        uint32_t gpuReportedCount = 0;
-        cudaMemcpy(&gpuReportedCount, voxelDb.d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-
-        std::vector<uint64_t> hostHashTable(maxBlocks);
-        cudaMemcpy(hostHashTable.data(), voxelDb.d_hashTable, sizeof(uint64_t) * maxBlocks, cudaMemcpyDeviceToHost);
-
-        uint32_t actualHashEntryCount = 0;
-        for (uint32_t i = 0; i < maxBlocks; ++i)
-        {
-            if (hostHashTable[i] != 0)
-            {
-                actualHashEntryCount++;
-            }
-        }
-
-        printf("\n========== [Integrity Check] ==========\n");
-        printf("1. CPU Simulation Expected Blocks : %u\n", cpuExpectedCount);
-        printf("2. GPU Device d_blockCount Variable: %u\n", gpuReportedCount);
-        printf("3. GPU Hash Table Active Entries   : %u\n", actualHashEntryCount);
-
-        if (gpuReportedCount != actualHashEntryCount)
-        {
-            printf("[Critical] Count Mismatch: Variable(%u) vs Actual Hash(%u)\n", gpuReportedCount, actualHashEntryCount);
-        }
-        if (actualHashEntryCount != cpuExpectedCount)
-        {
-            printf("[Warning] Algorithm Mismatch: CPU(%u) vs GPU(%u)\n", cpuExpectedCount, actualHashEntryCount);
-        }
-        printf("=======================================\n\n");
-    }
-
-    void VisualizeVoxelsBatch(VVV::VoxelDataBase& voxelDb, uint32_t maxBlocks, float blockSize, uint32_t activeBlocksCount)
-    {
-        uint32_t maxOut = 50000000;
-        std::vector<VVV::ExtractedVoxel> hostOut(maxOut);
-        uint32_t finalCnt = voxelDb.ExtractActiveVoxelsToHost(blockSize, hostOut.data(), maxOut);
-
-        if (finalCnt > 0)
-        {
-            uint32_t limit = (finalCnt > maxOut) ? maxOut : finalCnt;
-            float voxelDrawSize = (blockSize / 8.0f) * 0.9f;
-
-            std::vector<Eigen::Vector3f> voxelCenters;
-            std::vector<Eigen::Vector3f> voxelDimensions;
-            std::vector<Eigen::Vector4f> voxelColors;
-            voxelCenters.reserve(limit);
-            voxelDimensions.reserve(limit);
-            voxelColors.reserve(limit);
-
-            for (uint32_t i = 0; i < limit; i++)
-            {
-                voxelCenters.emplace_back(hostOut[i].position.x, hostOut[i].position.y, hostOut[i].position.z);
-                voxelDimensions.emplace_back(voxelDrawSize, voxelDrawSize, voxelDrawSize);
-                voxelColors.emplace_back(hostOut[i].color[0] / 255.f, hostOut[i].color[1] / 255.f, hostOut[i].color[2] / 255.f, 1.f);
-            }
-            VD::AddWiredBoxBatch("Voxels", voxelCenters, voxelDimensions, voxelColors);
-        }
-
-        printf("\n>>> [최종 리포트]\n");
-        printf("    - 추출된 복셀 수     : %u 개\n", finalCnt);
-        printf("    - 해시 적재율        : %.2f%% (%u / %u)\n",
-            (double)activeBlocksCount / maxBlocks * 100.0, activeBlocksCount, maxBlocks);
-    }
-};
-
-REGISTER_APP(AppTSDFDevice, "AppTSDFDevice");
-#endif // VALIDATION
