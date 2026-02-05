@@ -16,7 +16,11 @@ public:
         CuPointCloud cloud;
 
         PLYFormat ply;
-        if (!ply.Deserialize("D:\\Resources\\Default\\BasePoints.ply")) return;
+        if (!ply.Deserialize("D:\\Resources\\Default\\ExtractedSurfacePoints.ply"))
+        {
+			printf("[Error] Failed to load PLY file.\n");
+            return;
+        }
 
         size_t rawCount = ply.GetPoints().size();
         cloud.FromHostPointers(
@@ -104,7 +108,11 @@ public:
         CuPointCloud cloud;
 
         PLYFormat ply;
-        if (!ply.Deserialize("D:\\Resources\\Default\\BasePoints.ply")) return;
+        if (!ply.Deserialize("D:\\Resources\\Default\\ExtractedSurfacePoints.ply"))
+        {
+            printf("[Error] Failed to load PLY file.\n");
+            return;
+        }
 
         size_t rawCount = ply.GetPoints().size();
         cloud.FromHostPointers(
@@ -121,7 +129,7 @@ public:
 
         unsigned int* d_labels = nullptr;
         cudaMalloc(&d_labels, rawCount * sizeof(unsigned int));
-        cellGrid.ApplyClustering(&cloud, d_labels, 0.15f);
+        cellGrid.ApplyClustering(&cloud, d_labels, 0.125f);
 
         TE(ClusteringTotal);
 
@@ -224,7 +232,18 @@ public:
         }
         if (!otherPos.empty())
         {
-            VD::AddSphereBatch("OtherClusters", otherPos, otherNorm, 0.05f, otherCol);
+            //VD::AddSphereBatch("OtherClusters", otherPos, otherNorm, 0.05f, otherCol);
+        }
+
+        {
+            PLYFormat ply;
+            for (size_t i = 0; i < mainPos.size(); i++)
+            {
+                ply.AddPoint(mainPos[i]);
+                ply.AddNormal(mainNorm[i].x(), mainNorm[i].y(), mainNorm[i].z());
+                ply.AddColor(mainCol[i].x(), mainCol[i].y(), mainCol[i].z(), mainCol[i].w());
+            }
+            ply.Serialize("D:\\Resources\\Default\\Clustered.ply");
         }
 
         cudaFree(d_labels);

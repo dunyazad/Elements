@@ -52,6 +52,7 @@ namespace VVV
         }
     }
 
+#if 0
     __global__ void TSDFIntegrateKernel(VoxelDataBase db, VVV::Matrix4f rt, const Vector3f* points, const Vector3f* normals, const Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
     {
         uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -146,6 +147,122 @@ namespace VVV
                 else { t = t_max_z; t_max_z += t_delta_z; curr_z += step_z; }
             }
             else {
+                if (t_max_y < t_max_z) { t = t_max_y; t_max_y += t_delta_y; curr_y += step_y; }
+                else { t = t_max_z; t_max_z += t_delta_z; curr_z += step_z; }
+            }
+        }
+    }
+#endif // 0
+
+    __global__ void TSDFIntegrateKernel(VoxelDataBase db, VVV::Matrix4f rt, const Vector3f* points, const Vector3f* normals, const Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
+    {
+        uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+        if (index >= count)
+        {
+            return;
+        }
+
+        Vector3f p_local = points[index];
+        Vector3f n_local = normals[index];
+        Vector3b color = colors[index];
+
+        Vector3f p_world = rt.Transform(p_local);
+        Vector3f n_world = {
+            rt.data[0] * n_local.x + rt.data[4] * n_local.y + rt.data[8] * n_local.z,
+            rt.data[1] * n_local.x + rt.data[5] * n_local.y + rt.data[9] * n_local.z,
+            rt.data[2] * n_local.x + rt.data[6] * n_local.y + rt.data[10] * n_local.z
+        };
+
+        float n_len = rsqrtf(n_world.x * n_world.x + n_world.y * n_world.y + n_world.z * n_world.z + 1e-10f);
+        n_world.x *= n_len; n_world.y *= n_len; n_world.z *= n_len;
+
+        float voxel_size = blockSize / 8.0f;
+        float inv_voxel_size = 1.0f / voxel_size;
+        float trunc_dist = voxel_size * 5.0f;
+
+        Vector3f start_pos = {
+            p_world.x - n_world.x * trunc_dist,
+            p_world.y - n_world.y * trunc_dist,
+            p_world.z - n_world.z * trunc_dist
+        };
+
+        int curr_x = __float2int_rd(start_pos.x * inv_voxel_size);
+        int curr_y = __float2int_rd(start_pos.y * inv_voxel_size);
+        int curr_z = __float2int_rd(start_pos.z * inv_voxel_size);
+
+        int step_x = (n_world.x > 0) ? 1 : -1;
+        int step_y = (n_world.y > 0) ? 1 : -1;
+        int step_z = (n_world.z > 0) ? 1 : -1;
+
+        auto calc_t_max = [&](float pos, float dir, int step, int curr) {
+            if (fabsf(dir) < 1e-7f) return 1e30f;
+            float border = (float)(curr + (step > 0 ? 1 : 0)) * voxel_size;
+            return (border - pos) / dir;
+            };
+
+        float t_max_x = calc_t_max(start_pos.x, n_world.x, step_x, curr_x);
+        float t_max_y = calc_t_max(start_pos.y, n_world.y, step_y, curr_y);
+        float t_max_z = calc_t_max(start_pos.z, n_world.z, step_z, curr_z);
+
+        float t_delta_x = (fabsf(n_world.x) > 1e-7f) ? fabsf(voxel_size / n_world.x) : 1e30f;
+        float t_delta_y = (fabsf(n_world.y) > 1e-7f) ? fabsf(voxel_size / n_world.y) : 1e30f;
+        float t_delta_z = (fabsf(n_world.z) > 1e-7f) ? fabsf(voxel_size / n_world.z) : 1e30f;
+
+        float max_t = 2.0f * trunc_dist;
+        float t = 0.0f;
+
+        while (t <= max_t)
+        {
+            Vector3f voxel_center = { (curr_x + 0.5f) * voxel_size, (curr_y + 0.5f) * voxel_size, (curr_z + 0.5f) * voxel_size };
+            Voxel* voxel_ptr = db.GetOrCreateVoxel(voxel_center);
+
+            if (voxel_ptr != nullptr)
+            {
+                float dist = (voxel_center.x - p_world.x) * n_world.x +
+                    (voxel_center.y - p_world.y) * n_world.y +
+                    (voxel_center.z - p_world.z) * n_world.z;
+
+                // 가중치 업데이트 (MAX_WEIGHT 제한 적용)
+                unsigned int* weight_ptr = (unsigned int*)&(voxel_ptr->valueCount);
+                unsigned int old_w_int = atomicAdd(weight_ptr, 1);
+
+                float old_w = fminf((float)old_w_int, MAX_WEIGHT);
+                float new_w = old_w + 1.0f;
+
+                float weight_factor = old_w / new_w;
+                float new_factor = 1.0f / new_w;
+
+                // 1. TSDF 값 통합
+                voxel_ptr->value = (voxel_ptr->value * weight_factor) + (dist * new_factor);
+
+                // 2. Color 통합 (반올림 보정을 위해 +0.5f 적용하여 탁해짐 방지)
+                voxel_ptr->color.x = (uint8_t)((float)voxel_ptr->color.x * weight_factor + (float)color.x * new_factor + 0.5f);
+                voxel_ptr->color.y = (uint8_t)((float)voxel_ptr->color.y * weight_factor + (float)color.y * new_factor + 0.5f);
+                voxel_ptr->color.z = (uint8_t)((float)voxel_ptr->color.z * weight_factor + (float)color.z * new_factor + 0.5f);
+
+                // 3. Normal 통합 (단순 덮어쓰기가 아니라 가중 평균 후 정규화)
+                Vector3f blended_n = {
+                    voxel_ptr->normal.x * weight_factor + n_world.x * new_factor,
+                    voxel_ptr->normal.y * weight_factor + n_world.y * new_factor,
+                    voxel_ptr->normal.z * weight_factor + n_world.z * new_factor
+                };
+                float bn_len = rsqrtf(blended_n.x * blended_n.x + blended_n.y * blended_n.y + blended_n.z * blended_n.z + 1e-10f);
+                voxel_ptr->normal = { blended_n.x * bn_len, blended_n.y * bn_len, blended_n.z * bn_len };
+
+                VoxelBlock* block = db.GetVoxelBlock(voxel_center);
+                if (block)
+                {
+                    block->lastTouchedFrameId = frameId;
+                }
+            }
+
+            if (t_max_x < t_max_y)
+            {
+                if (t_max_x < t_max_z) { t = t_max_x; t_max_x += t_delta_x; curr_x += step_x; }
+                else { t = t_max_z; t_max_z += t_delta_z; curr_z += step_z; }
+            }
+            else
+            {
                 if (t_max_y < t_max_z) { t = t_max_y; t_max_y += t_delta_y; curr_y += step_y; }
                 else { t = t_max_z; t_max_z += t_delta_z; curr_z += step_z; }
             }
