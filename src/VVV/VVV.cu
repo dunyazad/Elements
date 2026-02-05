@@ -12,39 +12,7 @@ namespace VVV
         return fminf(max, fmaxf(min, val));
     }
 
-    __host__ __device__ static inline uint32_t CompactBits(uint64_t v)
-    {
-        v &= 0x1249249249249249ull;
-        v = (v ^ (v >> 2)) & 0x10c30c30c30c30c3ull;
-        v = (v ^ (v >> 4)) & 0x100f00f00f00f00full;
-        v = (v ^ (v >> 8)) & 0x1f0000ff0000ffull;
-        v = (v ^ (v >> 16)) & 0x1f00000000ffffull;
-        v = (v ^ (v >> 32)) & 0x001FFFFFull;
-        return static_cast<uint32_t>(v);
-    }
-
-    __host__ __device__ Vector3f Morton64::ToPosition(float blockSize) const
-    {
-        uint32_t ux = CompactBits(code >> 0);
-        uint32_t uy = CompactBits(code >> 1);
-        uint32_t uz = CompactBits(code >> 2);
-        int32_t vx = static_cast<int32_t>(ux) - AXIS_BIAS;
-        int32_t vy = static_cast<int32_t>(uy) - AXIS_BIAS;
-        int32_t vz = static_cast<int32_t>(uz) - AXIS_BIAS;
-        return Vector3f{ (vx + 0.5f) * blockSize, (vy + 0.5f) * blockSize, (vz + 0.5f) * blockSize };
-    }
-
-    __device__ uint32_t StrongHash(uint64_t key, uint32_t maxBlocks)
-    {
-        key ^= key >> 33;
-        key *= 0xff51afd7ed558ccdULL;
-        key ^= key >> 33;
-        key *= 0xc4ceb9fe1a85ec53ULL;
-        key ^= key >> 33;
-        return static_cast<uint32_t>(key % maxBlocks);
-    }
-
-    __global__ void InsertKernel(VoxelDataBase db, const Vector3f* points, const Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
+    __global__ void InsertKernel(VoxelDataBase db, VVV::Matrix4f rt, const Vector3f* points, const Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
     {
         uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
         if (idx >= count)
@@ -52,168 +20,134 @@ namespace VVV
             return;
         }
 
-        Vector3f p = points[idx];
-        Vector3b c = colors[idx];
-        Morton64 blockKey = Morton64::FromPosition(p, blockSize);
-        uint64_t mKey = blockKey.code;
-        if (mKey == 0)
+        Vector3f p = rt.Transform(points[idx]);
+
+        // 해시 슬롯 할당 (이 단계에서 블록 카운트 증가)
+        Voxel* v = db.GetOrCreateVoxel(p);
+
+        if (v != nullptr)
         {
-            mKey = 0xFFFFFFFFFFFFFFFFULL;
-        }
+            // 1. 값 업데이트 (포인트 클라우드 적립 방식)
+            atomicAdd(&(v->value), 1.0f);
 
-        uint32_t slot = StrongHash(mKey, db.maxBlockCount);
-        uint32_t start = slot;
-        BlockID bid = INVALID_BLOCK;
-
-        while (true)
-        {
-            unsigned long long* slotPtr = (unsigned long long*) & db.d_hashTable[slot];
-            unsigned long long prev = atomicCAS(slotPtr, 0ULL, (unsigned long long)mKey);
-
-            if (prev == 0)
+            // 2. 중요: 가중치(valueCount) 업데이트
+            // ExtractActiveVoxelsToHost 커널은 보통 이 값이 0보다 큰 복셀만 추출합니다.
+            // valueCount가 unsigned short 혹은 정수형인 경우 아래와 같이 처리합니다.
+            if (v->valueCount < 65535)
             {
-                atomicAdd(db.d_blockCount, 1);
-                bid = slot;
-                break;
-            }
-            if (prev == mKey)
-            {
-                bid = slot;
-                break;
+                atomicAdd((unsigned int*)&(v->valueCount), 1);
+                // 주의: 구조체 메모리 레이아웃에 따라 정수형 캐스팅 혹은 
+                // 전용 atomic 함수를 사용해야 합니다.
             }
 
-            slot = (slot + 1) % db.maxBlockCount;
-            if (slot == start)
+            // 3. 색상 기록
+            v->color = colors[idx];
+
+            // 4. 블록 활성화 프레임 업데이트
+            BlockID bid = db.GetOrCreateBlockSlot(p);
+            if (bid != INVALID_BLOCK)
             {
-                break;
+                db.d_blocks[bid].lastTouchedFrameId = frameId;
             }
-        }
-
-        if (bid != INVALID_BLOCK)
-        {
-            float vSize = blockSize / 8.0f;
-            Vector3f bc = blockKey.ToPosition(blockSize);
-            int lx = static_cast<int>(floorf((p.x - (bc.x - blockSize * 0.5f)) / vSize + 1e-5f));
-            int ly = static_cast<int>(floorf((p.y - (bc.y - blockSize * 0.5f)) / vSize + 1e-5f));
-            int lz = static_cast<int>(floorf((p.z - (bc.z - blockSize * 0.5f)) / vSize + 1e-5f));
-
-            lx = (lx < 0) ? 0 : (lx > 7 ? 7 : lx);
-            ly = (ly < 0) ? 0 : (ly > 7 ? 7 : ly);
-            lz = (lz < 0) ? 0 : (lz > 7 ? 7 : lz);
-
-            Voxel& v = db.d_blocks[bid].voxels[(lz << 6) | (ly << 3) | lx];
-            atomicAdd(&v.value, 1.0f);
-            v.color = c; // Note: Race condition point
-            db.d_blocks[bid].lastTouchedFrameId = frameId;
         }
     }
 
-    __global__ void TSDFIntegrateKernel(VoxelDataBase db, VVV::Matrix4f invRT, const Vector3f* points, const Vector3f* normals, const Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
+    __global__ void TSDFIntegrateKernel(VoxelDataBase db, VVV::Matrix4f rt, const Vector3f* points, const Vector3f* normals, const Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
     {
         uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
-        if (index >= count)
-        {
-            return;
-        }
+        if (index >= count) return;
 
-        // 1. 입력 로컬 데이터 로드 및 월드 변환
         Vector3f p_local = points[index];
         Vector3f n_local = normals[index];
         Vector3b color = colors[index];
 
-        // Camera to World 변환 (invRT = rt0)
-        Vector3f p_world = invRT.Transform(p_local);
-
-        // 법선 벡터 월드 회전 적용 (회전만 적용)
+        // 월드 좌표계 변환 및 노멀 정규화
+        Vector3f p_world = rt.Transform(p_local);
         Vector3f n_world = {
-            invRT.data[0] * n_local.x + invRT.data[4] * n_local.y + invRT.data[8] * n_local.z,
-            invRT.data[1] * n_local.x + invRT.data[5] * n_local.y + invRT.data[9] * n_local.z,
-            invRT.data[2] * n_local.x + invRT.data[6] * n_local.y + invRT.data[10] * n_local.z
+            rt.data[0] * n_local.x + rt.data[4] * n_local.y + rt.data[8] * n_local.z,
+            rt.data[1] * n_local.x + rt.data[5] * n_local.y + rt.data[9] * n_local.z,
+            rt.data[2] * n_local.x + rt.data[6] * n_local.y + rt.data[10] * n_local.z
         };
 
-        float voxelSize = blockSize / 8.0f;
-        float truncDist = voxelSize * 2.0f;
+        float n_len = rsqrtf(n_world.x * n_world.x + n_world.y * n_world.y + n_world.z * n_world.z + 1e-10f);
+        n_world.x *= n_len; n_world.y *= n_len; n_world.z *= n_len;
 
-        // 2. [검토 핵심] 주변 8개 복셀의 정수 그리드 좌표(Global Grid Index)를 직접 구함
-        // floorf(p_world / voxelSize)가 해당 포인트가 속한 복셀의 시작점입니다.
-        int gx = static_cast<int>(floorf(p_world.x / voxelSize));
-        int gy = static_cast<int>(floorf(p_world.y / voxelSize));
-        int gz = static_cast<int>(floorf(p_world.z / voxelSize));
+        float voxel_size = blockSize / 8.0f;
+        float inv_voxel_size = 1.0f / voxel_size;
+        float trunc_dist = voxel_size * 5.0f;
 
-        // 3. 2x2x2 주변 복셀 순회 (각 복셀의 블록 소속을 매번 확인)
-        for (int lz = gz; lz <= gz + 1; ++lz)
+        // DDA 시작점 (표면 뒤에서 앞으로 관통)
+        Vector3f start_pos = { p_world.x - n_world.x * trunc_dist, p_world.y - n_world.y * trunc_dist, p_world.z - n_world.z * trunc_dist };
+
+        // 정수 좌표 계산 (floorf 대용으로 정밀도 확보)
+        int curr_x = __float2int_rd(start_pos.x * inv_voxel_size);
+        int curr_y = __float2int_rd(start_pos.y * inv_voxel_size);
+        int curr_z = __float2int_rd(start_pos.z * inv_voxel_size);
+
+        int step_x = (n_world.x > 0) ? 1 : -1;
+        int step_y = (n_world.y > 0) ? 1 : -1;
+        int step_z = (n_world.z > 0) ? 1 : -1;
+
+        // t_max 초기값 (부동소수점 오차 방지를 위해 아주 작은 epsilon 적용)
+        auto calc_t_max = [&](float pos, float dir, int step, int curr) {
+            if (fabsf(dir) < 1e-7f) return 1e30f;
+            float border = (float)(curr + (step > 0 ? 1 : 0)) * voxel_size;
+            return (border - pos) / dir;
+            };
+
+        float t_max_x = calc_t_max(start_pos.x, n_world.x, step_x, curr_x);
+        float t_max_y = calc_t_max(start_pos.y, n_world.y, step_y, curr_y);
+        float t_max_z = calc_t_max(start_pos.z, n_world.z, step_z, curr_z);
+
+        float t_delta_x = (fabsf(n_world.x) > 1e-7f) ? fabsf(voxel_size / n_world.x) : 1e30f;
+        float t_delta_y = (fabsf(n_world.y) > 1e-7f) ? fabsf(voxel_size / n_world.y) : 1e30f;
+        float t_delta_z = (fabsf(n_world.z) > 1e-7f) ? fabsf(voxel_size / n_world.z) : 1e30f;
+
+        float max_t = 2.0f * trunc_dist;
+        float t = 0.0f;
+
+        while (t <= max_t)
         {
-            for (int ly = gy; ly <= gy + 1; ++ly)
+            Vector3f voxel_center = { (curr_x + 0.5f) * voxel_size, (curr_y + 0.5f) * voxel_size, (curr_z + 0.5f) * voxel_size };
+            Voxel* voxel_ptr = db.GetOrCreateVoxel(voxel_center);
+
+            if (voxel_ptr != nullptr)
             {
-                for (int lx = gx; lx <= gx + 1; ++lx)
-                {
-                    // 타겟 복셀의 정밀한 월드 위치 (중심점 잡지 말고 인덱스로만 계산)
-                    Vector3f v_pos = { lx * voxelSize, ly * voxelSize, lz * voxelSize };
+                // 투영 거리(Dot product) 기반 SDF
+                float dist = (voxel_center.x - p_world.x) * n_world.x +
+                    (voxel_center.y - p_world.y) * n_world.y +
+                    (voxel_center.z - p_world.z) * n_world.z;
 
-                    // [핵심] 타겟 복셀 위치로 블록 키를 생성하여 인접 블록을 찾아감
-                    Morton64 blockKey = Morton64::FromPosition(v_pos, blockSize);
-                    uint64_t key = blockKey.code;
-                    if (key == 0) key = 0xFFFFFFFFFFFFFFFFULL;
+                // 가중치 업데이트 (Atomic 기반 안전 확보)
+                unsigned int* weight_ptr = (unsigned int*)&(voxel_ptr->valueCount);
+                unsigned int old_w_int = atomicAdd(weight_ptr, 1);
+                float old_w = (float)old_w_int;
 
-                    uint32_t slot = StrongHash(key, db.maxBlockCount);
-                    uint32_t start = slot;
-                    BlockID bid = INVALID_BLOCK;
+                // 가중치 제한 및 통합
+                float limited_w = fminf(old_w + 1.0f, MAX_WEIGHT);
+                float weight_factor = old_w / (old_w + 1.0f);
+                float new_factor = 1.0f / (old_w + 1.0f);
 
-                    while (true)
-                    {
-                        unsigned long long* slotPtr = (unsigned long long*) & db.d_hashTable[slot];
-                        unsigned long long prev = atomicCAS(slotPtr, 0ULL, (unsigned long long)key);
+                voxel_ptr->value = (voxel_ptr->value * weight_factor) + (dist * new_factor);
 
-                        if (prev == 0 || prev == key)
-                        {
-                            if (prev == 0) atomicAdd(db.d_blockCount, 1);
-                            bid = slot;
-                            break;
-                        }
-                        slot = (slot + 1) % db.maxBlockCount;
-                        if (slot == start) break;
-                    }
+                voxel_ptr->color.x = (uint8_t)(voxel_ptr->color.x * weight_factor + color.x * new_factor);
+                voxel_ptr->color.y = (uint8_t)(voxel_ptr->color.y * weight_factor + color.y * new_factor);
+                voxel_ptr->color.z = (uint8_t)(voxel_ptr->color.z * weight_factor + color.z * new_factor);
 
-                    if (bid != INVALID_BLOCK)
-                    {
-                        // 블록의 월드 시작점(Origin)을 다시 구함
-                        Vector3f bc = blockKey.ToPosition(blockSize);
-                        Vector3f blockOrigin = { bc.x - blockSize * 0.5f, bc.y - blockSize * 0.5f, bc.z - blockSize * 0.5f };
+                voxel_ptr->normal = n_world;
 
-                        // [핵심] 블록 내 로컬 인덱스 (0~7) 계산
-                        // gx, gy, gz와 블록 시작점 사이의 거리 차이를 voxelSize로 나눈 정수값
-                        int local_lx = lx - static_cast<int>(floorf(blockOrigin.x / voxelSize + 0.1f));
-                        int local_ly = ly - static_cast<int>(floorf(blockOrigin.y / voxelSize + 0.1f));
-                        int local_lz = lz - static_cast<int>(floorf(blockOrigin.z / voxelSize + 0.1f));
+                VoxelBlock* block = db.GetVoxelBlock(voxel_center);
+                if (block) block->lastTouchedFrameId = frameId;
+            }
 
-                        if (local_lx >= 0 && local_lx < 8 && local_ly >= 0 && local_ly < 8 && local_lz >= 0 && local_lz < 8)
-                        {
-                            // 법선 방향 SDF 계산 ($dist$)
-                            Vector3f diff = { v_pos.x - p_world.x, v_pos.y - p_world.y, v_pos.z - p_world.z };
-                            float dist = diff.x * n_world.x + diff.y * n_world.y + diff.z * n_world.z;
-
-                            if (fabs(dist) < truncDist)
-                            {
-                                Voxel& voxel = db.d_blocks[bid].voxels[(local_lz << 6) | (local_ly << 3) | local_lx];
-
-                                float oldW = (float)voxel.valueCount;
-                                float newW = 1.0f;
-                                float combinedW = fminf(oldW + newW, MAX_WEIGHT);
-
-                                // 가중치 평균으로 매끄러운 SDF 형성
-                                voxel.value = (voxel.value * oldW + dist) / combinedW;
-                                voxel.valueCount = (unsigned short)combinedW;
-
-                                voxel.color.x = (uint8_t)((oldW * voxel.color.x + newW * color.x) / combinedW);
-                                voxel.color.y = (uint8_t)((oldW * voxel.color.y + newW * color.y) / combinedW);
-                                voxel.color.z = (uint8_t)((oldW * voxel.color.z + newW * color.z) / combinedW);
-
-                                voxel.normal = n_world;
-                            }
-                        }
-                        db.d_blocks[bid].lastTouchedFrameId = frameId;
-                    }
-                }
+            // DDA 이동: 수치적 안정성을 위해 작은 epsilon 보정 고려 가능
+            if (t_max_x < t_max_y) {
+                if (t_max_x < t_max_z) { t = t_max_x; t_max_x += t_delta_x; curr_x += step_x; }
+                else { t = t_max_z; t_max_z += t_delta_z; curr_z += step_z; }
+            }
+            else {
+                if (t_max_y < t_max_z) { t = t_max_y; t_max_y += t_delta_y; curr_y += step_y; }
+                else { t = t_max_z; t_max_z += t_delta_z; curr_z += step_z; }
             }
         }
     }
@@ -221,16 +155,10 @@ namespace VVV
     __global__ void ExtractKernel(VoxelDataBase db, float blockSize, ExtractedVoxel* out, uint32_t* count, uint32_t maxOut)
     {
         uint32_t slot = blockIdx.x * blockDim.x + threadIdx.x;
-        if (slot >= db.maxBlockCount)
-        {
-            return;
-        }
+        if (slot >= db.maxBlockCount) return;
 
         uint64_t key = db.d_hashTable[slot];
-        if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL)
-        {
-            return;
-        }
+        if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL) return;
 
         Morton64 bKey(key);
         Vector3f bc = bKey.ToPosition(blockSize);
@@ -264,7 +192,6 @@ namespace VVV
 
     __device__ inline Vector3f GetInterpolatedPos(Vector3f p1, Vector3f p2, float v1, float v2)
     {
-        // 선형 보간 공식: P = P1 + (-V1 / (V2 - V1)) * (P2 - P1)
         float mu = -v1 / (v2 - v1);
         return {
             p1.x + mu * (p2.x - p1.x),
@@ -276,53 +203,121 @@ namespace VVV
     __global__ void ExtractZeroCrossingKernel(VoxelDataBase db, float blockSize, ExtractedVoxel* out, uint32_t* count, uint32_t maxOut)
     {
         uint32_t slot = blockIdx.x * blockDim.x + threadIdx.x;
-        if (slot >= db.maxBlockCount) return;
+
+        if (slot >= db.maxBlockCount)
+        {
+            return;
+        }
 
         uint64_t key = db.d_hashTable[slot];
-        if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL) return;
+
+        if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL)
+        {
+            return;
+        }
 
         Morton64 bKey(key);
         Vector3f bc = bKey.ToPosition(blockSize);
         Vector3f origin = { bc.x - blockSize * 0.5f, bc.y - blockSize * 0.5f, bc.z - blockSize * 0.5f };
         float voxelSize = blockSize / 8.0f;
 
-        for (int lz = 0; lz < 7; ++lz)
-            for (int ly = 0; ly < 7; ++ly)
-                for (int lx = 0; lx < 7; ++lx)
+        for (int lz = 0; lz < 8; ++lz)
+        {
+            for (int ly = 0; ly < 8; ++ly)
+            {
+                for (int lx = 0; lx < 8; ++lx)
                 {
                     int idx0 = (lz << 6) | (ly << 3) | lx;
                     Voxel& v0 = db.d_blocks[slot].voxels[idx0];
 
-                    // 최소 가중치 조건을 두어 노이즈에 의한 구멍 방지
-                    if (v0.valueCount < 2) continue;
+                    // 노이즈 제거를 위해 가중치 임계값 상향 조정 고려
+                    if (v0.valueCount < 2)
+                    {
+                        continue;
+                    }
 
-                    Vector3f p0 = { origin.x + (lx + 0.5f) * voxelSize, origin.y + (ly + 0.5f) * voxelSize, origin.z + (lz + 0.5f) * voxelSize };
+                    Vector3f p0 = {
+                        origin.x + (lx + 0.5f) * voxelSize,
+                        origin.y + (ly + 0.5f) * voxelSize,
+                        origin.z + (lz + 0.5f) * voxelSize
+                    };
 
                     int neighbors[3] = { 1, 8, 64 };
                     for (int axis = 0; axis < 3; ++axis)
                     {
-                        Voxel& v1 = db.d_blocks[slot].voxels[idx0 + neighbors[axis]];
+                        bool isInternal = false;
+                        if (axis == 0 && lx < 7) isInternal = true;
+                        else if (axis == 1 && ly < 7) isInternal = true;
+                        else if (axis == 2 && lz < 7) isInternal = true;
 
-                        // 두 복셀 사이에서 SDF 값이 0을 통과하는지 확인
-                        if (v1.valueCount >= 2 && (v0.value * v1.value < 0.0f))
+                        Voxel* v1_ptr = nullptr;
+                        Vector3f p1 = p0;
+
+                        if (axis == 0) p1.x += voxelSize;
+                        else if (axis == 1) p1.y += voxelSize;
+                        else p1.z += voxelSize;
+
+                        if (isInternal)
                         {
-                            uint32_t outIdx = atomicAdd(count, 1);
-                            if (outIdx < maxOut)
-                            {
-                                Vector3f p1 = p0;
-                                if (axis == 0) p1.x += voxelSize;
-                                else if (axis == 1) p1.y += voxelSize;
-                                else p1.z += voxelSize;
+                            v1_ptr = &db.d_blocks[slot].voxels[idx0 + neighbors[axis]];
+                        }
+                        else
+                        {
+                            v1_ptr = db.GetVoxel(p1);
+                        }
 
-                                out[outIdx].position = GetInterpolatedPos(p0, p1, v0.value, v1.value);
-                                out[outIdx].normal = v0.normal;
-                                out[outIdx].color[0] = (uint8_t)((v0.color.x + v1.color.x) / 2);
-                                out[outIdx].color[1] = (uint8_t)((v0.color.y + v1.color.y) / 2);
-                                out[outIdx].color[2] = (uint8_t)((v0.color.z + v1.color.z) / 2);
+                        if (v1_ptr != nullptr && v1_ptr->valueCount >= 2)
+                        {
+                            float v0v = v0.value;
+                            float v1v = v1_ptr->value;
+
+                            // Zero-crossing 체크
+                            if (v0v * v1v < 0.0f)
+                            {
+                                uint32_t outIdx = atomicAdd(count, 1);
+                                if (outIdx < maxOut)
+                                {
+                                    // 선형 보간 계수 계산
+                                    float mu = -v0v / (v1v - v0v);
+                                    mu = fminf(fmaxf(mu, 0.0f), 1.0f);
+
+                                    // 1. 위치 보간
+                                    out[outIdx].position = {
+                                        p0.x + mu * (p1.x - p0.x),
+                                        p0.y + mu * (p1.y - p0.y),
+                                        p0.z + mu * (p1.z - p0.z)
+                                    };
+
+                                    // 2. 법선 보간 및 정규화 (표면 부드러움 향상)
+                                    Vector3f n0 = v0.normal;
+                                    Vector3f n1 = v1_ptr->normal;
+                                    Vector3f blendedNormal = {
+                                        n0.x + mu * (n1.x - n0.x),
+                                        n0.y + mu * (n1.y - n0.y),
+                                        n0.z + mu * (n1.z - n0.z)
+                                    };
+                                    float invLen = rsqrtf(blendedNormal.x * blendedNormal.x +
+                                        blendedNormal.y * blendedNormal.y +
+                                        blendedNormal.z * blendedNormal.z + 1e-8f);
+                                    out[outIdx].normal = {
+                                        blendedNormal.x * invLen,
+                                        blendedNormal.y * invLen,
+                                        blendedNormal.z * invLen
+                                    };
+
+                                    // 3. 색상 보간 (정수 오버플로우 방지 및 부드러운 전이)
+                                    out[outIdx].color[0] = (uint8_t)(v0.color.x + mu * (static_cast<float>(v1_ptr->color.x) - v0.color.x));
+                                    out[outIdx].color[1] = (uint8_t)(v0.color.y + mu * (static_cast<float>(v1_ptr->color.y) - v0.color.y));
+                                    out[outIdx].color[2] = (uint8_t)(v0.color.z + mu * (static_cast<float>(v1_ptr->color.z) - v0.color.z));
+
+                                    out[outIdx].weight = (float)v0.valueCount;
+                                }
                             }
                         }
                     }
                 }
+            }
+        }
     }
 
     void VoxelDataBase::Allocate(uint32_t maxBlocks)
@@ -356,7 +351,7 @@ namespace VVV
         maxBlockCount = 0;
     }
 
-    void VoxelDataBase::OccupyVoxelFromPoints(const VVV::Vector3f* points, const VVV::Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
+    void VoxelDataBase::OccupyVoxelFromPoints(const VVV::Matrix4f& rt, const VVV::Vector3f* points, const VVV::Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
     {
         VVV::Vector3f* d_p;
         VVV::Vector3b* d_c;
@@ -370,7 +365,7 @@ namespace VVV
 
         int threadsPerBlock = 256;
         int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
-        InsertKernel << <blocksPerGrid, threadsPerBlock >> > (*this, d_p, d_c, count, blockSize, frameId);
+        InsertKernel<<<blocksPerGrid, threadsPerBlock>>>(*this, rt, d_p, d_c, count, blockSize, frameId);
         cudaDeviceSynchronize();
 
         CUDA_TE(VVV_InsertKernel);
@@ -409,7 +404,7 @@ namespace VVV
 
         int threadsPerBlock = 256;
         int blocksPerGrid = (maxBlockCount + threadsPerBlock - 1) / threadsPerBlock;
-        VVV::ExtractKernel << <blocksPerGrid, threadsPerBlock >> > (*this, blockSize, d_out, d_cnt, maxOut);
+        ExtractKernel << <blocksPerGrid, threadsPerBlock >> > (*this, blockSize, d_out, d_cnt, maxOut);
         cudaDeviceSynchronize();
 
         uint32_t res;
@@ -425,7 +420,7 @@ namespace VVV
 
     uint32_t VoxelDataBase::ExtractZeroCrossingVoxelsToHost(float blockSize, VVV::ExtractedVoxel* hostBuffer, uint32_t maxOut)
     {
-        VVV::ExtractedVoxel* d_out;
+        ExtractedVoxel* d_out;
         uint32_t* d_cnt;
         cudaMalloc(&d_out, sizeof(VVV::ExtractedVoxel) * maxOut);
         cudaMalloc(&d_cnt, sizeof(uint32_t));
@@ -433,7 +428,7 @@ namespace VVV
 
         int threadsPerBlock = 256;
         int blocksPerGrid = (maxBlockCount + threadsPerBlock - 1) / threadsPerBlock;
-        VVV::ExtractZeroCrossingKernel << <blocksPerGrid, threadsPerBlock >> > (*this, blockSize, d_out, d_cnt, maxOut);
+        ExtractZeroCrossingKernel << <blocksPerGrid, threadsPerBlock >> > (*this, blockSize, d_out, d_cnt, maxOut);
         cudaDeviceSynchronize();
 
         uint32_t res;

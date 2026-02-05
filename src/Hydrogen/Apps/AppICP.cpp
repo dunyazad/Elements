@@ -40,7 +40,8 @@ public:
         float blockSize = 0.8f;
 
         TS(VVV_UpdateVoxelFromPoints);
-        voxelDb.OccupyVoxelFromPoints(points.data(), colors.data(), (uint32_t)nPoints, blockSize, 1);
+        VVV::Matrix4f identity = VVV::Matrix4f::Identity();
+        voxelDb.OccupyVoxelFromPoints(identity, points.data(), colors.data(), (uint32_t)nPoints, blockSize, 1);
         cudaDeviceSynchronize();
         TE(VVV_UpdateVoxelFromPoints);
 

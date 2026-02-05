@@ -90,7 +90,8 @@ private:
 
         printf("\n>>> [GPU 연산] 복셀 데이터 생성 중...\n");
         TS(VVV_UpdateVoxelFromPoints);
-        voxelDb.OccupyVoxelFromPoints(points.data(), colors.data(), (uint32_t)nPoints, blockSize, 1);
+        VVV::Matrix4f identity = VVV::Matrix4f::Identity();
+        voxelDb.OccupyVoxelFromPoints(identity, points.data(), colors.data(), (uint32_t)nPoints, blockSize, 1);
         cudaDeviceSynchronize();
         TE(VVV_UpdateVoxelFromPoints);
 

@@ -44,6 +44,16 @@
 
 namespace VVV
 {
+	__device__ inline uint32_t StrongHash(uint64_t key, uint32_t maxBlocks)
+	{
+		key ^= key >> 33;
+		key *= 0xff51afd7ed558ccdULL;
+		key ^= key >> 33;
+		key *= 0xc4ceb9fe1a85ec53ULL;
+		key ^= key >> 33;
+		return static_cast<uint32_t>(key % maxBlocks);
+	}
+
 	struct VVV_API Vector3b
 	{
 		uint8_t x, y, z;
@@ -72,6 +82,25 @@ namespace VVV
 			float w = data[3] * vec.x + data[7] * vec.y + data[11] * vec.z + data[15];
 
 			return { x / w, y / w, z / w };
+		}
+
+		__host__ __device__
+			inline Vector3f TransformNormal(const Vector3f& vec) const
+		{
+			float x = data[0] * vec.x + data[4] * vec.y + data[8] * vec.z;
+			float y = data[1] * vec.x + data[5] * vec.y + data[9] * vec.z;
+			float z = data[2] * vec.x + data[6] * vec.y + data[10] * vec.z;
+			float w = data[3] * vec.x + data[7] * vec.y + data[11] * vec.z;
+
+			return { x / w, y / w, z / w };
+		}
+
+		__host__ __device__
+			static inline Matrix4f Identity()
+		{
+			Matrix4f mat = {};
+			mat.data[0] = 1.0f; mat.data[5] = 1.0f; mat.data[10] = 1.0f; mat.data[15] = 1.0f;
+			return mat;
 		}
 	};
 
@@ -138,9 +167,28 @@ namespace VVV
 			return Morton64(ToBlockCoord(p.x, blockSize), ToBlockCoord(p.y, blockSize), ToBlockCoord(p.z, blockSize));
 		}
 
-		__host__ __device__ Vector3f ToPosition(float blockSize) const;
+		__host__ __device__ inline Vector3f ToPosition(float blockSize)
+		{
+			uint32_t ux = CompactBits(code >> 0);
+			uint32_t uy = CompactBits(code >> 1);
+			uint32_t uz = CompactBits(code >> 2);
+			int32_t vx = static_cast<int32_t>(ux) - AXIS_BIAS;
+			int32_t vy = static_cast<int32_t>(uy) - AXIS_BIAS;
+			int32_t vz = static_cast<int32_t>(uz) - AXIS_BIAS;
+			return Vector3f{ (vx + 0.5f) * blockSize, (vy + 0.5f) * blockSize, (vz + 0.5f) * blockSize };
+		}
 
-	private:
+		__host__ __device__ static inline uint32_t CompactBits(uint64_t v)
+		{
+			v &= 0x1249249249249249ull;
+			v = (v ^ (v >> 2)) & 0x10c30c30c30c30c3ull;
+			v = (v ^ (v >> 4)) & 0x100f00f00f00f00full;
+			v = (v ^ (v >> 8)) & 0x1f0000ff0000ffull;
+			v = (v ^ (v >> 16)) & 0x1f00000000ffffull;
+			v = (v ^ (v >> 32)) & 0x001FFFFFull;
+			return static_cast<uint32_t>(v);
+		}
+
 		__host__ __device__ static inline uint64_t ExpandBits(uint32_t v)
 		{
 			uint64_t x = v & AXIS_MASK;
@@ -181,9 +229,119 @@ namespace VVV
 		VoxelDataBase() = default;
 		void Allocate(uint32_t maxBlocks);
 		void Free();
-		void OccupyVoxelFromPoints(const VVV::Vector3f* points, const VVV::Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId);
+		void OccupyVoxelFromPoints(const VVV::Matrix4f& rt, const VVV::Vector3f* points, const VVV::Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId);
 		void IntegrateTSDF(const VVV::Matrix4f& rt, const VVV::Vector3f* d_points, const VVV::Vector3f* d_normals, const VVV::Vector3b* d_colors, uint32_t count, float blockSize, uint32_t frameId);
 		uint32_t ExtractActiveVoxelsToHost(float blockSize, VVV::ExtractedVoxel* hostBuffer, uint32_t maxOut);
 		uint32_t ExtractZeroCrossingVoxelsToHost(float blockSize, VVV::ExtractedVoxel* hostBuffer, uint32_t maxOut);
+
+		// 1. 단순 블록 슬롯 조회 (Read-only)
+		__device__ inline uint32_t FindBlockSlot(const Vector3f& position)
+		{
+			const float bSize = 0.8f;
+			Morton64 blockKey = Morton64::FromPosition(position, bSize);
+			uint64_t key = blockKey.code;
+			if (key == 0) key = 0xFFFFFFFFFFFFFFFFULL;
+
+			uint32_t slot = StrongHash(key, maxBlockCount);
+			uint32_t start = slot;
+
+			while (true)
+			{
+				uint64_t hKey = d_hashTable[slot];
+				if (hKey == key) return slot;
+				if (hKey == 0) return INVALID_BLOCK;
+				slot = (slot + 1) % maxBlockCount;
+				if (slot == start) break;
+			}
+			return INVALID_BLOCK;
+		}
+
+		// 2. 블록 포인터 가져오기 (커널에서 에러 났던 부분 해결)
+		__device__ inline VoxelBlock* GetVoxelBlock(const Vector3f& position)
+		{
+			uint32_t slot = FindBlockSlot(position);
+			return (slot != INVALID_BLOCK) ? &d_blocks[slot] : nullptr;
+		}
+
+		// 3. 복셀 포인터 가져오기 (인덱싱 로직 복구)
+		__device__ inline Voxel* GetVoxel(const Vector3f& position)
+		{
+			uint32_t slot = FindBlockSlot(position);
+			if (slot == INVALID_BLOCK) return nullptr;
+
+			const float bSize = 0.8f;
+			const float vSize = bSize / 8.0f;
+
+			Morton64 blockKey = Morton64::FromPosition(position, bSize);
+			Vector3f bc = blockKey.ToPosition(bSize);
+
+			// 기존 939만 개가 나오던 수식으로 완전 복구
+			int lx = static_cast<int>(floorf((position.x - (bc.x - bSize * 0.5f)) / vSize + 1e-5f));
+			int ly = static_cast<int>(floorf((position.y - (bc.y - bSize * 0.5f)) / vSize + 1e-5f));
+			int lz = static_cast<int>(floorf((position.z - (bc.z - bSize * 0.5f)) / vSize + 1e-5f));
+
+			lx = (lx < 0) ? 0 : (lx > 7 ? 7 : lx);
+			ly = (ly < 0) ? 0 : (ly > 7 ? 7 : ly);
+			lz = (lz < 0) ? 0 : (lz > 7 ? 7 : lz);
+
+			return &d_blocks[slot].voxels[(lz << 6) | (ly << 3) | lx];
+		}
+
+		// 4. 블록 슬롯 생성 (atomic 연산 보호)
+		__device__ inline uint32_t GetOrCreateBlockSlot(const Vector3f& position)
+		{
+#if defined(__CUDA_ARCH__)
+			const float bSize = 0.8f;
+			Morton64 blockKey = Morton64::FromPosition(position, bSize);
+			uint64_t key = blockKey.code;
+			if (key == 0) key = 0xFFFFFFFFFFFFFFFFULL;
+
+			uint32_t slot = StrongHash(key, maxBlockCount);
+			uint32_t start = slot;
+
+			while (true)
+			{
+				unsigned long long* slotPtr = (unsigned long long*) & d_hashTable[slot];
+				unsigned long long prev = atomicCAS(slotPtr, 0ULL, (unsigned long long)key);
+
+				if (prev == 0)
+				{
+					atomicAdd(d_blockCount, 1);
+					return slot;
+				}
+				if (prev == key) return slot;
+
+				slot = (slot + 1) % maxBlockCount;
+				if (slot == start) break;
+			}
+#endif
+			return INVALID_BLOCK;
+		}
+
+		// 5. 복셀 생성 및 포인터 반환
+		__device__ inline Voxel* GetOrCreateVoxel(const Vector3f& position)
+		{
+#if defined(__CUDA_ARCH__)
+			uint32_t slot = GetOrCreateBlockSlot(position);
+			if (slot == INVALID_BLOCK) return nullptr;
+
+			const float bSize = 0.8f;
+			const float vSize = bSize / 8.0f;
+			Morton64 blockKey = Morton64::FromPosition(position, bSize);
+			Vector3f bc = blockKey.ToPosition(bSize);
+
+			int lx = static_cast<int>(floorf((position.x - (bc.x - bSize * 0.5f)) / vSize + 1e-5f));
+			int ly = static_cast<int>(floorf((position.y - (bc.y - bSize * 0.5f)) / vSize + 1e-5f));
+			int lz = static_cast<int>(floorf((position.z - (bc.z - bSize * 0.5f)) / vSize + 1e-5f));
+
+			lx = (lx < 0) ? 0 : (lx > 7 ? 7 : lx);
+			ly = (ly < 0) ? 0 : (ly > 7 ? 7 : ly);
+			lz = (lz < 0) ? 0 : (lz > 7 ? 7 : lz);
+
+			return &d_blocks[slot].voxels[(lz << 6) | (ly << 3) | lx];
+#else
+			return nullptr;
+#endif
+		}
 	};
 }
