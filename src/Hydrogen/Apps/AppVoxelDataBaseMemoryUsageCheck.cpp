@@ -16,19 +16,19 @@ public:
         PrintAllocationPrediction(maxBlocks);
 
         // 2. 할당 및 증분량 체크
-        VVV_Allocate(voxelDb, maxBlocks);
+        voxelDb.Allocate(maxBlocks);
         auto [afterAllocUsed, ignore1] = CheckDeviceMemory("할당 완료");
         PrintMemoryDelta("할당 후 증분", (size_t)initialUsed, (size_t)afterAllocUsed);
 
         // 3. 데이터 로드 및 업데이트
         if (!ProcessVoxelData(voxelDb, maxBlocks, (size_t)initialUsed))
         {
-            VVV_Free(voxelDb);
+            voxelDb.Free();
             return;
         }
 
         // 4. 해제 및 최종 누수 점검
-        VVV_Free(voxelDb);
+        voxelDb.Free();
         auto [finalUsed, ignore2] = CheckDeviceMemory("해제 완료");
         PrintMemoryDelta("최종 잔류량", (size_t)initialUsed, (size_t)finalUsed);
 
@@ -90,7 +90,7 @@ private:
 
         printf("\n>>> [GPU 연산] 복셀 데이터 생성 중...\n");
         TS(VVV_UpdateVoxelFromPoints);
-        VVV_UpdateVoxelFromPoints(voxelDb, points.data(), colors.data(), (uint32_t)nPoints, blockSize, 1);
+        voxelDb.OccupyVoxelFromPoints(points.data(), colors.data(), (uint32_t)nPoints, blockSize, 1);
         cudaDeviceSynchronize();
         TE(VVV_UpdateVoxelFromPoints);
 
@@ -111,7 +111,7 @@ private:
     {
         uint32_t maxOut = 50000000;
         std::vector<VVV::ExtractedVoxel> hostOut(maxOut);
-        uint32_t finalCnt = VVV_ExtractActiveVoxelsToHost(voxelDb, blockSize, hostOut.data(), maxOut);
+        uint32_t finalCnt = voxelDb.ExtractActiveVoxelsToHost(blockSize, hostOut.data(), maxOut);
 
         if (finalCnt > 0)
         {

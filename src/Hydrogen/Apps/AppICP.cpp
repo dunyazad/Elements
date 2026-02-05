@@ -11,7 +11,7 @@ public:
 		VVV::VoxelDataBase voxelDb;
         uint32_t maxBlocks = 80000;
 
-        VVV_Allocate(voxelDb, maxBlocks);
+        voxelDb.Allocate(maxBlocks);
 
         size_t nPoints = ply.GetPoints().size();
         std::vector<VVV::Vector3f> points(nPoints);
@@ -40,7 +40,7 @@ public:
         float blockSize = 0.8f;
 
         TS(VVV_UpdateVoxelFromPoints);
-        VVV_UpdateVoxelFromPoints(voxelDb, points.data(), colors.data(), (uint32_t)nPoints, blockSize, 1);
+        voxelDb.OccupyVoxelFromPoints(points.data(), colors.data(), (uint32_t)nPoints, blockSize, 1);
         cudaDeviceSynchronize();
         TE(VVV_UpdateVoxelFromPoints);
 
@@ -50,7 +50,7 @@ public:
 
         uint32_t maxOut = 50000000;
         std::vector<VVV::ExtractedVoxel> hostOut(maxOut);
-        uint32_t finalCnt = VVV_ExtractActiveVoxelsToHost(voxelDb, blockSize, hostOut.data(), maxOut);
+        uint32_t finalCnt = voxelDb.ExtractActiveVoxelsToHost(blockSize, hostOut.data(), maxOut);
 
         if (finalCnt > 0)
         {
@@ -88,7 +88,7 @@ public:
                     VVV::Morton64 morton(mKey);
                     VVV::Vector3f bPos = morton.ToPosition(blockSize);
                     blockCenters.emplace_back(bPos.x, bPos.y, bPos.z);
-					blockNormals.emplace_back(0, 1, 0);
+					blockNormals.emplace_back(0.0f, 1.0f, 0.0f);
                 }
             }
             //VD::AddWiredBoxBatch("SparseDataBlocks", blockCenters, Eigen::Vector3f(blockSize, blockSize, blockSize), Eigen::Vector4f(0, 1, 0, 0.2f));
@@ -101,7 +101,7 @@ public:
         printf("    - 해시 적재율        : %.2f%% (%u / %u)\n",
             (double)activeBlocksCount / maxBlocks * 100.0, activeBlocksCount, maxBlocks);
 
-        VVV_Free(voxelDb);
+        voxelDb.Free();
         return;
 
 

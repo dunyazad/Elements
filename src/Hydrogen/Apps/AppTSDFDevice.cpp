@@ -21,7 +21,7 @@ public:
         VVV::VoxelDataBase voxelDb;
         uint32_t maxBlocks = 80000;
 
-        VVV_Allocate(voxelDb, maxBlocks);
+        voxelDb.Allocate(maxBlocks);
 
         std::ifstream ifs("D:\\Resources\\Default\\Patches.bin", std::ios::binary);
         if (!ifs.is_open())
@@ -108,15 +108,14 @@ public:
 			cudaMemcpy(d_normals0, normals0.data(), sizeof(VVV::Vector3f) * numPts0, cudaMemcpyHostToDevice);
 			cudaMemcpy(d_colors0, colors0.data(), sizeof(VVV::Vector3b) * numPts0, cudaMemcpyHostToDevice);
 
-            VVV_IntegrateTSDF(
-                voxelDb,
+            voxelDb.IntegrateTSDF(
                 gpuMatrix0,
                 d_points0,
                 d_normals0,
                 d_colors0,
                 (uint32_t)numPts0,
                 0.8f,
-                i);
+                (unsigned int)i);
 
 
             VVV::Matrix4f gpuMatrix45;
@@ -139,15 +138,14 @@ public:
             cudaMemcpy(d_normals45, normals45.data(), sizeof(VVV::Vector3f) * numPts45, cudaMemcpyHostToDevice);
             cudaMemcpy(d_colors45, colors45.data(), sizeof(VVV::Vector3b) * numPts45, cudaMemcpyHostToDevice);
 
-            VVV_IntegrateTSDF(
-                voxelDb,
+            voxelDb.IntegrateTSDF(
                 gpuMatrix45,
                 d_points45,
                 d_normals45,
                 d_colors45,
                 (uint32_t)numPts45,
                 0.8f,
-                i);
+                (unsigned int)i);
 
             TE(patch);
         }
@@ -169,7 +167,7 @@ public:
 
         VisualizeVoxelsBatch(voxelDb, maxBlocks, 0.8f, activeBlocksCount);
 
-        VVV_Free(voxelDb);
+        voxelDb.Free();
     }
 
 private:
@@ -177,7 +175,7 @@ private:
     {
         uint32_t maxOut = 50000000;
         std::vector<VVV::ExtractedVoxel> hostOut(maxOut);
-        uint32_t finalCnt = VVV_ExtractActiveVoxelsToHost(voxelDb, blockSize, hostOut.data(), maxOut);
+        uint32_t finalCnt = voxelDb.ExtractActiveVoxelsToHost(blockSize, hostOut.data(), maxOut);
 
         if (finalCnt > 0)
         {
@@ -232,7 +230,7 @@ private:
         std::vector<VVV::ExtractedVoxel> hostOut(maxOut);
 
         // 2. 선형 보간 기반 Zero-crossing 추출 함수 호출
-        uint32_t finalCnt = VVV_ExtractZeroCrossingVoxelsToHost(voxelDb, blockSize, hostOut.data(), maxOut);
+        uint32_t finalCnt = voxelDb.ExtractZeroCrossingVoxelsToHost(blockSize, hostOut.data(), maxOut);
 
         if (finalCnt > 0)
         {
@@ -247,13 +245,10 @@ private:
 
             for (uint32_t i = 0; i < limit; i++)
             {
-                // 보간된 정밀 좌표 사용
                 surfacePoints.emplace_back(hostOut[i].position.x, hostOut[i].position.y, hostOut[i].position.z);
 
-				// 보간된 법선 사용
 				surfaceNormals.emplace_back(hostOut[i].normal.x, hostOut[i].normal.y, hostOut[i].normal.z);
 
-                // 보간된 색상 사용
                 surfaceColors.emplace_back(
                     hostOut[i].color[0] / 255.f,
                     hostOut[i].color[1] / 255.f,
@@ -262,10 +257,8 @@ private:
                 );
             }
 
-            // 3. 점(Point) 형태로 시각화 (보간 덕분에 점만 찍어도 면처럼 보입니다)
             VD::AddDiskBatch("ZeroCrossingSurface", surfacePoints, surfaceNormals, 0.05f, 16, surfaceColors, true);
 
-            //// 디버깅을 위한 스파스 블록 가이드는 유지
             //std::vector<uint64_t> hostHashTable(maxBlocks);
             //cudaMemcpy(hostHashTable.data(), voxelDb.d_hashTable, sizeof(uint64_t) * maxBlocks, cudaMemcpyDeviceToHost);
 

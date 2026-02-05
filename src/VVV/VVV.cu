@@ -7,12 +7,12 @@ namespace VVV
     static constexpr float TSDF_TRUNC_DIST = 1.0f;
     static constexpr float MAX_WEIGHT = 100.0f;
 
-    CUDA_HOST_DEVICE inline float Clamp(float val, float min, float max)
+    __host__ __device__ inline float Clamp(float val, float min, float max)
     {
         return fminf(max, fmaxf(min, val));
     }
 
-    CUDA_HOST_DEVICE static inline uint32_t CompactBits(uint64_t v)
+    __host__ __device__ static inline uint32_t CompactBits(uint64_t v)
     {
         v &= 0x1249249249249249ull;
         v = (v ^ (v >> 2)) & 0x10c30c30c30c30c3ull;
@@ -23,7 +23,7 @@ namespace VVV
         return static_cast<uint32_t>(v);
     }
 
-    CUDA_HOST_DEVICE Vector3f Morton64::ToPosition(float blockSize) const
+    __host__ __device__ Vector3f Morton64::ToPosition(float blockSize) const
     {
         uint32_t ux = CompactBits(code >> 0);
         uint32_t uy = CompactBits(code >> 1);
@@ -34,38 +34,6 @@ namespace VVV
         return Vector3f{ (vx + 0.5f) * blockSize, (vy + 0.5f) * blockSize, (vz + 0.5f) * blockSize };
     }
 
-    void VoxelDataBase::InternalAllocate(uint32_t maxBlocks)
-    {
-        maxBlockCount = maxBlocks;
-        cudaMalloc(&d_blocks, sizeof(VoxelBlock) * maxBlockCount);
-        cudaMemset(d_blocks, 0, sizeof(VoxelBlock) * maxBlockCount);
-        cudaMalloc(&d_hashTable, sizeof(uint64_t) * maxBlockCount);
-        cudaMemset(d_hashTable, 0, sizeof(uint64_t) * maxBlockCount);
-        cudaMalloc(&d_blockCount, sizeof(uint32_t));
-        cudaMemset(d_blockCount, 0, sizeof(uint32_t));
-    }
-
-    void VoxelDataBase::InternalFree()
-    {
-        if (d_blocks)
-        {
-            cudaFree(d_blocks);
-        }
-        if (d_hashTable)
-        {
-            cudaFree(d_hashTable);
-        }
-        if (d_blockCount)
-        {
-            cudaFree(d_blockCount);
-        }
-        d_blocks = nullptr;
-        d_hashTable = nullptr;
-        d_blockCount = nullptr;
-        maxBlockCount = 0;
-    }
-
-#ifdef __CUDACC__
     __device__ uint32_t StrongHash(uint64_t key, uint32_t maxBlocks)
     {
         key ^= key >> 33;
@@ -294,72 +262,6 @@ namespace VVV
         }
     }
 
-    //__global__ void ExtractZeroCrossingKernel(VoxelDataBase db, float blockSize, ExtractedVoxel* out, uint32_t* count, uint32_t maxOut)
-    //{
-    //    uint32_t slot = blockIdx.x * blockDim.x + threadIdx.x;
-    //    if (slot >= db.maxBlockCount)
-    //    {
-    //        return;
-    //    }
-
-    //    uint64_t key = db.d_hashTable[slot];
-    //    if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL)
-    //    {
-    //        return;
-    //    }
-
-    //    Morton64 blockKey(key);
-    //    Vector3f bc = blockKey.ToPosition(blockSize);
-    //    Vector3f blockOrigin = { bc.x - blockSize * 0.5f, bc.y - blockSize * 0.5f, bc.z - blockSize * 0.5f };
-    //    float vSize = blockSize / 8.0f;
-
-    //    // 블록 내부 8x8x8 복셀 중 7x7x7 큐브를 검사
-    //    for (int lz = 0; lz < 7; ++lz)
-    //    {
-    //        for (int ly = 0; ly < 7; ++ly)
-    //        {
-    //            for (int lx = 0; lx < 7; ++lx)
-    //            {
-    //                // 현재 복셀과 축 방향 인접 복셀들 가져오기 (7x7x7 범위 내라 블록 내 인덱싱 가능)
-    //                Voxel& v0 = db.d_blocks[slot].voxels[(lz << 6) | (ly << 3) | lx];
-    //                Voxel& vx = db.d_blocks[slot].voxels[(lz << 6) | (ly << 3) | (lx + 1)];
-    //                Voxel& vy = db.d_blocks[slot].voxels[(lz << 6) | ((ly + 1) << 3) | lx];
-    //                Voxel& vz = db.d_blocks[slot].voxels[((lz + 1) << 6) | (ly << 3) | lx];
-
-    //                // 가중치가 있고 부호가 바뀌는 지점(Zero-crossing)인지 확인
-    //                // X, Y, Z 각 축 방향으로 인접한 복셀 사이에서 부호 변화가 있는지 체크
-    //                bool hasCrossing = false;
-
-    //                // X-axis crossing
-    //                if (v0.valueCount > 0 && vx.valueCount > 0 && (v0.value * vx.value <= 0.0f)) hasCrossing = true;
-    //                // Y-axis crossing
-    //                else if (v0.valueCount > 0 && vy.valueCount > 0 && (v0.value * vy.value <= 0.0f)) hasCrossing = true;
-    //                // Z-axis crossing
-    //                else if (v0.valueCount > 0 && vz.valueCount > 0 && (v0.value * vz.value <= 0.0f)) hasCrossing = true;
-
-    //                if (hasCrossing)
-    //                {
-    //                    uint32_t idx = atomicAdd(count, 1);
-    //                    if (idx < maxOut)
-    //                    {
-    //                        // 선형 보간(Linear Interpolation)을 통해 더 정확한 Zero-point 계산 가능하나, 
-    //                        // 여기서는 간단히 Crossing이 발생한 복셀의 위치를 저장
-    //                        out[idx].position = {
-    //                            blockOrigin.x + (lx + 0.5f) * vSize,
-    //                            blockOrigin.y + (ly + 0.5f) * vSize,
-    //                            blockOrigin.z + (lz + 0.5f) * vSize
-    //                        };
-    //                        out[idx].weight = v0.value;
-    //                        out[idx].color[0] = v0.color.x;
-    //                        out[idx].color[1] = v0.color.y;
-    //                        out[idx].color[2] = v0.color.z;
-    //                    }
-    //                }
-    //            }
-    //        }
-    //    }
-    //}
-
     __device__ inline Vector3f GetInterpolatedPos(Vector3f p1, Vector3f p2, float v1, float v2)
     {
         // 선형 보간 공식: P = P1 + (-V1 / (V2 - V1)) * (P2 - P1)
@@ -423,22 +325,38 @@ namespace VVV
                 }
     }
 
-#endif
-}
-
-extern "C"
-{
-    void VVV_Allocate(VVV::VoxelDataBase& db, uint32_t maxBlocks)
+    void VoxelDataBase::Allocate(uint32_t maxBlocks)
     {
-        db.InternalAllocate(maxBlocks);
+        maxBlockCount = maxBlocks;
+        cudaMalloc(&d_blocks, sizeof(VoxelBlock) * maxBlockCount);
+        cudaMemset(d_blocks, 0, sizeof(VoxelBlock) * maxBlockCount);
+        cudaMalloc(&d_hashTable, sizeof(uint64_t) * maxBlockCount);
+        cudaMemset(d_hashTable, 0, sizeof(uint64_t) * maxBlockCount);
+        cudaMalloc(&d_blockCount, sizeof(uint32_t));
+        cudaMemset(d_blockCount, 0, sizeof(uint32_t));
     }
 
-    void VVV_Free(VVV::VoxelDataBase& db)
+    void VoxelDataBase::Free()
     {
-        db.InternalFree();
+        if (d_blocks)
+        {
+            cudaFree(d_blocks);
+        }
+        if (d_hashTable)
+        {
+            cudaFree(d_hashTable);
+        }
+        if (d_blockCount)
+        {
+            cudaFree(d_blockCount);
+        }
+        d_blocks = nullptr;
+        d_hashTable = nullptr;
+        d_blockCount = nullptr;
+        maxBlockCount = 0;
     }
 
-    void VVV_UpdateVoxelFromPoints(VVV::VoxelDataBase& db, const VVV::Vector3f* points, const VVV::Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
+    void VoxelDataBase::OccupyVoxelFromPoints(const VVV::Vector3f* points, const VVV::Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
     {
         VVV::Vector3f* d_p;
         VVV::Vector3b* d_c;
@@ -449,19 +367,19 @@ extern "C"
         cudaMemcpy(d_c, colors, sizeof(VVV::Vector3b) * count, cudaMemcpyHostToDevice);
 
         CUDA_TS(VVV_InsertKernel);
-#ifdef __CUDACC__
+
         int threadsPerBlock = 256;
         int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
-        VVV::InsertKernel << <blocksPerGrid, threadsPerBlock >> > (db, d_p, d_c, count, blockSize, frameId);
+        InsertKernel << <blocksPerGrid, threadsPerBlock >> > (*this, d_p, d_c, count, blockSize, frameId);
         cudaDeviceSynchronize();
-#endif
+
         CUDA_TE(VVV_InsertKernel);
 
         cudaFree(d_p);
         cudaFree(d_c);
     }
 
-    VVV_API void VVV_IntegrateTSDF(VVV::VoxelDataBase& db, const VVV::Matrix4f& rt, const VVV::Vector3f* d_points, const VVV::Vector3f* d_normals, const VVV::Vector3b* d_colors, uint32_t count, float blockSize, uint32_t frameId)
+    void VoxelDataBase::IntegrateTSDF(const VVV::Matrix4f& rt, const VVV::Vector3f* d_points, const VVV::Vector3f* d_normals, const VVV::Vector3b* d_colors, uint32_t count, float blockSize, uint32_t frameId)
     {
         //VVV::Vector3f* d_p, * d_n;
         //VVV::Vector3b* d_c;
@@ -473,17 +391,15 @@ extern "C"
         //cudaMemcpy(d_n, normals, sizeof(VVV::Vector3f) * count, cudaMemcpyHostToDevice);
         //cudaMemcpy(d_c, colors, sizeof(VVV::Vector3b) * count, cudaMemcpyHostToDevice);
 
-#ifdef __CUDACC__
         int threads = 256;
         int blocks = (count + threads - 1) / threads;
-        VVV::TSDFIntegrateKernel << <blocks, threads >> > (db, rt, d_points, d_normals, d_colors, count, blockSize, frameId);
+        TSDFIntegrateKernel<<<blocks, threads>>> (*this, rt, d_points, d_normals, d_colors, count, blockSize, frameId);
         cudaDeviceSynchronize();
-#endif
 
         //cudaFree(d_p); cudaFree(d_n); cudaFree(d_c);
     }
 
-    uint32_t VVV_ExtractActiveVoxelsToHost(VVV::VoxelDataBase& db, float blockSize, VVV::ExtractedVoxel* hostBuffer, uint32_t maxOut)
+    uint32_t VoxelDataBase::ExtractActiveVoxelsToHost(float blockSize, VVV::ExtractedVoxel* hostBuffer, uint32_t maxOut)
     {
         VVV::ExtractedVoxel* d_out;
         uint32_t* d_cnt;
@@ -491,12 +407,11 @@ extern "C"
         cudaMalloc(&d_cnt, sizeof(uint32_t));
         cudaMemset(d_cnt, 0, sizeof(uint32_t));
 
-#ifdef __CUDACC__
         int threadsPerBlock = 256;
-        int blocksPerGrid = (db.maxBlockCount + threadsPerBlock - 1) / threadsPerBlock;
-        VVV::ExtractKernel << <blocksPerGrid, threadsPerBlock >> > (db, blockSize, d_out, d_cnt, maxOut);
+        int blocksPerGrid = (maxBlockCount + threadsPerBlock - 1) / threadsPerBlock;
+        VVV::ExtractKernel << <blocksPerGrid, threadsPerBlock >> > (*this, blockSize, d_out, d_cnt, maxOut);
         cudaDeviceSynchronize();
-#endif
+
         uint32_t res;
         cudaMemcpy(&res, d_cnt, sizeof(uint32_t), cudaMemcpyDeviceToHost);
 
@@ -508,7 +423,7 @@ extern "C"
         return res;
     }
 
-    uint32_t VVV_ExtractZeroCrossingVoxelsToHost(VVV::VoxelDataBase& db, float blockSize, VVV::ExtractedVoxel* hostBuffer, uint32_t maxOut)
+    uint32_t VoxelDataBase::ExtractZeroCrossingVoxelsToHost(float blockSize, VVV::ExtractedVoxel* hostBuffer, uint32_t maxOut)
     {
         VVV::ExtractedVoxel* d_out;
         uint32_t* d_cnt;
@@ -516,12 +431,11 @@ extern "C"
         cudaMalloc(&d_cnt, sizeof(uint32_t));
         cudaMemset(d_cnt, 0, sizeof(uint32_t));
 
-#ifdef __CUDACC__
         int threadsPerBlock = 256;
-        int blocksPerGrid = (db.maxBlockCount + threadsPerBlock - 1) / threadsPerBlock;
-        VVV::ExtractZeroCrossingKernel << <blocksPerGrid, threadsPerBlock >> > (db, blockSize, d_out, d_cnt, maxOut);
+        int blocksPerGrid = (maxBlockCount + threadsPerBlock - 1) / threadsPerBlock;
+        VVV::ExtractZeroCrossingKernel << <blocksPerGrid, threadsPerBlock >> > (*this, blockSize, d_out, d_cnt, maxOut);
         cudaDeviceSynchronize();
-#endif
+
         uint32_t res;
         cudaMemcpy(&res, d_cnt, sizeof(uint32_t), cudaMemcpyDeviceToHost);
 
