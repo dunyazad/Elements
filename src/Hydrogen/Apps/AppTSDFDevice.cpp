@@ -25,6 +25,55 @@
 #include <Helium/VisualDebugging.h>
 using VD = VisualDebugging;
 
+#include <VVV/VVV.h>
+#pragma comment(lib, "VVV.lib")
+
+typedef struct CamInfo_
+{
+    float cfx;
+    float cfy;
+    float ccx;
+    float ccy;
+    int cx;
+    int cy;
+    int img_width;
+    int img_height;
+    double R[9];
+    double T[3];
+    VVV::Vector3f dlpPos;
+    VVV::Vector3f camPos;
+    VVV::Matrix3f invMatTilt;
+    VVV::Matrix3f matTilt;
+
+    VVV::Matrix4f GetViewMatrix(const CamInfo_& info)
+    {
+        VVV::Matrix4f view = VVV::Matrix4f::Identity();
+        for (int i = 0; i < 3; ++i)
+        {
+            for (int j = 0; j < 3; ++j)
+            {
+                view(i, j) = (float)info.R[i * 3 + j];
+            }
+            view(i, 3) = (float)info.T[i];
+        }
+        return view;
+    }
+
+    VVV::Matrix4f GetProjectionMatrix(const CamInfo_& info, float n, float f)
+    {
+        VVV::Matrix4f proj = VVV::Matrix4f::Zero();
+        proj(0, 0) = 2.0f * info.cfx / info.img_width;
+        proj(0, 2) = 1.0f - (2.0f * info.ccx / info.img_width);
+        proj(1, 1) = 2.0f * info.cfy / info.img_height;
+        proj(1, 2) = (2.0f * info.ccy / info.img_height) - 1.0f;
+        proj(2, 2) = -(f + n) / (f - n);
+        proj(2, 3) = -(2.0f * f * n) / (f - n);
+        proj(3, 2) = -1.0f;
+        return proj;
+    }
+} CamInfo_;
+
+
 class AppTSDFDevice : public App
 {
 public:

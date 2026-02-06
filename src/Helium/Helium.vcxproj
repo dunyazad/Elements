@@ -118,6 +118,7 @@
     <ClInclude Include="..\..\inc\Helium\HeliumCore.h" />
     <ClInclude Include="..\..\inc\Helium\HeliumEvents.h" />
     <ClInclude Include="..\..\inc\Helium\HeliumLog.h" />
+    <ClInclude Include="..\..\inc\Helium\IVisualDebugging.h" />
     <ClInclude Include="..\..\inc\Helium\Morton3D.hpp" />
     <ClInclude Include="..\..\inc\Helium\PointCloud.h" />
     <ClInclude Include="..\..\inc\Helium\PointCloudProcessing\AtomicDisjointSet.h" />
@@ -178,6 +179,7 @@
     <ClCompile Include="HeliumCoreExecuteCommand.cpp" />
     <ClCompile Include="HeliumCoreInitialize.cpp" />
     <ClCompile Include="HeliumLog.cpp" />
+    <ClCompile Include="IVisualDebugging.cpp" />
     <ClCompile Include="Monitor.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>

@@ -132,7 +132,7 @@
       </AdditionalCompilerOptions>
       <Defines>
       </Defines>
-      <AdditionalOptions>-std=c++17 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-std=c++17 -Xcompiler /wd4819,/wd4251 -diag-suppress 177,20012,1444 %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -159,7 +159,7 @@
       </AdditionalCompilerOptions>
       <Defines>
       </Defines>
-      <AdditionalOptions>-std=c++17 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-std=c++17 -Xcompiler /wd4819,/wd4251 -diag-suppress 177,20012,1444 %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
