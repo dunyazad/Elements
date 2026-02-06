@@ -1,10 +1,29 @@
 ﻿#include <cuda_runtime.h>
+#include <device_functions.h>
 #include <device_launch_parameters.h>
-#include <fstream>
-#include <vector>
-#include <iostream>
+
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <iostream>
+#include <vector>
+
+#include <robin_hood/robin_hood.h>
+
+#include <thrust/copy.h>
+#include <thrust/count.h>
+#include <thrust/device_vector.h>
+#include <thrust/execution_policy.h>
+#include <thrust/extrema.h>
+#include <thrust/fill.h>
+#include <thrust/functional.h>
+#include <thrust/host_vector.h>
+#include <thrust/iterator/zip_iterator.h>
+#include <thrust/iterator/constant_iterator.h>
+#include <thrust/pair.h>
+#include <thrust/sort.h>
+#include <thrust/transform_reduce.h>
+#include <thrust/tuple.h>
 
 #include <Helium/IVisualDebugging.h>
 using VD = IVisualDebugging;
@@ -29,7 +48,7 @@ using VD = IVisualDebugging;
     cudaEventDestroy(time_##name##_stop);
 #endif
 
-namespace
+namespace VDB
 {
 	template <typename T>
 	class VoxelDataBase;
@@ -91,6 +110,7 @@ namespace
 		return static_cast<uint32_t>(key % maxBlocks);
 	}
 
+#pragma region Primitive Types
 	namespace Eigen
 	{
 		template<typename _Scalar, int _Rows, int _Cols, int _Options, int _MaxRows, int _MaxCols>
@@ -292,15 +312,6 @@ namespace
 		}
 	};
 
-	struct VoxelExtraAttrib
-	{
-		uint8_t deepLearningClass;
-		uint8_t materialID;
-		unsigned short startPatchID;
-		unsigned int flags : 2;
-		unsigned int label : 30;
-	};
-
 	struct Morton64
 	{
 		uint64_t code = 0;
@@ -370,6 +381,367 @@ namespace
 			return (ExpandBits(x) << 0) | (ExpandBits(y) << 1) | (ExpandBits(z) << 2);
 		}
 	};
+#pragma endregion
+
+#pragma region CuPointCloud
+	struct PickResult
+	{
+		float distance;
+		int index;
+		float3 position;
+	};
+
+	struct CuPointCloud
+	{
+		float3 aabbMin = make_float3(FLT_MAX, FLT_MAX, FLT_MAX);
+		float3 aabbMax = make_float3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+		thrust::device_vector<float3> points;
+		thrust::device_vector<float3> normals;
+		thrust::device_vector<uchar3> colors;
+		thrust::device_vector<bool> isAlive;
+
+		robin_hood::unordered_flat_map<std::string, thrust::device_vector<float>> customFloatAttributes;
+
+		CuPointCloud() {}
+		CuPointCloud(size_t n) { resize(n); }
+
+		size_t size() const { return points.size(); }
+		void resize(size_t n)
+		{
+			points.resize(n);
+			normals.resize(n);
+			colors.resize(n);
+			isAlive.resize(n);
+		}
+
+		void clear()
+		{
+			points.clear();
+			normals.clear();
+			colors.clear();
+			isAlive.clear();
+			customFloatAttributes.clear();
+		}
+
+		void FromHostVectors(
+			const std::vector<float3>& h_points,
+			const std::vector<float3>& h_normals,
+			const std::vector<uchar3>& h_colors,
+			const float3& h_aabbMin,
+			const float3& h_aabbMax)
+		{
+			size_t n = h_points.size();
+			resize(n);
+
+			if (!h_points.empty())
+				thrust::copy(h_points.begin(), h_points.end(), points.begin());
+
+			if (!h_normals.empty())
+				thrust::copy(h_normals.begin(), h_normals.end(), normals.begin());
+			else
+				thrust::fill(normals.begin(), normals.end(), make_float3(0.0f, 0.0f, 1.0f));
+
+			if (!h_colors.empty())
+				thrust::copy(h_colors.begin(), h_colors.end(), colors.begin());
+			else
+				thrust::fill(colors.begin(), colors.end(), make_uchar3(255, 255, 255));
+
+			thrust::fill(isAlive.begin(), isAlive.end(), true);
+
+			aabbMin = h_aabbMin;
+			aabbMax = h_aabbMax;
+		}
+
+		void FromHostPointers(
+			const float3* h_points,
+			const float3* h_normals,
+			const uchar3* h_colors,
+			size_t numPoints,
+			const float3& h_aabbMin,
+			const float3& h_aabbMax)
+		{
+			resize(numPoints);
+
+			if (h_points)
+				thrust::copy(h_points, h_points + numPoints, points.begin());
+
+			if (h_normals)
+				thrust::copy(h_normals, h_normals + numPoints, normals.begin());
+			else
+				thrust::fill(normals.begin(), normals.end(), make_float3(0.0f, 0.0f, 1.0f));
+
+			if (h_colors)
+				thrust::copy(h_colors, h_colors + numPoints, colors.begin());
+			else
+				thrust::fill(colors.begin(), colors.end(), make_uchar3(255, 255, 255));
+
+			thrust::fill(isAlive.begin(), isAlive.end(), true);
+
+			aabbMin = h_aabbMin;
+			aabbMax = h_aabbMax;
+		}
+
+		void FromHostPointers(
+			const float3* h_points,
+			const float3* h_normals,
+			const float4* h_colors,
+			size_t numPoints,
+			const float3& h_aabbMin,
+			const float3& h_aabbMax)
+		{
+			resize(numPoints);
+
+			if (h_points)
+				thrust::copy(h_points, h_points + numPoints, points.begin());
+
+			if (h_normals)
+				thrust::copy(h_normals, h_normals + numPoints, normals.begin());
+			else
+				thrust::fill(normals.begin(), normals.end(), make_float3(0.0f, 0.0f, 1.0f));
+
+			if (h_colors) {
+				std::vector<uchar3> temp_colors(numPoints);
+				for (size_t i = 0; i < numPoints; i++)
+				{
+					auto& c = h_colors[i];
+					temp_colors[i] = {
+						(unsigned char)(c.x * 255.0f),
+						(unsigned char)(c.y * 255.0f),
+						(unsigned char)(c.z * 255.0f)
+					};
+				}
+				thrust::copy(temp_colors.begin(), temp_colors.end(), colors.begin());
+			}
+			else {
+				thrust::fill(colors.begin(), colors.end(), make_uchar3(255, 255, 255));
+			}
+
+			thrust::fill(isAlive.begin(), isAlive.end(), true);
+
+			aabbMin = h_aabbMin;
+			aabbMax = h_aabbMax;
+		}
+
+		void ToHostVectors(
+			std::vector<float3>& h_points,
+			std::vector<float3>& h_normals,
+			std::vector<uchar3>& h_colors)
+		{
+			size_t aliveCount = thrust::count(isAlive.begin(), isAlive.end(), true);
+
+			h_points.resize(aliveCount);
+			h_normals.resize(aliveCount);
+			h_colors.resize(aliveCount);
+
+			if (aliveCount == 0) return;
+
+			thrust::device_vector<float3> d_temp_p(aliveCount);
+			thrust::device_vector<float3> d_temp_n(aliveCount);
+			thrust::device_vector<uchar3> d_temp_c(aliveCount);
+
+			thrust::copy_if(points.begin(), points.end(), isAlive.begin(), d_temp_p.begin(), cuda::std::identity());
+			thrust::copy_if(normals.begin(), normals.end(), isAlive.begin(), d_temp_n.begin(), cuda::std::identity());
+			thrust::copy_if(colors.begin(), colors.end(), isAlive.begin(), d_temp_c.begin(), cuda::std::identity());
+
+			thrust::copy(d_temp_p.begin(), d_temp_p.end(), h_points.begin());
+			thrust::copy(d_temp_n.begin(), d_temp_n.end(), h_normals.begin());
+			thrust::copy(d_temp_c.begin(), d_temp_c.end(), h_colors.begin());
+		}
+
+		void ToHostVectors(
+			std::vector<float3>& h_points,
+			std::vector<float3>& h_normals,
+			std::vector<float4>& h_colors)
+		{
+			size_t aliveCount = thrust::count(isAlive.begin(), isAlive.end(), true);
+
+			h_points.resize(aliveCount);
+			h_normals.resize(aliveCount);
+			h_colors.resize(aliveCount);
+
+			if (aliveCount == 0) return;
+
+			thrust::device_vector<float3> d_temp_p(aliveCount);
+			thrust::device_vector<float3> d_temp_n(aliveCount);
+			thrust::device_vector<uchar3> d_temp_c(aliveCount);
+
+			thrust::copy_if(points.begin(), points.end(), isAlive.begin(), d_temp_p.begin(), cuda::std::identity());
+			thrust::copy_if(normals.begin(), normals.end(), isAlive.begin(), d_temp_n.begin(), cuda::std::identity());
+			thrust::copy_if(colors.begin(), colors.end(), isAlive.begin(), d_temp_c.begin(), cuda::std::identity());
+
+			thrust::copy(d_temp_p.begin(), d_temp_p.end(), h_points.begin());
+			thrust::copy(d_temp_n.begin(), d_temp_n.end(), h_normals.begin());
+
+			std::vector<uchar3> temp_h_colors(aliveCount);
+			thrust::copy(d_temp_c.begin(), d_temp_c.end(), temp_h_colors.begin());
+
+			for (size_t i = 0; i < aliveCount; ++i)
+			{
+				uchar3 c = temp_h_colors[i];
+				h_colors[i] = {
+					(float)c.x / 255.0f,
+					(float)c.y / 255.0f,
+					(float)c.z / 255.0f,
+					1.0f
+				};
+			}
+		}
+
+		struct PickTransformOp
+		{
+			float3 origin;
+			float3 dir;
+			float thresholdSq;
+
+			__host__ __device__
+				PickTransformOp(float3 o, float3 d, float t)
+				: origin(o), dir(d), thresholdSq(t* t) {
+			}
+
+			__host__ __device__
+				PickResult operator()(const thrust::tuple<int, float3, bool>& t) const
+			{
+				int idx = thrust::get<0>(t);
+				float3 p = thrust::get<1>(t);
+				bool alive = thrust::get<2>(t);
+
+				if (!alive) return { FLT_MAX, -1, make_float3(0,0,0) };
+
+				// 1. 벡터 P - Origin
+				float3 v = make_float3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
+
+				// 2. Ray 방향으로의 투영 거리 (t)
+				float t_proj = v.x * dir.x + v.y * dir.y + v.z * dir.z;
+
+				// 카메라 뒤에 있는 점은 무시
+				if (t_proj < 0.0f) return { FLT_MAX, -1, make_float3(0,0,0) };
+
+				// 3. Ray 상의 가장 가까운 점 (Closest Point on Ray)
+				float3 cp = make_float3(
+					origin.x + t_proj * dir.x,
+					origin.y + t_proj * dir.y,
+					origin.z + t_proj * dir.z
+				);
+
+				// 4. Ray와 포인트 사이의 수직 거리 제곱 계산
+				float dx = p.x - cp.x;
+				float dy = p.y - cp.y;
+				float dz = p.z - cp.z;
+				float distSq = dx * dx + dy * dy + dz * dz;
+
+				// 허용 오차(반지름) 밖이면 무시
+				if (distSq > thresholdSq) return { FLT_MAX, -1, make_float3(0,0,0) };
+
+				// 허용 오차 안이라면 결과 반환
+				// [수정] 실제 포인트 위치 p를 함께 반환
+				return { t_proj, idx, p };
+			}
+		};
+
+		// 두 결과 중 더 가까운(depth가 작은) 것을 선택하는 Functor
+		struct PickReduceOp
+		{
+			__host__ __device__
+				PickResult operator()(const PickResult& a, const PickResult& b) const
+			{
+				return (a.distance < b.distance) ? a : b;
+			}
+		};
+
+		PickResult Pick(const float3& rayOrigin, const float3& rayDir, float tolerance)
+		{
+			if (points.empty()) return { -1, -1, make_float3(0,0,0) };
+
+			// 1. Iterator 준비 (Index, Point, IsAlive를 묶어서 전달)
+			auto zip_iter = thrust::make_zip_iterator(thrust::make_tuple(
+				thrust::counting_iterator<int>(0),
+				points.begin(),
+				isAlive.begin()
+			));
+
+			// 2. Transform Reduce 실행
+			PickResult initVal = { FLT_MAX, -1, make_float3(0,0,0) };
+
+			PickResult result = thrust::transform_reduce(
+				zip_iter,
+				zip_iter + points.size(),
+				PickTransformOp(rayOrigin, rayDir, tolerance),
+				initVal,
+				PickReduceOp()
+			);
+
+			return result;
+		}
+	};
+#pragma endregion
+
+	struct CuCellStats
+	{
+		float3 cellMin;
+		float3 cellMax;
+		int pointCount;
+		float3 pointCentroid;
+		float3 avgNormal;
+		float3 pcaNormal;
+	};
+
+	struct CuSparseCells
+	{
+		int3 gridSize;
+		int numberOfCells = 0;
+		float cellSize = 0.0f;
+		float3 worldOrigin;
+
+		thrust::device_vector<int> hashCodes;
+		thrust::device_vector<int> cellStartIndices;
+		thrust::device_vector<int> cellEndIndices;
+
+		CuSparseCells();
+
+		void Build(CuPointCloud* cloud);
+		void Build(CuPointCloud* cloud, float cellSize);
+
+		void ApplyClustering(CuPointCloud* cloud, unsigned int* d_outLabels, float clusterDistance = 0.1f);
+
+		thrust::device_vector<float> ApplySOR(CuPointCloud* cloud, int k = 30, float stdDevMult = 1.0f);
+
+		thrust::device_vector<float> ApplyPFOR(CuPointCloud* cloud, int k = 30, float distanceThreshold = 0.085f);
+
+		thrust::device_vector<float> ApplyNND(CuPointCloud* cloud, int k = 30);
+
+		thrust::device_vector<float> ApplyLDE(CuPointCloud* cloud, float radius);
+
+		//thrust::device_vector<float> ApplyKDE(CuPointCloud* cloud, float bandwidth);
+
+		std::vector<std::pair<float3, float3>> GetActiveCellBounds();
+
+		void ColorizePointsByCell(CuPointCloud* cloud);
+
+		std::vector<CuCellStats> GetActiveCellStats(CuPointCloud* cloud);
+
+		void ApplyEdgePreservingSmoothing(
+			CuPointCloud* cloud,
+			float radius,
+			float factor,
+			float edgeThreshold,
+			int iterations);
+
+		void ApplyEnergySmoothing(CuPointCloud* cloud, float radius, float dataWeight, float smoothWeight, int iterations);
+
+	private:
+		float computeAutoCellSize(const thrust::device_vector<float3>& points, float multiplier);
+	};
+
+#pragma region Domain Data Types
+	struct VoxelExtraAttrib
+	{
+		uint8_t deepLearningClass;
+		uint8_t materialID;
+		unsigned short startPatchID;
+		unsigned int flags : 2;
+		unsigned int label : 30;
+	};
 
 	struct Voxel
 	{
@@ -392,7 +764,9 @@ namespace
 		uint8_t color[3];
 		float weight;
 	};
+#pragma endregion
 
+#pragma region Voxel Data Base
 	template <typename T>
 	struct VoxelBlock
 	{
@@ -402,10 +776,6 @@ namespace
 		uint32_t lastTouchedFrameId = 0xFFFFFFFF;
 		uint16_t activeVoxelCount = 0;
 	};
-
-	// ---------------------------------------------------------
-	// Kernels
-	// ---------------------------------------------------------
 
 	template <typename T>
 	__device__ inline float GetVoxelValueSafe(VoxelDataBase<T>& db, const Vector3f& pos)
@@ -857,7 +1227,6 @@ namespace
 		}
 	}
 
-
 	template <typename T>
 	class VoxelDataBase
 	{
@@ -962,12 +1331,9 @@ namespace
 
 		void VisualizeVoxelsBatch_Surface(VoxelDataBase<T>& voxelDb, uint32_t maxBlocks, float blockSize, uint32_t activeBlocksCount)
 		{
-			// 1. Zero-crossing 정점 추출을 위한 메모리 준비
-			// Marching Cubes 에지 기반이므로 복셀 수보다 넉넉하게 할당합니다.
 			uint32_t maxOut = 10000000;
 			std::vector<ExtractedVoxel> hostOut(maxOut);
 
-			// 2. 선형 보간 기반 Zero-crossing 추출 함수 호출
 			uint32_t finalCnt = voxelDb.ExtractZeroCrossingVoxelsToHost(blockSize, hostOut.data(), maxOut);
 
 			if (finalCnt > 0)
@@ -1010,7 +1376,7 @@ namespace
 				//std::vector<uint64_t> hostHashTable(maxBlocks);
 				//cudaMemcpy(hostHashTable.data(), voxelDb.d_hashTable, sizeof(uint64_t) * maxBlocks, cudaMemcpyDeviceToHost);
 
-				//std::vector<Eigen::Vector3f> blockCenters;
+				//std::vector<float3> blockCenters;
 				//blockCenters.reserve(activeBlocksCount);
 
 				//for (uint32_t i = 0; i < maxBlocks; ++i)
@@ -1020,10 +1386,10 @@ namespace
 				//    {
 				//        Morton64 morton(key);
 				//        Vector3f blockPos = morton.ToPosition(blockSize);
-				//        blockCenters.emplace_back(blockPos.x, blockPos.y, blockPos.z);
+				//        blockCenters.emplace_back(make_float3(blockPos.x, blockPos.y, blockPos.z));
 				//    }
 				//}
-				//VD::AddWiredBoxBatch("SparseDataBlocks", blockCenters, Eigen::Vector3f(blockSize, blockSize, blockSize), Eigen::Vector4f(0, 1, 0, 0.1f));
+				//VD::AddWiredBoxBatch("SparseDataBlocks", blockCenters, make_float3(blockSize, blockSize, blockSize), make_float4(0, 1, 0, 0.1f));
 			}
 
 			printf("\n>>> [Iso-surface 리포트]\n");
@@ -1136,6 +1502,7 @@ namespace
 #endif
 		}
 	};
+#pragma endregion
 
 	typedef struct CamInfo_
 	{
@@ -1268,8 +1635,8 @@ namespace
 			cudaMemcpy(d_points0, pts0.data(), sizeof(Vector3f) * numPts0, cudaMemcpyHostToDevice);
 			cudaMemcpy(d_normals0, normals0.data(), sizeof(Vector3f) * numPts0, cudaMemcpyHostToDevice);
 			cudaMemcpy(d_colors0, colors0.data(), sizeof(Vector3b) * numPts0, cudaMemcpyHostToDevice);
-			
-			voxelDb.IntegrateESDF(
+
+			voxelDb.IntegrateTSDF(
 				gpuMatrix0,
 				d_points0,
 				d_normals0,
@@ -1277,15 +1644,6 @@ namespace
 				(uint32_t)numPts0,
 				0.8f,
 				(unsigned int)i);
-
-			//        voxelDb.OccupyVoxelFromPoints(
-			//            gpuMatrix0,
-			//            d_points0,
-			//            d_colors0,
-			//            (uint32_t)numPts0,
-			//            0.8f,
-						//(unsigned int)i);
-
 
 			Matrix4f gpuMatrix45 = rt45;
 
@@ -1306,7 +1664,7 @@ namespace
 			cudaMemcpy(d_normals45, normals45.data(), sizeof(Vector3f) * numPts45, cudaMemcpyHostToDevice);
 			cudaMemcpy(d_colors45, colors45.data(), sizeof(Vector3b) * numPts45, cudaMemcpyHostToDevice);
 
-			voxelDb.IntegrateESDF(
+			voxelDb.IntegrateTSDF(
 				gpuMatrix45,
 				d_points45,
 				d_normals45,
@@ -1314,14 +1672,6 @@ namespace
 				(uint32_t)numPts45,
 				0.8f,
 				(unsigned int)i);
-
-			//        voxelDb.OccupyVoxelFromPoints(
-			//            gpuMatrix45,
-			//            d_points45,
-			//            d_colors45,
-			//            (uint32_t)numPts45,
-			//            0.8f,
-						//(unsigned int)i);
 
 			printf("[%5zd] =-=-= ", i);
 			CUDA_TE(patch);
@@ -1348,204 +1698,206 @@ namespace
 		voxelDb.Free();
 	}
 
-	//void VisualizeVoxelsBatch_Surface_Clustering_Filtered(VoxelDataBase<Voxel>& voxelDb, uint32_t maxBlocks, float blockSize, uint32_t activeBlocksCount)
-	//{
-	//	uint32_t maxOut = 70000000;
-	//	std::vector<ExtractedVoxel> hostOut(maxOut);
+	/*
+	void VisualizeVoxelsBatch_Surface_Clustering_Filtered(VoxelDataBase<Voxel>& voxelDb, uint32_t maxBlocks, float blockSize, uint32_t activeBlocksCount)
+	{
+		uint32_t maxOut = 70000000;
+		std::vector<ExtractedVoxel> hostOut(maxOut);
 
-	//	// 1. Zero-crossing 포인트 추출
-	//	uint32_t finalCnt = voxelDb.ExtractZeroCrossingVoxelsToHost(blockSize, hostOut.data(), maxOut);
+		// 1. Zero-crossing 포인트 추출
+		uint32_t finalCnt = voxelDb.ExtractZeroCrossingVoxelsToHost(blockSize, hostOut.data(), maxOut);
 
-	//	if (finalCnt > 0)
-	//	{
-	//		uint32_t limit = (finalCnt > maxOut) ? maxOut : finalCnt;
+		if (finalCnt > 0)
+		{
+			uint32_t limit = (finalCnt > maxOut) ? maxOut : finalCnt;
 
-	//		std::vector<Vector3f> surfacePoints;
-	//		std::vector<Vector3f> surfaceNormals;
-	//		std::vector<Vector4f> surfaceColors;
-	//		surfacePoints.reserve(limit);
-	//		surfaceNormals.reserve(limit);
-	//		surfaceColors.reserve(limit);
+			std::vector<Vector3f> surfacePoints;
+			std::vector<Vector3f> surfaceNormals;
+			std::vector<Vector4f> surfaceColors;
+			surfacePoints.reserve(limit);
+			surfaceNormals.reserve(limit);
+			surfaceColors.reserve(limit);
 
-	//		float3 aabbMin = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
-	//		float3 aabbMax = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
+			float3 aabbMin = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+			float3 aabbMax = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
 
-	//		for (uint32_t i = 0; i < limit; i++)
-	//		{
-	//			surfacePoints.emplace_back(hostOut[i].position.x, hostOut[i].position.y, hostOut[i].position.z);
-	//			surfaceNormals.emplace_back(hostOut[i].normal.x, hostOut[i].normal.y, hostOut[i].normal.z);
-	//			surfaceColors.emplace_back(
-	//				hostOut[i].color[0] / 255.0f,
-	//				hostOut[i].color[1] / 255.0f,
-	//				hostOut[i].color[2] / 255.0f,
-	//				1.0f
-	//			);
+			for (uint32_t i = 0; i < limit; i++)
+			{
+				surfacePoints.emplace_back(hostOut[i].position.x, hostOut[i].position.y, hostOut[i].position.z);
+				surfaceNormals.emplace_back(hostOut[i].normal.x, hostOut[i].normal.y, hostOut[i].normal.z);
+				surfaceColors.emplace_back(
+					hostOut[i].color[0] / 255.0f,
+					hostOut[i].color[1] / 255.0f,
+					hostOut[i].color[2] / 255.0f,
+					1.0f
+				);
 
-	//			aabbMin.x = std::min(aabbMin.x, hostOut[i].position.x);
-	//			aabbMin.y = std::min(aabbMin.y, hostOut[i].position.y);
-	//			aabbMin.z = std::min(aabbMin.z, hostOut[i].position.z);
-	//			aabbMax.x = std::max(aabbMax.x, hostOut[i].position.x);
-	//			aabbMax.y = std::max(aabbMax.y, hostOut[i].position.y);
-	//			aabbMax.z = std::max(aabbMax.z, hostOut[i].position.z);
-	//		}
+				aabbMin.x = std::min(aabbMin.x, hostOut[i].position.x);
+				aabbMin.y = std::min(aabbMin.y, hostOut[i].position.y);
+				aabbMin.z = std::min(aabbMin.z, hostOut[i].position.z);
+				aabbMax.x = std::max(aabbMax.x, hostOut[i].position.x);
+				aabbMax.y = std::max(aabbMax.y, hostOut[i].position.y);
+				aabbMax.z = std::max(aabbMax.z, hostOut[i].position.z);
+			}
 
-	//		size_t rawCount = surfacePoints.size();
+			size_t rawCount = surfacePoints.size();
 
-	//		// 2. GPU PointCloud 생성 및 클러스터링
-	//		CuPointCloud cloud;
-	//		cloud.FromHostPointers(
-	//			(float3*)surfacePoints.data(),
-	//			(float3*)surfaceNormals.data(),
-	//			(float4*)surfaceColors.data(),
-	//			(uint32_t)rawCount,
-	//			aabbMin,
-	//			aabbMax);
+			// 2. GPU PointCloud 생성 및 클러스터링
+			CuPointCloud cloud;
+			cloud.FromHostPointers(
+				(float3*)surfacePoints.data(),
+				(float3*)surfaceNormals.data(),
+				(float4*)surfaceColors.data(),
+				(uint32_t)rawCount,
+				aabbMin,
+				aabbMax);
 
-	//		CuSparseCells cellGrid;
-	//		cellGrid.cellSize = 0.3f;
-	//		cellGrid.Build(&cloud, cellGrid.cellSize);
+			CuSparseCells cellGrid;
+			cellGrid.cellSize = 0.3f;
+			cellGrid.Build(&cloud, cellGrid.cellSize);
 
-	//		unsigned int* labelsDevice = nullptr;
-	//		cudaMalloc(&labelsDevice, rawCount * sizeof(unsigned int));
+			unsigned int* labelsDevice = nullptr;
+			cudaMalloc(&labelsDevice, rawCount * sizeof(unsigned int));
 
-	//		// Execute 함수와 동일한 임계값 적용
-	//		cellGrid.ApplyClustering(&cloud, labelsDevice, 0.125f);
+			// Execute 함수와 동일한 임계값 적용
+			cellGrid.ApplyClustering(&cloud, labelsDevice, 0.125f);
 
-	//		// 3. 결과 다운로드 및 통계 처리 (Execute 로직 반영)
-	//		std::vector<unsigned int> labelsHost(rawCount);
-	//		std::vector<float3> pointsHost(rawCount);
-	//		std::vector<float3> normalsHost(rawCount);
-	//		std::vector<uchar3> colorsHost(rawCount);
+			// 3. 결과 다운로드 및 통계 처리 (Execute 로직 반영)
+			std::vector<unsigned int> labelsHost(rawCount);
+			std::vector<float3> pointsHost(rawCount);
+			std::vector<float3> normalsHost(rawCount);
+			std::vector<uchar3> colorsHost(rawCount);
 
-	//		cudaMemcpy(labelsHost.data(), labelsDevice, rawCount * sizeof(unsigned int), cudaMemcpyDeviceToHost);
-	//		cudaMemcpy(pointsHost.data(), (const float3*)thrust::raw_pointer_cast(cloud.points.data()), rawCount * sizeof(float3), cudaMemcpyDeviceToHost);
-	//		cudaMemcpy(normalsHost.data(), (const float3*)thrust::raw_pointer_cast(cloud.normals.data()), rawCount * sizeof(float3), cudaMemcpyDeviceToHost);
-	//		cudaMemcpy(colorsHost.data(), (const uchar3*)thrust::raw_pointer_cast(cloud.colors.data()), rawCount * sizeof(uchar3), cudaMemcpyDeviceToHost);
+			cudaMemcpy(labelsHost.data(), labelsDevice, rawCount * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+			cudaMemcpy(pointsHost.data(), (const float3*)thrust::raw_pointer_cast(cloud.points.data()), rawCount * sizeof(float3), cudaMemcpyDeviceToHost);
+			cudaMemcpy(normalsHost.data(), (const float3*)thrust::raw_pointer_cast(cloud.normals.data()), rawCount * sizeof(float3), cudaMemcpyDeviceToHost);
+			cudaMemcpy(colorsHost.data(), (const uchar3*)thrust::raw_pointer_cast(cloud.colors.data()), rawCount * sizeof(uchar3), cudaMemcpyDeviceToHost);
 
-	//		struct ClusterStats
-	//		{
-	//			int count = 0;
-	//			unsigned int originalLabel = 0;
-	//		};
-	//		std::map<unsigned int, ClusterStats> clusterMap;
+			struct ClusterStats
+			{
+				int count = 0;
+				unsigned int originalLabel = 0;
+			};
+			std::map<unsigned int, ClusterStats> clusterMap;
 
-	//		for (size_t i = 0; i < rawCount; ++i)
-	//		{
-	//			auto& stats = clusterMap[labelsHost[i]];
-	//			stats.count++;
-	//			stats.originalLabel = labelsHost[i];
-	//		}
+			for (size_t i = 0; i < rawCount; ++i)
+			{
+				auto& stats = clusterMap[labelsHost[i]];
+				stats.count++;
+				stats.originalLabel = labelsHost[i];
+			}
 
-	//		// 4. 크기순 정렬 및 랭킹 부여
-	//		std::vector<ClusterStats> sortedClusters;
-	//		sortedClusters.reserve(clusterMap.size());
-	//		for (auto const& [label, stats] : clusterMap)
-	//		{
-	//			if (stats.count >= 3) sortedClusters.push_back(stats);
-	//		}
+			// 4. 크기순 정렬 및 랭킹 부여
+			std::vector<ClusterStats> sortedClusters;
+			sortedClusters.reserve(clusterMap.size());
+			for (auto const& [label, stats] : clusterMap)
+			{
+				if (stats.count >= 3) sortedClusters.push_back(stats);
+			}
 
-	//		std::sort(sortedClusters.begin(), sortedClusters.end(),
-	//			[](const ClusterStats& a, const ClusterStats& b) { return a.count > b.count; });
+			std::sort(sortedClusters.begin(), sortedClusters.end(),
+				[](const ClusterStats& a, const ClusterStats& b) { return a.count > b.count; });
 
-	//		unsigned int maxClusterId = sortedClusters.empty() ? 0xFFFFFFFF : sortedClusters[0].originalLabel;
+			unsigned int maxClusterId = sortedClusters.empty() ? 0xFFFFFFFF : sortedClusters[0].originalLabel;
 
-	//		// 5. 가장 큰 클러스터(Rank 0)만 선별하여 시각화
-	//		std::vector<Eigen::Vector3f> mainPos;
-	//		std::vector<Eigen::Vector3f> mainNorm;
-	//		std::vector<Eigen::Vector4f> mainCol;
+			// 5. 가장 큰 클러스터(Rank 0)만 선별하여 시각화
+			std::vector<Eigen::Vector3f> mainPos;
+			std::vector<Eigen::Vector3f> mainNorm;
+			std::vector<Eigen::Vector4f> mainCol;
 
-	//		aabbMin = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
-	//		aabbMax = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
+			aabbMin = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+			aabbMax = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
 
-	//		for (size_t i = 0; i < rawCount; ++i)
-	//		{
-	//			if (labelsHost[i] == maxClusterId && maxClusterId != 0xFFFFFFFF)
-	//			{
-	//				mainPos.emplace_back(pointsHost[i].x, pointsHost[i].y, pointsHost[i].z);
+			for (size_t i = 0; i < rawCount; ++i)
+			{
+				if (labelsHost[i] == maxClusterId && maxClusterId != 0xFFFFFFFF)
+				{
+					mainPos.emplace_back(pointsHost[i].x, pointsHost[i].y, pointsHost[i].z);
 
-	//				Eigen::Vector3f n(normalsHost[i].x, normalsHost[i].y, normalsHost[i].z);
-	//				if (n.squaredNorm() < 0.001f) n = Eigen::Vector3f::UnitY();
-	//				mainNorm.push_back(n);
+					Eigen::Vector3f n(normalsHost[i].x, normalsHost[i].y, normalsHost[i].z);
+					if (n.squaredNorm() < 0.001f) n = Eigen::Vector3f::UnitY();
+					mainNorm.push_back(n);
 
-	//				mainCol.emplace_back(
-	//					(float)colorsHost[i].x / 255.0f,
-	//					(float)colorsHost[i].y / 255.0f,
-	//					(float)colorsHost[i].z / 255.0f,
-	//					1.0f
-	//				);
+					mainCol.emplace_back(
+						(float)colorsHost[i].x / 255.0f,
+						(float)colorsHost[i].y / 255.0f,
+						(float)colorsHost[i].z / 255.0f,
+						1.0f
+					);
 
-	//				aabbMin.x = std::min(aabbMin.x, pointsHost[i].x);
-	//				aabbMin.y = std::min(aabbMin.y, pointsHost[i].y);
-	//				aabbMin.z = std::min(aabbMin.z, pointsHost[i].z);
-	//				aabbMax.x = std::max(aabbMax.x, pointsHost[i].x);
-	//				aabbMax.y = std::max(aabbMax.y, pointsHost[i].y);
-	//				aabbMax.z = std::max(aabbMax.z, pointsHost[i].z);
-	//			}
-	//		}
+					aabbMin.x = std::min(aabbMin.x, pointsHost[i].x);
+					aabbMin.y = std::min(aabbMin.y, pointsHost[i].y);
+					aabbMin.z = std::min(aabbMin.z, pointsHost[i].z);
+					aabbMax.x = std::max(aabbMax.x, pointsHost[i].x);
+					aabbMax.y = std::max(aabbMax.y, pointsHost[i].y);
+					aabbMax.z = std::max(aabbMax.z, pointsHost[i].z);
+				}
+			}
 
-	//		if (!mainPos.empty())
-	//		{
-	//			//VD::AddSphereBatch("PointCloud", mainPos, mainNorm, 0.05f, mainCol);
-	//		}
+			if (!mainPos.empty())
+			{
+				//VD::AddSphereBatch("PointCloud", mainPos, mainNorm, 0.05f, mainCol);
+			}
 
-	//		cudaFree(labelsDevice);
+			cudaFree(labelsDevice);
 
-	//		CuPointCloud filterd;
-	//		filterd.FromHostPointers(
-	//			(float3*)mainPos.data(),
-	//			(float3*)mainNorm.data(),
-	//			(float4*)mainCol.data(),
-	//			(uint32_t)mainPos.size(),
-	//			aabbMin,
-	//			aabbMax);
+			CuPointCloud filterd;
+			filterd.FromHostPointers(
+				(float3*)mainPos.data(),
+				(float3*)mainNorm.data(),
+				(float4*)mainCol.data(),
+				(uint32_t)mainPos.size(),
+				aabbMin,
+				aabbMax);
 
-	//		CuSparseCells filterCellGrid;
-	//		filterCellGrid.cellSize = 0.3f;
-	//		filterCellGrid.Build(&filterd, filterCellGrid.cellSize);
+			CuSparseCells filterCellGrid;
+			filterCellGrid.cellSize = 0.3f;
+			filterCellGrid.Build(&filterd, filterCellGrid.cellSize);
 
-	//		//        filterCellGrid.ApplyEdgePreservingSmoothing(
-	//		//            &filterd,
-	//		//            0.5f,   // radius: 주변 이웃 탐색 반경
-	//		//            0.7f,   // factor: 스무딩 강도 (0.0 ~ 1.0)
-	//		//            0.15f,  // edgeThreshold: 엣지 보존 임계값 (0.0 ~ 1.0)
-	//		//			  30);    // iterations: 반복 횟수 
+			//        filterCellGrid.ApplyEdgePreservingSmoothing(
+			//            &filterd,
+			//            0.5f,   // radius: 주변 이웃 탐색 반경
+			//            0.7f,   // factor: 스무딩 강도 (0.0 ~ 1.0)
+			//            0.15f,  // edgeThreshold: 엣지 보존 임계값 (0.0 ~ 1.0)
+			//			  30);    // iterations: 반복 횟수 
 
-	//		filterCellGrid.ApplyEnergySmoothing(
-	//			&filterd,
-	//			0.5f,   // radius: 주변 이웃 탐색 반경
-	//			0.1f,   // dataWeight: 데이터 적합도 가중치
-	//			0.9f,   // smoothWeight: 스무딩 가중치
-	//			30);    // iterations: 반복 횟수
+			filterCellGrid.ApplyEnergySmoothing(
+				&filterd,
+				0.5f,   // radius: 주변 이웃 탐색 반경
+				0.1f,   // dataWeight: 데이터 적합도 가중치
+				0.9f,   // smoothWeight: 스무딩 가중치
+				30);    // iterations: 반복 횟수
 
 
-	//		std::vector<float3> smoothPoints(mainPos.size());
-	//		std::vector<float3> smoothNormals(mainPos.size());
-	//		std::vector<uchar3> smoothColors(mainPos.size());
-	//		cudaMemcpy(smoothPoints.data(), (const float3*)thrust::raw_pointer_cast(filterd.points.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
-	//		cudaMemcpy(smoothNormals.data(), (const float3*)thrust::raw_pointer_cast(filterd.normals.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
-	//		cudaMemcpy(smoothColors.data(), (const uchar3*)thrust::raw_pointer_cast(filterd.colors.data()), mainPos.size() * sizeof(uchar3), cudaMemcpyDeviceToHost);
-	//		std::vector<Eigen::Vector3f> smoothPos;
-	//		std::vector<Eigen::Vector3f> smoothNorm;
-	//		std::vector<Eigen::Vector4f> smoothCol;
-	//		smoothPos.reserve(mainPos.size());
-	//		smoothNorm.reserve(mainPos.size());
-	//		smoothCol.reserve(mainPos.size());
-	//		for (size_t i = 0; i < mainPos.size(); ++i)
-	//		{
-	//			smoothPos.emplace_back(smoothPoints[i].x, smoothPoints[i].y, smoothPoints[i].z);
-	//			Eigen::Vector3f n(smoothNormals[i].x, smoothNormals[i].y, smoothNormals[i].z);
-	//			if (n.squaredNorm() < 0.001f) n = Eigen::Vector3f::UnitY();
-	//			smoothNorm.push_back(n);
-	//			smoothCol.emplace_back(
-	//				(float)smoothColors[i].x / 255.0f,
-	//				(float)smoothColors[i].y / 255.0f,
-	//				(float)smoothColors[i].z / 255.0f,
-	//				1.0f
-	//			);
-	//		}
-	//		VD::AddSphereBatch("SmoothedPointCloud", smoothPos, smoothNorm, 0.05f, smoothCol);
-	//	}
-	//}
+			std::vector<float3> smoothPoints(mainPos.size());
+			std::vector<float3> smoothNormals(mainPos.size());
+			std::vector<uchar3> smoothColors(mainPos.size());
+			cudaMemcpy(smoothPoints.data(), (const float3*)thrust::raw_pointer_cast(filterd.points.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
+			cudaMemcpy(smoothNormals.data(), (const float3*)thrust::raw_pointer_cast(filterd.normals.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
+			cudaMemcpy(smoothColors.data(), (const uchar3*)thrust::raw_pointer_cast(filterd.colors.data()), mainPos.size() * sizeof(uchar3), cudaMemcpyDeviceToHost);
+			std::vector<Eigen::Vector3f> smoothPos;
+			std::vector<Eigen::Vector3f> smoothNorm;
+			std::vector<Eigen::Vector4f> smoothCol;
+			smoothPos.reserve(mainPos.size());
+			smoothNorm.reserve(mainPos.size());
+			smoothCol.reserve(mainPos.size());
+			for (size_t i = 0; i < mainPos.size(); ++i)
+			{
+				smoothPos.emplace_back(smoothPoints[i].x, smoothPoints[i].y, smoothPoints[i].z);
+				Eigen::Vector3f n(smoothNormals[i].x, smoothNormals[i].y, smoothNormals[i].z);
+				if (n.squaredNorm() < 0.001f) n = Eigen::Vector3f::UnitY();
+				smoothNorm.push_back(n);
+				smoothCol.emplace_back(
+					(float)smoothColors[i].x / 255.0f,
+					(float)smoothColors[i].y / 255.0f,
+					(float)smoothColors[i].z / 255.0f,
+					1.0f
+				);
+			}
+			VD::AddSphereBatch("SmoothedPointCloud", smoothPos, smoothNorm, 0.05f, smoothCol);
+		}
+	}
+	*/
 }
 
 #include "Apps.h"
@@ -1554,7 +1906,7 @@ class AppVVV : public App
 public:
 	virtual void Execute() override
 	{
-		ExecuteAppVVV();
+		VDB::ExecuteAppVVV();
 	}
 };
 REGISTER_APP(AppVVV, "AppVVV");

@@ -4,8 +4,8 @@
 #include <Copper/CUDAMath.h>
 
 #include <cuda_runtime.h>
-#include <device_launch_parameters.h>
 #include <device_functions.h>
+#include <device_launch_parameters.h>
 
 #include <thrust/transform_reduce.h>
 #include <thrust/sort.h>
