@@ -4,6 +4,17 @@
 #include <Eigen/Core>
 #include <iostream>
 
+#include <Copper/Copper.h>
+#include <Copper/CuPointCloud.h>
+#include <Copper/CuSparseCells.h>
+#include <Copper/OperatorCollection/CuOperatorCollection.h>
+#include <Copper/CuVoxelStreaming.h>
+
+#include <Helium/HeliumCommon.h>
+#include <Helium/Serialization.hpp>
+#include <Helium/VisualDebugging.h>
+using VD = VisualDebugging;
+
 class AppClusteringDevice : public App
 {
 public:

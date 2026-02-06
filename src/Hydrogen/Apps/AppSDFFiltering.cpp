@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <iostream>
 
+#include <Helium/Serialization.hpp>
 #include <Helium/VisualDebugging.h>
 using VD = VisualDebugging;
 

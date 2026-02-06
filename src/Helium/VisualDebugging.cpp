@@ -206,7 +206,7 @@ void VisualDebugging::CreateDiskEntity(const std::string& tag, float radius, uns
             File("../../res/Shaders/InstancingBillboard.vs"),
             File("../../res/Shaders/InstancingBillboard.fs")
         );
-        int shaderIndex = renderable->AddShader(shaderBillboard);
+        unsigned int shaderIndex = (unsigned int)renderable->AddShader(shaderBillboard);
         renderable->SetActiveShaderIndex(shaderIndex);
     }
     else
@@ -1299,7 +1299,7 @@ void VisualDebugging::SetInstanceScale(const std::string& tag, const Eigen::Vect
             // Column 2 (Forward / Z)
             mat.col(2).head<3>() = mat.col(2).head<3>().normalized() * newScale.z();
 
-            renderable->SetInstanceTransform(index, mat);
+            renderable->SetInstanceTransform((unsigned int)index, mat);
         });
 }
 
@@ -1322,7 +1322,7 @@ void VisualDebugging::SetInstanceScale(const std::string& tag, const Eigen::Vect
                 mat.col(1).head<3>() = mat.col(1).head<3>().normalized() * newScale.y();
                 // Column 2 (Forward / Z)
                 mat.col(2).head<3>() = mat.col(2).head<3>().normalized() * newScale.z();
-                renderable->SetInstanceTransform(index, mat);
+                renderable->SetInstanceTransform((unsigned int)index, mat);
             }
 		});
 }

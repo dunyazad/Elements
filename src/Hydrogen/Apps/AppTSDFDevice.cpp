@@ -9,6 +9,22 @@
 #include <iostream>
 #include <limits>
 
+#include <VVV/VVV.h>
+#pragma comment(lib, "VVV.lib")
+
+#include <robin_hood/robin_hood.h>
+
+#include <Copper/Copper.h>
+#include <Copper/CuPointCloud.h>
+#include <Copper/CuSparseCells.h>
+#include <Copper/OperatorCollection/CuOperatorCollection.h>
+#include <Copper/CuVoxelStreaming.h>
+
+#include <Helium/HeliumCommon.h>
+#include <Helium/Serialization.hpp>
+#include <Helium/VisualDebugging.h>
+using VD = VisualDebugging;
+
 class AppTSDFDevice : public App
 {
 public:
@@ -108,7 +124,7 @@ public:
             cudaMemcpy(d_normals0, normals0.data(), sizeof(VVV::Vector3f) * numPts0, cudaMemcpyHostToDevice);
             cudaMemcpy(d_colors0, colors0.data(), sizeof(VVV::Vector3b) * numPts0, cudaMemcpyHostToDevice);
 
-            voxelDb.IntegrateTSDF(
+            voxelDb.IntegrateESDF(
                 gpuMatrix0,
                 d_points0,
                 d_normals0,
@@ -125,7 +141,7 @@ public:
             //            0.8f,
                         //(unsigned int)i);
 
-
+            
             VVV::Matrix4f gpuMatrix45;
             std::copy(rt45.transpose().data(), rt45.data() + 16, gpuMatrix45.data);
 
@@ -146,7 +162,7 @@ public:
             cudaMemcpy(d_normals45, normals45.data(), sizeof(VVV::Vector3f) * numPts45, cudaMemcpyHostToDevice);
             cudaMemcpy(d_colors45, colors45.data(), sizeof(VVV::Vector3b) * numPts45, cudaMemcpyHostToDevice);
 
-            voxelDb.IntegrateTSDF(
+            voxelDb.IntegrateESDF(
                 gpuMatrix45,
                 d_points45,
                 d_normals45,
@@ -163,7 +179,7 @@ public:
             //            0.8f,
                         //(unsigned int)i);
 
-            printf("[%5d] =-=-= ", i);
+            printf("[%5zd] =-=-= ", i);
             TE(patch);
         }
 

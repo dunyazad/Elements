@@ -9,6 +9,10 @@
 #include <iostream>
 #include <limits>
 
+#include <Helium/Serialization.hpp>
+#include <Helium/VisualDebugging.h>
+using VD = VisualDebugging;
+
 using VDBKey = uint64_t;
 struct VDBBlockIndex { int x = 0; int y = 0; int z = 0; };
 

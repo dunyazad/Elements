@@ -6,10 +6,10 @@
 #include <cmath>
 
 #ifndef DEG2RAD
-#define DEG2RAD (static_cast<float>(EIGEN_PI) / 180.0f)
+#define DEG2RAD (float(EIGEN_PI) / 180.0f)
 #endif
 #ifndef RAD2DEG
-#define RAD2DEG (180.0f / static_cast<float>(EIGEN_PI))
+#define RAD2DEG (180.0f / float(EIGEN_PI))
 #endif
 
 #include <Helium/TypeDefinitions.h>

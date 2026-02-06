@@ -34,11 +34,6 @@ void CuPointCloud::clear()
     isAlive.clear();
 }
 
-float3* CuPointCloud::getPointsPtr()
-{
-    return thrust::raw_pointer_cast(points.data());
-}
-
 void CuPointCloud::FromHostVectors(
     const std::vector<float3>& h_points,
     const std::vector<float3>& h_normals,

@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include <Helium/Serialization.hpp>
 #include <Helium/VisualDebugging.h>
 using VD = VisualDebugging;
 

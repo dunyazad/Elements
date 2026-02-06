@@ -110,7 +110,7 @@ manifold::Manifold TextMeshGenerator::Create3DText(const std::string& text, floa
 
         if (m.NumVert() > 0) {
             charMeshes.push_back(m);
-            printf("  [SUCCESS] Verts: %d\n", m.NumVert());
+            printf("  [SUCCESS] Verts: %zd\n", m.NumVert());
         }
         else {
             printf("  [FAIL] Verts: 0 (Check if font supports this char)\n");
@@ -174,8 +174,8 @@ manifold::Manifold TextMeshGenerator::CreateCharacter(int charCode, float depth,
                 float t = j / (float)segments;
                 float invT = 1.0f - t;
 
-                float px = (invT * invT * lastP.x) + (2 * invT * t * cx) + (t * t * x);
-                float py = (invT * invT * lastP.y) + (2 * invT * t * cy) + (t * t * y);
+                float px = (invT * invT * (float)lastP.x) + (2 * invT * t * cx) + (t * t * x);
+                float py = (invT * invT * (float)lastP.y) + (2 * invT * t * cy) + (t * t * y);
                 currentContour.push_back({ static_cast<float>(px), static_cast<float>(py) });
             }
         }

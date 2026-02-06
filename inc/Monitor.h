@@ -4,6 +4,9 @@
 
 // _WINDOWS 매크로가 없어도 빌드되도록 _WIN32 체크 추가
 #if defined(_WINDOWS) || defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <cmath> // abs 사용을 위해
 

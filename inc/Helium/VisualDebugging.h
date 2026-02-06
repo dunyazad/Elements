@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Helium/HeliumCommon.h>
+
 #include <map>
 #include <mutex>
 #include <vector>

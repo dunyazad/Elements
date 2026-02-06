@@ -38,8 +38,6 @@ struct COPPER_API CuPointCloud
     void resize(size_t n);
     void clear();
 
-    float3* getPointsPtr();
-
     void FromHostVectors(
         const std::vector<float3>& h_points,
         const std::vector<float3>& h_normals,

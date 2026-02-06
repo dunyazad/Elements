@@ -88,4 +88,9 @@
       <Filter>리소스 파일</Filter>
     </Image>
   </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="Apps\AppVVV.cu">
+      <Filter>Apps</Filter>
+    </CudaCompile>
+  </ItemGroup>
 </Project>

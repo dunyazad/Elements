@@ -8,8 +8,10 @@
 #include <cmath>
 #include <unordered_map>
 
+#include <Helium/Serialization.hpp>
 #include <Helium/VisualDebugging.h>
 using VD = VisualDebugging;
+
 
 namespace Eigen {
 	template <typename Type, int Size>

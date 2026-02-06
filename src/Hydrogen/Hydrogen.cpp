@@ -15,12 +15,27 @@
 #include <ShellScalingApi.h>
 #pragma comment(lib, "Shcore.lib")
 
+#include <Helium/Helium.h>
+#include <Helium/HeliumCommon.h>
+#include <Helium/HeliumCore.h>
+#include <Helium/DeviceInformation.h>
+#include <Helium/VisualDebugging.h>
+using VD = VisualDebugging;
+
+#include <Copper/Copper.h>
+#include <Copper/CuPointCloud.h>
+#include <Copper/CuSparseCells.h>
+#include <Copper/OperatorCollection/CuOperatorCollection.h>
+#include <Copper/CuVoxelStreaming.h>
+
+#include <robin_hood/robin_hood.h>
+
 #include <Monitor.h>
 
 #include "Apps/Apps.h"
 
 //const std::string  appName = "AppTSDF";
-const std::string  appName = "AppTSDFDevice";
+//const std::string  appName = "AppTSDFDevice";
 //const std::string  appName = "AppVoxelDataBaseMemoryUsageCheck";
 //const std::string  appName = "AppClustering";
 //const std::string  appName = "AppSDFFiltering";
@@ -28,6 +43,7 @@ const std::string  appName = "AppTSDFDevice";
 //const std::string  appName = "AppMorphologyDebug";
 //const std::string  appName = "AppICP";
 //const std::string  appName = "AppClusteringDevice";
+const std::string  appName = "AppVVV";
 
 #define MAX_LOADSTRING 100
 

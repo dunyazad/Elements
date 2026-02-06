@@ -1,5 +1,21 @@
 ﻿#include "Apps.h"
 
+#include <VVV/VVV.h>
+#pragma comment(lib, "VVV.lib")
+
+#include <robin_hood/robin_hood.h>
+
+#include <Copper/Copper.h>
+#include <Copper/CuPointCloud.h>
+#include <Copper/CuSparseCells.h>
+#include <Copper/OperatorCollection/CuOperatorCollection.h>
+#include <Copper/CuVoxelStreaming.h>
+
+#include <Helium/HeliumCommon.h>
+#include <Helium/Serialization.hpp>
+#include <Helium/VisualDebugging.h>
+using VD = VisualDebugging;
+
 class AppICP : public App
 {
 public:

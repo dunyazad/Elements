@@ -42,6 +42,19 @@
     cudaEventDestroy(time_##name##_stop);
 #endif
 
+namespace Eigen
+{
+	template<typename _Scalar, int _Rows, int _Cols, int _Options, int _MaxRows, int _MaxCols>
+	class Matrix;
+
+	typedef Matrix<float, 3, 3, 0, 3, 3> Matrix3f;
+	typedef Matrix<float, 4, 4, 0, 4, 4> Matrix4f;
+	typedef Matrix<float, 3, 1, 0, 3, 1> Vector3f;
+	typedef Matrix<uint8_t, 3, 1, 0, 3, 1> Vector3b;
+	typedef Matrix<int32_t, 3, 1, 0, 3, 1> Vector3i;
+	typedef Matrix<uint32_t, 3, 1, 0, 3, 1> Vector3ui;
+}
+
 namespace VVV
 {
 	__device__ inline uint32_t StrongHash(uint64_t key, uint32_t maxBlocks)
@@ -57,21 +70,204 @@ namespace VVV
 	struct VVV_API Vector3b
 	{
 		uint8_t x, y, z;
+
+		__host__ __device__
+		inline Vector3b() : x(0), y(0), z(0) {}
+
+		__host__ __device__
+		inline Vector3b(uint8_t _x, uint8_t _y, uint8_t _z) : x(_x), y(_y), z(_z) {}
+
+		__host__ __device__
+		inline Vector3b(const Eigen::Vector3b& other)
+		{
+			const uint8_t* data = reinterpret_cast<const uint8_t*>(&other);
+			x = data[0]; y = data[1]; z = data[2];
+		}
+
+		__host__ __device__
+		inline Vector3b& operator=(const Eigen::Vector3b& other)
+		{
+			const uint8_t* data = reinterpret_cast<const uint8_t*>(&other);
+			x = data[0]; y = data[1]; z = data[2];
+			return *this;
+		}
+
+		__host__ __device__
+		inline operator Eigen::Vector3b& () { return *reinterpret_cast<Eigen::Vector3b*>(this); }
 	};
 
 	struct VVV_API Vector3i
 	{
-		int x, y, z;
+		int32_t x, y, z;
+
+		__host__ __device__
+		inline Vector3i() : x(0), y(0), z(0) {}
+
+		__host__ __device__
+		inline Vector3i(int32_t _x, int32_t _y, int32_t _z) : x(_x), y(_y), z(_z) {}
+
+		__host__ __device__
+		inline Vector3i(const Eigen::Vector3i& other)
+		{
+			const int32_t* data = reinterpret_cast<const int32_t*>(&other);
+			x = data[0]; y = data[1]; z = data[2];
+		}
+
+		__host__ __device__
+		inline Vector3i& operator=(const Eigen::Vector3i& other)
+		{
+			const int32_t* data = reinterpret_cast<const int32_t*>(&other);
+			x = data[0]; y = data[1]; z = data[2];
+			return *this;
+		}
+
+		__host__ __device__
+		inline operator Eigen::Vector3i& () { return *reinterpret_cast<Eigen::Vector3i*>(this); }
 	};
 
 	struct VVV_API Vector3f
 	{
 		float x, y, z;
+
+		__host__ __device__
+		inline Vector3f() : x(0.0f), y(0.0f), z(0.0f) {}
+
+		__host__ __device__
+		inline Vector3f(float _x, float _y, float _z) : x(_x), y(_y), z(_z) {}
+
+		__host__ __device__
+		inline Vector3f(const Eigen::Vector3f& other)
+		{
+			const float* data = reinterpret_cast<const float*>(&other);
+			x = data[0]; y = data[1]; z = data[2];
+		}
+
+		__host__ __device__
+		inline Vector3f& operator=(const Eigen::Vector3f& other)
+		{
+			const float* data = reinterpret_cast<const float*>(&other);
+			x = data[0]; y = data[1]; z = data[2];
+			return *this;
+		}
+
+		__host__ __device__
+		inline operator Eigen::Vector3f& () { return *reinterpret_cast<Eigen::Vector3f*>(this); }
+	};
+
+	struct VVV_API Matrix3f
+	{
+		float data[9];
+
+		__host__ __device__
+			inline Matrix3f()
+		{
+			for (int i = 0; i < 9; ++i) data[i] = 0.0f;
+		}
+
+		__host__ __device__
+			inline Matrix3f(const Eigen::Matrix3f& other)
+		{
+			const float* src = reinterpret_cast<const float*>(&other);
+			for (int i = 0; i < 9; ++i) data[i] = src[i];
+		}
+
+		// 행렬 원소 접근을 위한 연산자 추가
+		__host__ __device__
+			inline float& operator()(int row, int col)
+		{
+			return data[col * 3 + row];
+		}
+
+		__host__ __device__
+			inline const float& operator()(int row, int col) const
+		{
+			return data[col * 3 + row];
+		}
+
+		__host__ __device__
+			inline Matrix3f& operator=(const Eigen::Matrix3f& other)
+		{
+			const float* src = reinterpret_cast<const float*>(&other);
+			for (int i = 0; i < 9; ++i) data[i] = src[i];
+			return *this;
+		}
+
+		__host__ __device__
+			inline operator Eigen::Matrix3f& ()
+		{
+			return *reinterpret_cast<Eigen::Matrix3f*>(data);
+		}
+
+		__host__ __device__
+			inline operator const Eigen::Matrix3f& () const
+		{
+			return *reinterpret_cast<const Eigen::Matrix3f*>(data);
+		}
+
+		__host__ __device__
+			static inline Matrix3f Identity()
+		{
+			Matrix3f mat;
+			mat.data[0] = 1.0f; mat.data[4] = 1.0f; mat.data[8] = 1.0f;
+			return mat;
+		}
+
+		__host__ __device__
+			static inline Matrix3f Zero()
+		{
+			return Matrix3f();
+		}
 	};
 
 	struct VVV_API Matrix4f
 	{
 		float data[16];
+
+		__host__ __device__
+			inline Matrix4f()
+		{
+			for (int i = 0; i < 16; ++i) data[i] = 0.0f;
+		}
+
+		__host__ __device__
+			inline Matrix4f(const Eigen::Matrix4f& other)
+		{
+			const float* src = reinterpret_cast<const float*>(&other);
+			for (int i = 0; i < 16; ++i) data[i] = src[i];
+		}
+
+		__host__ __device__
+			inline Matrix4f& operator=(const Eigen::Matrix4f& other)
+		{
+			const float* src = reinterpret_cast<const float*>(&other);
+			for (int i = 0; i < 16; ++i) data[i] = src[i];
+			return *this;
+		}
+
+		// 행렬 원소 접근을 위한 연산자 추가 (Column-major 기반)
+		__host__ __device__
+			inline float& operator()(int row, int col)
+		{
+			return data[col * 4 + row];
+		}
+
+		__host__ __device__
+			inline const float& operator()(int row, int col) const
+		{
+			return data[col * 4 + row];
+		}
+
+		__host__ __device__
+			inline operator Eigen::Matrix4f& ()
+		{
+			return *reinterpret_cast<Eigen::Matrix4f*>(data);
+		}
+
+		__host__ __device__
+			inline operator const Eigen::Matrix4f& () const
+		{
+			return *reinterpret_cast<const Eigen::Matrix4f*>(data);
+		}
 
 		__host__ __device__
 			inline Vector3f Transform(const Vector3f& vec) const
@@ -98,9 +294,15 @@ namespace VVV
 		__host__ __device__
 			static inline Matrix4f Identity()
 		{
-			Matrix4f mat = {};
+			Matrix4f mat;
 			mat.data[0] = 1.0f; mat.data[5] = 1.0f; mat.data[10] = 1.0f; mat.data[15] = 1.0f;
 			return mat;
+		}
+
+		__host__ __device__
+			static inline Matrix4f Zero()
+		{
+			return Matrix4f();
 		}
 	};
 
@@ -231,10 +433,10 @@ namespace VVV
 		void Free();
 		void OccupyVoxelFromPoints(const VVV::Matrix4f& rt, const VVV::Vector3f* points, const VVV::Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId);
 		void IntegrateTSDF(const VVV::Matrix4f& rt, const VVV::Vector3f* d_points, const VVV::Vector3f* d_normals, const VVV::Vector3b* d_colors, uint32_t count, float blockSize, uint32_t frameId);
+		void IntegrateESDF(const VVV::Matrix4f& rt, const VVV::Vector3f* d_points, const VVV::Vector3f* d_normals, const VVV::Vector3b* d_colors, uint32_t count, float blockSize, uint32_t frameId);
 		uint32_t ExtractActiveVoxelsToHost(float blockSize, VVV::ExtractedVoxel* hostBuffer, uint32_t maxOut);
 		uint32_t ExtractZeroCrossingVoxelsToHost(float blockSize, VVV::ExtractedVoxel* hostBuffer, uint32_t maxOut);
 
-		// 1. 단순 블록 슬롯 조회 (Read-only)
 		__device__ inline uint32_t FindBlockSlot(const Vector3f& position)
 		{
 			const float bSize = 0.8f;
@@ -256,14 +458,12 @@ namespace VVV
 			return INVALID_BLOCK;
 		}
 
-		// 2. 블록 포인터 가져오기 (커널에서 에러 났던 부분 해결)
 		__device__ inline VoxelBlock* GetVoxelBlock(const Vector3f& position)
 		{
 			uint32_t slot = FindBlockSlot(position);
 			return (slot != INVALID_BLOCK) ? &d_blocks[slot] : nullptr;
 		}
 
-		// 3. 복셀 포인터 가져오기 (인덱싱 로직 복구)
 		__device__ inline Voxel* GetVoxel(const Vector3f& position)
 		{
 			uint32_t slot = FindBlockSlot(position);
@@ -275,7 +475,6 @@ namespace VVV
 			Morton64 blockKey = Morton64::FromPosition(position, bSize);
 			Vector3f bc = blockKey.ToPosition(bSize);
 
-			// 기존 939만 개가 나오던 수식으로 완전 복구
 			int lx = static_cast<int>(floorf((position.x - (bc.x - bSize * 0.5f)) / vSize + 1e-5f));
 			int ly = static_cast<int>(floorf((position.y - (bc.y - bSize * 0.5f)) / vSize + 1e-5f));
 			int lz = static_cast<int>(floorf((position.z - (bc.z - bSize * 0.5f)) / vSize + 1e-5f));
@@ -287,7 +486,6 @@ namespace VVV
 			return &d_blocks[slot].voxels[(lz << 6) | (ly << 3) | lx];
 		}
 
-		// 4. 블록 슬롯 생성 (atomic 연산 보호)
 		__device__ inline uint32_t GetOrCreateBlockSlot(const Vector3f& position)
 		{
 #if defined(__CUDA_ARCH__)
@@ -318,7 +516,6 @@ namespace VVV
 			return INVALID_BLOCK;
 		}
 
-		// 5. 복셀 생성 및 포인터 반환
 		__device__ inline Voxel* GetOrCreateVoxel(const Vector3f& position)
 		{
 #if defined(__CUDA_ARCH__)

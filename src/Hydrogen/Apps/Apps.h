@@ -1,5 +1,11 @@
 #pragma once
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#define BUILD_AppTSDFDevice
+
 #define _SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING
 #define _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS // Ãß°¡
 
@@ -13,41 +19,46 @@
 #include <map>
 #include <string>
 
-#include <Helium/Helium.h>
-#include <Helium/HeliumLog.h>
-#include <Helium/HeliumCore.h>
+//#include <Helium/Helium.h>
+//#include <Helium/HeliumLog.h>
+//#include <Helium/HeliumCore.h>
+//#include <Helium/Serialization.hpp>
+//#include <Helium/DeviceInformation.h>
+//
+//#include <Helium/Components/GUI/GUIComponent.h>
+//
+//#include <Helium/VisualDebugging.h>
+//using VD = VisualDebugging;
 
-#include <Helium/Components/GUI/GUIComponent.h>
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <cuda_fp16.h>
 
-#include <Helium/VisualDebugging.h>
-using VD = VisualDebugging;
-
-#include <Copper/Copper.h>
-#include <Copper/CuPointCloud.h>
-#include <Copper/CuSparseCells.h>
-#include <Copper/OperatorCollection/CuOperatorCollection.h>
-
-#include <Helium/Serialization.hpp>
-#include <Helium/DeviceInformation.h>
-
-#include <Copper/CuVoxelStreaming.h>
-
-#include <robin_hood/robin_hood.h>
+//#include <Copper/Copper.h>
+//#include <Copper/CuPointCloud.h>
+//#include <Copper/CuSparseCells.h>
+//#include <Copper/OperatorCollection/CuOperatorCollection.h>
+//#include <Copper/CuVoxelStreaming.h>
+//
+//#include <robin_hood/robin_hood.h>
 
 #include <VVV/VVV.h>
 #pragma comment(lib, "VVV.lib")
+//
+//#include <Eigen/Core>
+//#include <Eigen/Dense>
 
-#include <Eigen/Core>
-#include <Eigen/Dense>
 
-#include <Helium/Serialization.hpp>
+namespace Eigen
+{
+    template<typename _Scalar, int _Rows, int _Cols, int _Options, int _MaxRows, int _MaxCols>
+    class Matrix;
 
-namespace Eigen {
-    template <typename Type, int Size>
-    using Vector = Matrix<Type, Size, 1>;
-
-    using Vector3b = Vector<unsigned char, 3>;
-    using Vector3ui = Vector<unsigned int, 3>;
+    typedef Matrix<float, 4, 4, 0, 4, 4> Matrix4f;
+    typedef Matrix<float, 3, 1, 0, 3, 1> Vector3f;
+    typedef Matrix<uint8_t, 3, 1, 0, 3, 1> Vector3b;
+    typedef Matrix<int32_t, 3, 1, 0, 3, 1> Vector3i;
+    typedef Matrix<uint32_t, 3, 1, 0, 3, 1> Vector3ui;
 }
 
 class App
@@ -152,14 +163,14 @@ typedef struct CamInfo_
     int img_height;
     double R[9];
     double T[3];
-    Eigen::Vector3f dlpPos;
-    Eigen::Vector3f camPos;
-    Eigen::Matrix3f invMatTilt;
-    Eigen::Matrix3f matTilt;
+    VVV::Vector3f dlpPos;
+    VVV::Vector3f camPos;
+    VVV::Matrix3f invMatTilt;
+    VVV::Matrix3f matTilt;
 
-    Eigen::Matrix4f GetViewMatrix(const CamInfo_& info)
+    VVV::Matrix4f GetViewMatrix(const CamInfo_& info)
     {
-        Eigen::Matrix4f view = Eigen::Matrix4f::Identity();
+        VVV::Matrix4f view = VVV::Matrix4f::Identity();
         for (int i = 0; i < 3; ++i)
         {
             for (int j = 0; j < 3; ++j)
@@ -171,9 +182,9 @@ typedef struct CamInfo_
         return view;
     }
 
-    Eigen::Matrix4f GetProjectionMatrix(const CamInfo_& info, float n, float f)
+    VVV::Matrix4f GetProjectionMatrix(const CamInfo_& info, float n, float f)
     {
-        Eigen::Matrix4f proj = Eigen::Matrix4f::Zero();
+        VVV::Matrix4f proj = VVV::Matrix4f::Zero();
         proj(0, 0) = 2.0f * info.cfx / info.img_width;
         proj(0, 2) = 1.0f - (2.0f * info.ccx / info.img_width);
         proj(1, 1) = 2.0f * info.cfy / info.img_height;
