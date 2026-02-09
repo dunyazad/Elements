@@ -6,6 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <vector>
 
 #include <robin_hood/robin_hood.h>
@@ -46,6 +47,39 @@ using VD = IVisualDebugging;
     printf("[<[%s]>] %f ms\n", #name, time_##name##_miliseconds);\
     cudaEventDestroy(time_##name##_start);\
     cudaEventDestroy(time_##name##_stop);
+#endif
+
+#ifdef __CUDACC__
+#define LDG(ptr, idx) __ldg(&(ptr)[idx])
+#else
+#define LDG(ptr, idx) (ptr)[idx]
+#endif
+
+#ifdef __CUDACC__
+namespace
+{
+	template <typename T>
+	__device__ __forceinline__ T fetch_val(const T* ptr, int idx)
+	{
+		return __ldg(&ptr[idx]);
+	}
+	template <>
+	__device__ __forceinline__ float3 fetch_val(const float3* ptr, int idx)
+	{
+		float3 ret;
+		ret.x = __ldg(&ptr[idx].x);
+		ret.y = __ldg(&ptr[idx].y);
+		ret.z = __ldg(&ptr[idx].z);
+		return ret;
+	}
+}
+#define FETCH(ptr, idx) fetch_val(ptr, idx)
+
+__device__ __forceinline__ float DistanceSq(float3 a, float3 b)
+{
+	float3 d = make_float3(a.x - b.x, a.y - b.y, a.z - b.z);
+	return d.x * d.x + d.y * d.y + d.z * d.z;
+}
 #endif
 
 namespace VDB
@@ -166,6 +200,24 @@ namespace VDB
 
 		__host__ __device__
 			inline operator Eigen::Vector3f& () { return *reinterpret_cast<Eigen::Vector3f*>(this); }
+
+		__host__ __device__ inline float squaredNorm() const { return x * x + y * y + z * z; }
+
+		__host__ __device__ inline float norm() const { return sqrtf(squaredNorm()); }
+
+		__host__ __device__ inline Vector3f normalized() const
+		{
+			float n = norm();
+			if (n > 0.0f)
+			{
+				return Vector3f{ x / n, y / n, z / n };
+			}
+			return Vector3f{ 0.0f, 0.0f, 0.0f };
+		}
+
+		__host__ __device__ static inline Vector3f UnitX() { return { 1.0f, 0.0f, 0.0f }; }
+		__host__ __device__ static inline Vector3f UnitY() { return { 0.0f, 1.0f, 0.0f }; }
+		__host__ __device__ static inline Vector3f UnitZ() { return { 0.0f, 0.0f, 1.0f }; }
 	};
 
 	union Vector4f
@@ -686,6 +738,179 @@ namespace VDB
 		float3 pcaNormal;
 	};
 
+	__global__ void computeHashKernel(
+		const float3* positions, int* particleHash, int numParticles, float cellSize, int3 gridSize, float3 worldOrigin)
+	{
+		int index = blockIdx.x * blockDim.x + threadIdx.x;
+		if (index >= numParticles)
+		{
+			return;
+		}
+		float3 p = positions[index];
+		int gridX = (int)((p.x - worldOrigin.x) / cellSize);
+		int gridY = (int)((p.y - worldOrigin.y) / cellSize);
+		int gridZ = (int)((p.z - worldOrigin.z) / cellSize);
+		if (gridX < 0)
+		{
+			gridX = 0;
+		}
+		else if (gridX >= gridSize.x)
+		{
+			gridX = gridSize.x - 1;
+		}
+		if (gridY < 0)
+		{
+			gridY = 0;
+		}
+		else if (gridY >= gridSize.y)
+		{
+			gridY = gridSize.y - 1;
+		}
+		if (gridZ < 0)
+		{
+			gridZ = 0;
+		}
+		else if (gridZ >= gridSize.z)
+		{
+			gridZ = gridSize.z - 1;
+		}
+		particleHash[index] = (gridZ * gridSize.y + gridY) * gridSize.x + gridX;
+	}
+
+	__global__ void findCellStartEndKernel(const int* particleHash, int* cellStart, int* cellEnd, int numParticles)
+	{
+		int index = blockIdx.x * blockDim.x + threadIdx.x;
+		if (index >= numParticles)
+		{
+			return;
+		}
+		int currentHash = particleHash[index];
+		if (index == 0)
+		{
+			cellStart[currentHash] = index;
+		}
+		else
+		{
+			int prevHash = particleHash[index - 1];
+			if (currentHash != prevHash)
+			{
+				cellEnd[prevHash] = index;
+				cellStart[currentHash] = index;
+			}
+		}
+		if (index == numParticles - 1)
+		{
+			cellEnd[currentHash] = numParticles;
+		}
+	}
+
+	__global__ void initUnionFindKernel(unsigned int* labels, int numPoints)
+	{
+		int index = blockIdx.x * blockDim.x + threadIdx.x;
+		if (index < numPoints)
+		{
+			labels[index] = (unsigned int)index;
+		}
+	}
+
+	__global__ void unionClustersKernel(
+		const float3* __restrict__ positions,
+		const int* __restrict__ cellStart,
+		const int* __restrict__ cellEnd,
+		unsigned int* __restrict__ labels,
+		int numPoints,
+		float clusterDistSq,
+		float cellSize,
+		int3 gridSize,
+		float3 worldOrigin)
+	{
+		int index = blockIdx.x * blockDim.x + threadIdx.x;
+		if (index >= numPoints) return;
+
+		float3 myPos = FETCH(positions, index);
+		float invCellSize = 1.0f / cellSize;
+
+		int gridX = max(0, min((int)((myPos.x - worldOrigin.x) * invCellSize), gridSize.x - 1));
+		int gridY = max(0, min((int)((myPos.y - worldOrigin.y) * invCellSize), gridSize.y - 1));
+		int gridZ = max(0, min((int)((myPos.z - worldOrigin.z) * invCellSize), gridSize.z - 1));
+
+		for (int z = -1; z <= 1; ++z)
+		{
+			for (int y = -1; y <= 1; ++y)
+			{
+				for (int x = -1; x <= 1; ++x)
+				{
+					int nx = gridX + x;
+					int ny = gridY + y;
+					int nz = gridZ + z;
+
+					if (nx >= 0 && nx < gridSize.x && ny >= 0 && ny < gridSize.y && nz >= 0 && nz < gridSize.z)
+					{
+						int hash = (nz * gridSize.y + ny) * gridSize.x + nx;
+						int start = FETCH(cellStart, hash);
+						if (start != -1)
+						{
+							int end = FETCH(cellEnd, hash);
+							for (int j = start; j < end; ++j)
+							{
+								if (j <= index) continue;
+
+								float3 otherPos = FETCH(positions, j);
+								float d2 = DistanceSq(myPos, otherPos);
+
+								if (d2 <= clusterDistSq)
+								{
+									unsigned int rootA = index;
+									unsigned int rootB = j;
+
+									while (rootA != labels[rootA]) rootA = labels[rootA];
+									while (rootB != labels[rootB]) rootB = labels[rootB];
+
+									if (rootA < rootB) atomicMin(&labels[rootB], rootA);
+									else if (rootB < rootA) atomicMin(&labels[rootA], rootB);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	__global__ void flattenLabelsKernel(unsigned int* labels, bool* changed, int numPoints)
+	{
+		int index = blockIdx.x * blockDim.x + threadIdx.x;
+		if (index >= numPoints) return;
+
+		unsigned int parent = labels[index];
+		unsigned int root = labels[parent];
+
+		if (root != parent)
+		{
+			labels[index] = root;
+			*changed = true;
+		}
+	}
+
+	__global__ void flattenLabelsFinalKernel(unsigned int* labels, int numPoints)
+	{
+		int index = blockIdx.x * blockDim.x + threadIdx.x;
+		if (index >= numPoints)
+		{
+			return;
+		}
+
+		unsigned int curr = labels[index];
+		unsigned int next = labels[curr];
+
+		while (curr != next)
+		{
+			curr = next;
+			next = labels[curr];
+		}
+		labels[index] = curr;
+	}
+
 	struct CuSparseCells
 	{
 		int3 gridSize;
@@ -697,12 +922,157 @@ namespace VDB
 		thrust::device_vector<int> cellStartIndices;
 		thrust::device_vector<int> cellEndIndices;
 
-		CuSparseCells();
+		CuSparseCells() {}
 
-		void Build(CuPointCloud* cloud);
-		void Build(CuPointCloud* cloud, float cellSize);
+		void Build(CuPointCloud* cloud)
+		{
+			if (cloud == nullptr || cloud->size() == 0)
+			{
+				return;
+			}
 
-		void ApplyClustering(CuPointCloud* cloud, unsigned int* d_outLabels, float clusterDistance = 0.1f);
+			cellSize = computeAutoCellSize(cloud->points, 1.5f);
+
+			printf("Computed cell size: %f\n", cellSize);
+
+			worldOrigin = cloud->aabbMin;
+			float3 maxP = cloud->aabbMax;
+			float3 gridDimf = { (maxP.x - worldOrigin.x) / cellSize, (maxP.y - worldOrigin.y) / cellSize, (maxP.z - worldOrigin.z) / cellSize };
+
+			gridSize = { (int)ceilf(gridDimf.x) + 1, (int)ceilf(gridDimf.y) + 1, (int)ceilf(gridDimf.z) + 1 };
+
+			numberOfCells = gridSize.x * gridSize.y * gridSize.z;
+
+			size_t numPoints = cloud->size();
+
+			if (hashCodes.size() != numPoints)
+			{
+				hashCodes.resize(numPoints);
+			}
+
+			if (cellStartIndices.size() != numberOfCells)
+			{
+				cellStartIndices.resize(numberOfCells);
+			}
+
+			if (cellEndIndices.size() != numberOfCells)
+			{
+				cellEndIndices.resize(numberOfCells);
+			}
+
+			thrust::fill(cellStartIndices.begin(), cellStartIndices.end(), -1);
+			thrust::fill(cellEndIndices.begin(), cellEndIndices.end(), -1);
+
+			int blockSize = 256;
+			int numBlocks = (int)((numPoints + blockSize - 1) / blockSize);
+
+			computeHashKernel << <numBlocks, blockSize >> > (thrust::raw_pointer_cast(cloud->points.data()), thrust::raw_pointer_cast(hashCodes.data()), (int)numPoints, cellSize, gridSize, worldOrigin);
+
+			cudaDeviceSynchronize();
+
+			thrust::sort_by_key(hashCodes.begin(), hashCodes.end(), thrust::make_zip_iterator(thrust::make_tuple(cloud->points.begin(), cloud->normals.begin(), cloud->colors.begin(), cloud->isAlive.begin())));
+
+			findCellStartEndKernel << <numBlocks, blockSize >> > (thrust::raw_pointer_cast(hashCodes.data()), thrust::raw_pointer_cast(cellStartIndices.data()), thrust::raw_pointer_cast(cellEndIndices.data()), (int)numPoints);
+
+			cudaDeviceSynchronize();
+		}
+
+		void Build(CuPointCloud* cloud, float cellSize)
+		{
+			if (cloud == nullptr || cloud->size() == 0)
+			{
+				return;
+			}
+
+			CUDA_TS(CuSParseCellsBuild);
+
+			this->cellSize = cellSize;
+
+			worldOrigin = cloud->aabbMin;
+			float3 maxP = cloud->aabbMax;
+			float3 gridDimf = { (maxP.x - worldOrigin.x) / cellSize, (maxP.y - worldOrigin.y) / cellSize, (maxP.z - worldOrigin.z) / cellSize };
+
+			gridSize = { (int)ceilf(gridDimf.x) + 1, (int)ceilf(gridDimf.y) + 1, (int)ceilf(gridDimf.z) + 1 };
+
+			numberOfCells = gridSize.x * gridSize.y * gridSize.z;
+
+			size_t numPoints = cloud->size();
+
+			if (hashCodes.size() != numPoints)
+			{
+				hashCodes.resize(numPoints);
+			}
+
+			if (cellStartIndices.size() != numberOfCells)
+			{
+				cellStartIndices.resize(numberOfCells);
+			}
+
+			if (cellEndIndices.size() != numberOfCells)
+			{
+				cellEndIndices.resize(numberOfCells);
+			}
+
+			CUDA_TS(CuSParseCellsBuild_Fill);
+			thrust::fill(cellStartIndices.begin(), cellStartIndices.end(), -1);
+			thrust::fill(cellEndIndices.begin(), cellEndIndices.end(), -1);
+			CUDA_TE(CuSParseCellsBuild_Fill);
+
+			CUDA_TS(CuSParseCellsBuild_Hash);
+			int blockSize = 256;
+			int numBlocks = (int)((numPoints + blockSize - 1) / blockSize);
+
+			computeHashKernel << <numBlocks, blockSize >> > (thrust::raw_pointer_cast(cloud->points.data()), thrust::raw_pointer_cast(hashCodes.data()), (int)numPoints, cellSize, gridSize, worldOrigin);
+
+			cudaDeviceSynchronize();
+			CUDA_TE(CuSParseCellsBuild_Hash);
+
+			CUDA_TS(CuSParseCellsBuild_Sort);
+			thrust::sort_by_key(hashCodes.begin(), hashCodes.end(), thrust::make_zip_iterator(thrust::make_tuple(cloud->points.begin(), cloud->normals.begin(), cloud->colors.begin(), cloud->isAlive.begin())));
+			CUDA_TE(CuSParseCellsBuild_Sort);
+
+			CUDA_TS(CuSParseCellsBuild_Find);
+			findCellStartEndKernel << <numBlocks, blockSize >> > (thrust::raw_pointer_cast(hashCodes.data()), thrust::raw_pointer_cast(cellStartIndices.data()), thrust::raw_pointer_cast(cellEndIndices.data()), (int)numPoints);
+
+			cudaDeviceSynchronize();
+			CUDA_TE(CuSParseCellsBuild_Find);
+
+			CUDA_TE(CuSParseCellsBuild);
+		}
+
+		void ApplyClustering(CuPointCloud* cloud, unsigned int* d_outLabels, float clusterDistance = 0.1f)
+		{
+			if (cloud == nullptr || cloud->size() == 0 || d_outLabels == nullptr)
+			{
+				return;
+			}
+
+			CUDA_TS(Clustering_UnionFind);
+
+			int numPoints = (int)cloud->size();
+			float clusterDistSq = clusterDistance * clusterDistance;
+			int blockSize = 256;
+			int numBlocks = (numPoints + blockSize - 1) / blockSize;
+
+			initUnionFindKernel << <numBlocks, blockSize >> > (d_outLabels, numPoints);
+
+			unionClustersKernel << <numBlocks, blockSize >> > (
+				thrust::raw_pointer_cast(cloud->points.data()),
+				thrust::raw_pointer_cast(cellStartIndices.data()),
+				thrust::raw_pointer_cast(cellEndIndices.data()),
+				d_outLabels,
+				numPoints,
+				clusterDistSq,
+				cellSize,
+				gridSize,
+				worldOrigin
+				);
+
+			flattenLabelsFinalKernel << <numBlocks, blockSize >> > (d_outLabels, numPoints);
+
+			cudaDeviceSynchronize();
+			CUDA_TE(Clustering_UnionFind);
+		}
 
 		thrust::device_vector<float> ApplySOR(CuPointCloud* cloud, int k = 30, float stdDevMult = 1.0f);
 
@@ -1398,6 +1768,203 @@ namespace VDB
 				(double)activeBlocksCount / maxBlocks * 100.0, activeBlocksCount, maxBlocks);
 		}
 
+		void VisualizeVoxelsBatch_Surface_Clustering_Filtered(uint32_t maxBlocks, float blockSize, uint32_t activeBlocksCount)
+		{
+			uint32_t maxOut = 70000000;
+			std::vector<ExtractedVoxel> hostOut(maxOut);
+
+			// 1. Zero-crossing 포인트 추출
+			uint32_t finalCnt = ExtractZeroCrossingVoxelsToHost(blockSize, hostOut.data(), maxOut);
+
+			if (finalCnt > 0)
+			{
+				uint32_t limit = (finalCnt > maxOut) ? maxOut : finalCnt;
+
+				std::vector<Vector3f> surfacePoints;
+				std::vector<Vector3f> surfaceNormals;
+				std::vector<Vector4f> surfaceColors;
+				surfacePoints.reserve(limit);
+				surfaceNormals.reserve(limit);
+				surfaceColors.reserve(limit);
+
+				float3 aabbMin = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+				float3 aabbMax = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
+
+				for (uint32_t i = 0; i < limit; i++)
+				{
+					surfacePoints.emplace_back(hostOut[i].position.x, hostOut[i].position.y, hostOut[i].position.z);
+					surfaceNormals.emplace_back(hostOut[i].normal.x, hostOut[i].normal.y, hostOut[i].normal.z);
+					surfaceColors.emplace_back(
+						hostOut[i].color[0] / 255.0f,
+						hostOut[i].color[1] / 255.0f,
+						hostOut[i].color[2] / 255.0f,
+						1.0f
+					);
+
+					aabbMin.x = std::min(aabbMin.x, hostOut[i].position.x);
+					aabbMin.y = std::min(aabbMin.y, hostOut[i].position.y);
+					aabbMin.z = std::min(aabbMin.z, hostOut[i].position.z);
+					aabbMax.x = std::max(aabbMax.x, hostOut[i].position.x);
+					aabbMax.y = std::max(aabbMax.y, hostOut[i].position.y);
+					aabbMax.z = std::max(aabbMax.z, hostOut[i].position.z);
+				}
+
+				size_t rawCount = surfacePoints.size();
+
+				// 2. GPU PointCloud 생성 및 클러스터링
+				CuPointCloud cloud;
+				cloud.FromHostPointers(
+					(float3*)surfacePoints.data(),
+					(float3*)surfaceNormals.data(),
+					(float4*)surfaceColors.data(),
+					(uint32_t)rawCount,
+					aabbMin,
+					aabbMax);
+
+				CuSparseCells cellGrid;
+				cellGrid.cellSize = 0.3f;
+				cellGrid.Build(&cloud, cellGrid.cellSize);
+
+				unsigned int* labelsDevice = nullptr;
+				cudaMalloc(&labelsDevice, rawCount * sizeof(unsigned int));
+
+				// Execute 함수와 동일한 임계값 적용
+				cellGrid.ApplyClustering(&cloud, labelsDevice, 0.125f);
+
+				// 3. 결과 다운로드 및 통계 처리 (Execute 로직 반영)
+				std::vector<unsigned int> labelsHost(rawCount);
+				std::vector<float3> pointsHost(rawCount);
+				std::vector<float3> normalsHost(rawCount);
+				std::vector<uchar3> colorsHost(rawCount);
+
+				cudaMemcpy(labelsHost.data(), labelsDevice, rawCount * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+				cudaMemcpy(pointsHost.data(), (const float3*)thrust::raw_pointer_cast(cloud.points.data()), rawCount * sizeof(float3), cudaMemcpyDeviceToHost);
+				cudaMemcpy(normalsHost.data(), (const float3*)thrust::raw_pointer_cast(cloud.normals.data()), rawCount * sizeof(float3), cudaMemcpyDeviceToHost);
+				cudaMemcpy(colorsHost.data(), (const uchar3*)thrust::raw_pointer_cast(cloud.colors.data()), rawCount * sizeof(uchar3), cudaMemcpyDeviceToHost);
+
+				struct ClusterStats
+				{
+					int count = 0;
+					unsigned int originalLabel = 0;
+				};
+				std::map<unsigned int, ClusterStats> clusterMap;
+
+				for (size_t i = 0; i < rawCount; ++i)
+				{
+					auto& stats = clusterMap[labelsHost[i]];
+					stats.count++;
+					stats.originalLabel = labelsHost[i];
+				}
+
+				// 4. 크기순 정렬 및 랭킹 부여
+				std::vector<ClusterStats> sortedClusters;
+				sortedClusters.reserve(clusterMap.size());
+				for (auto const& [label, stats] : clusterMap)
+				{
+					if (stats.count >= 3) sortedClusters.push_back(stats);
+				}
+
+				std::sort(sortedClusters.begin(), sortedClusters.end(),
+					[](const ClusterStats& a, const ClusterStats& b) { return a.count > b.count; });
+
+				unsigned int maxClusterId = sortedClusters.empty() ? 0xFFFFFFFF : sortedClusters[0].originalLabel;
+
+				// 5. 가장 큰 클러스터(Rank 0)만 선별하여 시각화
+				std::vector<float3> mainPos;
+				std::vector<float3> mainNorm;
+				std::vector<float4> mainCol;
+
+				aabbMin = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+				aabbMax = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
+
+				for (size_t i = 0; i < rawCount; ++i)
+				{
+					if (labelsHost[i] == maxClusterId && maxClusterId != 0xFFFFFFFF)
+					{
+						mainPos.emplace_back(pointsHost[i]);
+
+						Vector3f n(normalsHost[i].x, normalsHost[i].y, normalsHost[i].z);
+						if (n.squaredNorm() < 0.001f) n = Vector3f::UnitY();
+						mainNorm.push_back(make_float3(n.x, n.y, n.z));
+
+						mainCol.emplace_back(make_float4(
+							(float)colorsHost[i].x / 255.0f,
+							(float)colorsHost[i].y / 255.0f,
+							(float)colorsHost[i].z / 255.0f,
+							1.0f ));
+
+						aabbMin.x = std::min(aabbMin.x, pointsHost[i].x);
+						aabbMin.y = std::min(aabbMin.y, pointsHost[i].y);
+						aabbMin.z = std::min(aabbMin.z, pointsHost[i].z);
+						aabbMax.x = std::max(aabbMax.x, pointsHost[i].x);
+						aabbMax.y = std::max(aabbMax.y, pointsHost[i].y);
+						aabbMax.z = std::max(aabbMax.z, pointsHost[i].z);
+					}
+				}
+
+				if (!mainPos.empty())
+				{
+					//VD::AddSphereBatch("PointCloud", mainPos, mainNorm, 0.05f, mainCol);
+				}
+
+				cudaFree(labelsDevice);
+
+				CuPointCloud filterd;
+				filterd.FromHostPointers(
+					(float3*)mainPos.data(),
+					(float3*)mainNorm.data(),
+					(float4*)mainCol.data(),
+					(uint32_t)mainPos.size(),
+					aabbMin,
+					aabbMax);
+
+				CuSparseCells filterCellGrid;
+				filterCellGrid.cellSize = 0.3f;
+				filterCellGrid.Build(&filterd, filterCellGrid.cellSize);
+
+				//        filterCellGrid.ApplyEdgePreservingSmoothing(
+				//            &filterd,
+				//            0.5f,   // radius: 주변 이웃 탐색 반경
+				//            0.7f,   // factor: 스무딩 강도 (0.0 ~ 1.0)
+				//            0.15f,  // edgeThreshold: 엣지 보존 임계값 (0.0 ~ 1.0)
+				//			  30);    // iterations: 반복 횟수 
+
+				//filterCellGrid.ApplyEnergySmoothing(
+				//	&filterd,
+				//	0.5f,   // radius: 주변 이웃 탐색 반경
+				//	0.1f,   // dataWeight: 데이터 적합도 가중치
+				//	0.9f,   // smoothWeight: 스무딩 가중치
+				//	30);    // iterations: 반복 횟수
+
+
+				std::vector<float3> smoothPoints(mainPos.size());
+				std::vector<float3> smoothNormals(mainPos.size());
+				std::vector<uchar3> smoothColors(mainPos.size());
+				cudaMemcpy(smoothPoints.data(), (const float3*)thrust::raw_pointer_cast(filterd.points.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
+				cudaMemcpy(smoothNormals.data(), (const float3*)thrust::raw_pointer_cast(filterd.normals.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
+				cudaMemcpy(smoothColors.data(), (const uchar3*)thrust::raw_pointer_cast(filterd.colors.data()), mainPos.size() * sizeof(uchar3), cudaMemcpyDeviceToHost);
+				std::vector<float3> smoothPos;
+				std::vector<float3> smoothNorm;
+				std::vector<float4> smoothCol;
+				smoothPos.reserve(mainPos.size());
+				smoothNorm.reserve(mainPos.size());
+				smoothCol.reserve(mainPos.size());
+				for (size_t i = 0; i < mainPos.size(); ++i)
+				{
+					smoothPos.emplace_back(smoothPoints[i]);
+					Vector3f n(smoothNormals[i].x, smoothNormals[i].y, smoothNormals[i].z);
+					if (n.squaredNorm() < 0.001f) n = Vector3f::UnitY();
+					smoothNorm.push_back(make_float3(n.x, n.y, n.z));
+					smoothCol.emplace_back(make_float4(
+						(float)smoothColors[i].x / 255.0f,
+						(float)smoothColors[i].y / 255.0f,
+						(float)smoothColors[i].z / 255.0f,
+						1.0f));
+				}
+				VD::AddSphereBatch("SmoothedPointCloud", smoothPos, smoothNorm, 0.05f, smoothCol);
+			}
+		}
+
 		__device__ inline uint32_t FindBlockSlot(const Vector3f& position)
 		{
 			const float bSize = 0.8f;
@@ -1692,212 +2259,11 @@ namespace VDB
 		uint32_t activeBlocksCount = 0;
 		cudaMemcpy(&activeBlocksCount, voxelDb.d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
 
-		//VisualizeVoxelsBatch_Surface_Clustering_Filtered(voxelDb, maxBlocks, 0.8f, activeBlocksCount);
-		voxelDb.VisualizeVoxelsBatch_Surface(voxelDb, 160000, 0.8f, activeBlocksCount);
+		voxelDb.VisualizeVoxelsBatch_Surface_Clustering_Filtered(160000, 0.8f, activeBlocksCount);
+		//voxelDb.VisualizeVoxelsBatch_Surface(voxelDb, 160000, 0.8f, activeBlocksCount);
 
 		voxelDb.Free();
 	}
-
-	/*
-	void VisualizeVoxelsBatch_Surface_Clustering_Filtered(VoxelDataBase<Voxel>& voxelDb, uint32_t maxBlocks, float blockSize, uint32_t activeBlocksCount)
-	{
-		uint32_t maxOut = 70000000;
-		std::vector<ExtractedVoxel> hostOut(maxOut);
-
-		// 1. Zero-crossing 포인트 추출
-		uint32_t finalCnt = voxelDb.ExtractZeroCrossingVoxelsToHost(blockSize, hostOut.data(), maxOut);
-
-		if (finalCnt > 0)
-		{
-			uint32_t limit = (finalCnt > maxOut) ? maxOut : finalCnt;
-
-			std::vector<Vector3f> surfacePoints;
-			std::vector<Vector3f> surfaceNormals;
-			std::vector<Vector4f> surfaceColors;
-			surfacePoints.reserve(limit);
-			surfaceNormals.reserve(limit);
-			surfaceColors.reserve(limit);
-
-			float3 aabbMin = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
-			float3 aabbMax = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
-
-			for (uint32_t i = 0; i < limit; i++)
-			{
-				surfacePoints.emplace_back(hostOut[i].position.x, hostOut[i].position.y, hostOut[i].position.z);
-				surfaceNormals.emplace_back(hostOut[i].normal.x, hostOut[i].normal.y, hostOut[i].normal.z);
-				surfaceColors.emplace_back(
-					hostOut[i].color[0] / 255.0f,
-					hostOut[i].color[1] / 255.0f,
-					hostOut[i].color[2] / 255.0f,
-					1.0f
-				);
-
-				aabbMin.x = std::min(aabbMin.x, hostOut[i].position.x);
-				aabbMin.y = std::min(aabbMin.y, hostOut[i].position.y);
-				aabbMin.z = std::min(aabbMin.z, hostOut[i].position.z);
-				aabbMax.x = std::max(aabbMax.x, hostOut[i].position.x);
-				aabbMax.y = std::max(aabbMax.y, hostOut[i].position.y);
-				aabbMax.z = std::max(aabbMax.z, hostOut[i].position.z);
-			}
-
-			size_t rawCount = surfacePoints.size();
-
-			// 2. GPU PointCloud 생성 및 클러스터링
-			CuPointCloud cloud;
-			cloud.FromHostPointers(
-				(float3*)surfacePoints.data(),
-				(float3*)surfaceNormals.data(),
-				(float4*)surfaceColors.data(),
-				(uint32_t)rawCount,
-				aabbMin,
-				aabbMax);
-
-			CuSparseCells cellGrid;
-			cellGrid.cellSize = 0.3f;
-			cellGrid.Build(&cloud, cellGrid.cellSize);
-
-			unsigned int* labelsDevice = nullptr;
-			cudaMalloc(&labelsDevice, rawCount * sizeof(unsigned int));
-
-			// Execute 함수와 동일한 임계값 적용
-			cellGrid.ApplyClustering(&cloud, labelsDevice, 0.125f);
-
-			// 3. 결과 다운로드 및 통계 처리 (Execute 로직 반영)
-			std::vector<unsigned int> labelsHost(rawCount);
-			std::vector<float3> pointsHost(rawCount);
-			std::vector<float3> normalsHost(rawCount);
-			std::vector<uchar3> colorsHost(rawCount);
-
-			cudaMemcpy(labelsHost.data(), labelsDevice, rawCount * sizeof(unsigned int), cudaMemcpyDeviceToHost);
-			cudaMemcpy(pointsHost.data(), (const float3*)thrust::raw_pointer_cast(cloud.points.data()), rawCount * sizeof(float3), cudaMemcpyDeviceToHost);
-			cudaMemcpy(normalsHost.data(), (const float3*)thrust::raw_pointer_cast(cloud.normals.data()), rawCount * sizeof(float3), cudaMemcpyDeviceToHost);
-			cudaMemcpy(colorsHost.data(), (const uchar3*)thrust::raw_pointer_cast(cloud.colors.data()), rawCount * sizeof(uchar3), cudaMemcpyDeviceToHost);
-
-			struct ClusterStats
-			{
-				int count = 0;
-				unsigned int originalLabel = 0;
-			};
-			std::map<unsigned int, ClusterStats> clusterMap;
-
-			for (size_t i = 0; i < rawCount; ++i)
-			{
-				auto& stats = clusterMap[labelsHost[i]];
-				stats.count++;
-				stats.originalLabel = labelsHost[i];
-			}
-
-			// 4. 크기순 정렬 및 랭킹 부여
-			std::vector<ClusterStats> sortedClusters;
-			sortedClusters.reserve(clusterMap.size());
-			for (auto const& [label, stats] : clusterMap)
-			{
-				if (stats.count >= 3) sortedClusters.push_back(stats);
-			}
-
-			std::sort(sortedClusters.begin(), sortedClusters.end(),
-				[](const ClusterStats& a, const ClusterStats& b) { return a.count > b.count; });
-
-			unsigned int maxClusterId = sortedClusters.empty() ? 0xFFFFFFFF : sortedClusters[0].originalLabel;
-
-			// 5. 가장 큰 클러스터(Rank 0)만 선별하여 시각화
-			std::vector<Eigen::Vector3f> mainPos;
-			std::vector<Eigen::Vector3f> mainNorm;
-			std::vector<Eigen::Vector4f> mainCol;
-
-			aabbMin = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
-			aabbMax = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
-
-			for (size_t i = 0; i < rawCount; ++i)
-			{
-				if (labelsHost[i] == maxClusterId && maxClusterId != 0xFFFFFFFF)
-				{
-					mainPos.emplace_back(pointsHost[i].x, pointsHost[i].y, pointsHost[i].z);
-
-					Eigen::Vector3f n(normalsHost[i].x, normalsHost[i].y, normalsHost[i].z);
-					if (n.squaredNorm() < 0.001f) n = Eigen::Vector3f::UnitY();
-					mainNorm.push_back(n);
-
-					mainCol.emplace_back(
-						(float)colorsHost[i].x / 255.0f,
-						(float)colorsHost[i].y / 255.0f,
-						(float)colorsHost[i].z / 255.0f,
-						1.0f
-					);
-
-					aabbMin.x = std::min(aabbMin.x, pointsHost[i].x);
-					aabbMin.y = std::min(aabbMin.y, pointsHost[i].y);
-					aabbMin.z = std::min(aabbMin.z, pointsHost[i].z);
-					aabbMax.x = std::max(aabbMax.x, pointsHost[i].x);
-					aabbMax.y = std::max(aabbMax.y, pointsHost[i].y);
-					aabbMax.z = std::max(aabbMax.z, pointsHost[i].z);
-				}
-			}
-
-			if (!mainPos.empty())
-			{
-				//VD::AddSphereBatch("PointCloud", mainPos, mainNorm, 0.05f, mainCol);
-			}
-
-			cudaFree(labelsDevice);
-
-			CuPointCloud filterd;
-			filterd.FromHostPointers(
-				(float3*)mainPos.data(),
-				(float3*)mainNorm.data(),
-				(float4*)mainCol.data(),
-				(uint32_t)mainPos.size(),
-				aabbMin,
-				aabbMax);
-
-			CuSparseCells filterCellGrid;
-			filterCellGrid.cellSize = 0.3f;
-			filterCellGrid.Build(&filterd, filterCellGrid.cellSize);
-
-			//        filterCellGrid.ApplyEdgePreservingSmoothing(
-			//            &filterd,
-			//            0.5f,   // radius: 주변 이웃 탐색 반경
-			//            0.7f,   // factor: 스무딩 강도 (0.0 ~ 1.0)
-			//            0.15f,  // edgeThreshold: 엣지 보존 임계값 (0.0 ~ 1.0)
-			//			  30);    // iterations: 반복 횟수 
-
-			filterCellGrid.ApplyEnergySmoothing(
-				&filterd,
-				0.5f,   // radius: 주변 이웃 탐색 반경
-				0.1f,   // dataWeight: 데이터 적합도 가중치
-				0.9f,   // smoothWeight: 스무딩 가중치
-				30);    // iterations: 반복 횟수
-
-
-			std::vector<float3> smoothPoints(mainPos.size());
-			std::vector<float3> smoothNormals(mainPos.size());
-			std::vector<uchar3> smoothColors(mainPos.size());
-			cudaMemcpy(smoothPoints.data(), (const float3*)thrust::raw_pointer_cast(filterd.points.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
-			cudaMemcpy(smoothNormals.data(), (const float3*)thrust::raw_pointer_cast(filterd.normals.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
-			cudaMemcpy(smoothColors.data(), (const uchar3*)thrust::raw_pointer_cast(filterd.colors.data()), mainPos.size() * sizeof(uchar3), cudaMemcpyDeviceToHost);
-			std::vector<Eigen::Vector3f> smoothPos;
-			std::vector<Eigen::Vector3f> smoothNorm;
-			std::vector<Eigen::Vector4f> smoothCol;
-			smoothPos.reserve(mainPos.size());
-			smoothNorm.reserve(mainPos.size());
-			smoothCol.reserve(mainPos.size());
-			for (size_t i = 0; i < mainPos.size(); ++i)
-			{
-				smoothPos.emplace_back(smoothPoints[i].x, smoothPoints[i].y, smoothPoints[i].z);
-				Eigen::Vector3f n(smoothNormals[i].x, smoothNormals[i].y, smoothNormals[i].z);
-				if (n.squaredNorm() < 0.001f) n = Eigen::Vector3f::UnitY();
-				smoothNorm.push_back(n);
-				smoothCol.emplace_back(
-					(float)smoothColors[i].x / 255.0f,
-					(float)smoothColors[i].y / 255.0f,
-					(float)smoothColors[i].z / 255.0f,
-					1.0f
-				);
-			}
-			VD::AddSphereBatch("SmoothedPointCloud", smoothPos, smoothNorm, 0.05f, smoothCol);
-		}
-	}
-	*/
 }
 
 #include "Apps.h"
