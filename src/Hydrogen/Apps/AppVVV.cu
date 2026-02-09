@@ -1773,7 +1773,6 @@ namespace VDB
 			uint32_t maxOut = 70000000;
 			std::vector<ExtractedVoxel> hostOut(maxOut);
 
-			// 1. Zero-crossing 포인트 추출
 			uint32_t finalCnt = ExtractZeroCrossingVoxelsToHost(blockSize, hostOut.data(), maxOut);
 
 			if (finalCnt > 0)
@@ -1811,7 +1810,6 @@ namespace VDB
 
 				size_t rawCount = surfacePoints.size();
 
-				// 2. GPU PointCloud 생성 및 클러스터링
 				CuPointCloud cloud;
 				cloud.FromHostPointers(
 					(float3*)surfacePoints.data(),
@@ -1828,10 +1826,8 @@ namespace VDB
 				unsigned int* labelsDevice = nullptr;
 				cudaMalloc(&labelsDevice, rawCount * sizeof(unsigned int));
 
-				// Execute 함수와 동일한 임계값 적용
 				cellGrid.ApplyClustering(&cloud, labelsDevice, 0.125f);
 
-				// 3. 결과 다운로드 및 통계 처리 (Execute 로직 반영)
 				std::vector<unsigned int> labelsHost(rawCount);
 				std::vector<float3> pointsHost(rawCount);
 				std::vector<float3> normalsHost(rawCount);
@@ -1856,7 +1852,6 @@ namespace VDB
 					stats.originalLabel = labelsHost[i];
 				}
 
-				// 4. 크기순 정렬 및 랭킹 부여
 				std::vector<ClusterStats> sortedClusters;
 				sortedClusters.reserve(clusterMap.size());
 				for (auto const& [label, stats] : clusterMap)
@@ -1869,7 +1864,6 @@ namespace VDB
 
 				unsigned int maxClusterId = sortedClusters.empty() ? 0xFFFFFFFF : sortedClusters[0].originalLabel;
 
-				// 5. 가장 큰 클러스터(Rank 0)만 선별하여 시각화
 				std::vector<float3> mainPos;
 				std::vector<float3> mainNorm;
 				std::vector<float4> mainCol;
@@ -1904,64 +1898,64 @@ namespace VDB
 
 				if (!mainPos.empty())
 				{
-					//VD::AddSphereBatch("PointCloud", mainPos, mainNorm, 0.05f, mainCol);
+					VD::AddSphereBatch("PointCloud", mainPos, mainNorm, 0.05f, mainCol);
 				}
 
 				cudaFree(labelsDevice);
 
-				CuPointCloud filterd;
-				filterd.FromHostPointers(
-					(float3*)mainPos.data(),
-					(float3*)mainNorm.data(),
-					(float4*)mainCol.data(),
-					(uint32_t)mainPos.size(),
-					aabbMin,
-					aabbMax);
+				//CuPointCloud filterd;
+				//filterd.FromHostPointers(
+				//	(float3*)mainPos.data(),
+				//	(float3*)mainNorm.data(),
+				//	(float4*)mainCol.data(),
+				//	(uint32_t)mainPos.size(),
+				//	aabbMin,
+				//	aabbMax);
 
-				CuSparseCells filterCellGrid;
-				filterCellGrid.cellSize = 0.3f;
-				filterCellGrid.Build(&filterd, filterCellGrid.cellSize);
+				//CuSparseCells filterCellGrid;
+				//filterCellGrid.cellSize = 0.3f;
+				//filterCellGrid.Build(&filterd, filterCellGrid.cellSize);
 
-				//        filterCellGrid.ApplyEdgePreservingSmoothing(
-				//            &filterd,
-				//            0.5f,   // radius: 주변 이웃 탐색 반경
-				//            0.7f,   // factor: 스무딩 강도 (0.0 ~ 1.0)
-				//            0.15f,  // edgeThreshold: 엣지 보존 임계값 (0.0 ~ 1.0)
-				//			  30);    // iterations: 반복 횟수 
+				////        filterCellGrid.ApplyEdgePreservingSmoothing(
+				////            &filterd,
+				////            0.5f,   // radius: 주변 이웃 탐색 반경
+				////            0.7f,   // factor: 스무딩 강도 (0.0 ~ 1.0)
+				////            0.15f,  // edgeThreshold: 엣지 보존 임계값 (0.0 ~ 1.0)
+				////			  30);    // iterations: 반복 횟수 
 
-				//filterCellGrid.ApplyEnergySmoothing(
-				//	&filterd,
-				//	0.5f,   // radius: 주변 이웃 탐색 반경
-				//	0.1f,   // dataWeight: 데이터 적합도 가중치
-				//	0.9f,   // smoothWeight: 스무딩 가중치
-				//	30);    // iterations: 반복 횟수
+				////filterCellGrid.ApplyEnergySmoothing(
+				////	&filterd,
+				////	0.5f,   // radius: 주변 이웃 탐색 반경
+				////	0.1f,   // dataWeight: 데이터 적합도 가중치
+				////	0.9f,   // smoothWeight: 스무딩 가중치
+				////	30);    // iterations: 반복 횟수
 
 
-				std::vector<float3> smoothPoints(mainPos.size());
-				std::vector<float3> smoothNormals(mainPos.size());
-				std::vector<uchar3> smoothColors(mainPos.size());
-				cudaMemcpy(smoothPoints.data(), (const float3*)thrust::raw_pointer_cast(filterd.points.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
-				cudaMemcpy(smoothNormals.data(), (const float3*)thrust::raw_pointer_cast(filterd.normals.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
-				cudaMemcpy(smoothColors.data(), (const uchar3*)thrust::raw_pointer_cast(filterd.colors.data()), mainPos.size() * sizeof(uchar3), cudaMemcpyDeviceToHost);
-				std::vector<float3> smoothPos;
-				std::vector<float3> smoothNorm;
-				std::vector<float4> smoothCol;
-				smoothPos.reserve(mainPos.size());
-				smoothNorm.reserve(mainPos.size());
-				smoothCol.reserve(mainPos.size());
-				for (size_t i = 0; i < mainPos.size(); ++i)
-				{
-					smoothPos.emplace_back(smoothPoints[i]);
-					Vector3f n(smoothNormals[i].x, smoothNormals[i].y, smoothNormals[i].z);
-					if (n.squaredNorm() < 0.001f) n = Vector3f::UnitY();
-					smoothNorm.push_back(make_float3(n.x, n.y, n.z));
-					smoothCol.emplace_back(make_float4(
-						(float)smoothColors[i].x / 255.0f,
-						(float)smoothColors[i].y / 255.0f,
-						(float)smoothColors[i].z / 255.0f,
-						1.0f));
-				}
-				VD::AddSphereBatch("SmoothedPointCloud", smoothPos, smoothNorm, 0.05f, smoothCol);
+				//std::vector<float3> smoothPoints(mainPos.size());
+				//std::vector<float3> smoothNormals(mainPos.size());
+				//std::vector<uchar3> smoothColors(mainPos.size());
+				//cudaMemcpy(smoothPoints.data(), (const float3*)thrust::raw_pointer_cast(filterd.points.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
+				//cudaMemcpy(smoothNormals.data(), (const float3*)thrust::raw_pointer_cast(filterd.normals.data()), mainPos.size() * sizeof(float3), cudaMemcpyDeviceToHost);
+				//cudaMemcpy(smoothColors.data(), (const uchar3*)thrust::raw_pointer_cast(filterd.colors.data()), mainPos.size() * sizeof(uchar3), cudaMemcpyDeviceToHost);
+				//std::vector<float3> smoothPos;
+				//std::vector<float3> smoothNorm;
+				//std::vector<float4> smoothCol;
+				//smoothPos.reserve(mainPos.size());
+				//smoothNorm.reserve(mainPos.size());
+				//smoothCol.reserve(mainPos.size());
+				//for (size_t i = 0; i < mainPos.size(); ++i)
+				//{
+				//	smoothPos.emplace_back(smoothPoints[i]);
+				//	Vector3f n(smoothNormals[i].x, smoothNormals[i].y, smoothNormals[i].z);
+				//	if (n.squaredNorm() < 0.001f) n = Vector3f::UnitY();
+				//	smoothNorm.push_back(make_float3(n.x, n.y, n.z));
+				//	smoothCol.emplace_back(make_float4(
+				//		(float)smoothColors[i].x / 255.0f,
+				//		(float)smoothColors[i].y / 255.0f,
+				//		(float)smoothColors[i].z / 255.0f,
+				//		1.0f));
+				//}
+				//VD::AddSphereBatch("SmoothedPointCloud", smoothPos, smoothNorm, 0.05f, smoothCol);
 			}
 		}
 
