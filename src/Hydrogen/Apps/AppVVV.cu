@@ -435,7 +435,7 @@ namespace VDB
 	};
 #pragma endregion
 
-#pragma region CuPointCloud
+#pragma region PointCloud
 	struct PickResult
 	{
 		float distance;
@@ -443,7 +443,7 @@ namespace VDB
 		float3 position;
 	};
 
-	struct CuPointCloud
+	struct PointCloud
 	{
 		float3 aabbMin = make_float3(FLT_MAX, FLT_MAX, FLT_MAX);
 		float3 aabbMax = make_float3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
@@ -455,8 +455,8 @@ namespace VDB
 
 		robin_hood::unordered_flat_map<std::string, thrust::device_vector<float>> customFloatAttributes;
 
-		CuPointCloud() {}
-		CuPointCloud(size_t n) { resize(n); }
+		PointCloud() {}
+		PointCloud(size_t n) { resize(n); }
 
 		size_t size() const { return points.size(); }
 		void resize(size_t n)
@@ -691,7 +691,6 @@ namespace VDB
 			}
 		};
 
-		// 두 결과 중 더 가까운(depth가 작은) 것을 선택하는 Functor
 		struct PickReduceOp
 		{
 			__host__ __device__
@@ -728,7 +727,7 @@ namespace VDB
 	};
 #pragma endregion
 
-	struct CuCellStats
+	struct CellInfo
 	{
 		float3 cellMin;
 		float3 cellMax;
@@ -911,7 +910,7 @@ namespace VDB
 		labels[index] = curr;
 	}
 
-	struct CuSparseCells
+	struct SparseCells
 	{
 		int3 gridSize;
 		int numberOfCells = 0;
@@ -922,9 +921,9 @@ namespace VDB
 		thrust::device_vector<int> cellStartIndices;
 		thrust::device_vector<int> cellEndIndices;
 
-		CuSparseCells() {}
+		SparseCells() {}
 
-		void Build(CuPointCloud* cloud)
+		void Build(PointCloud* cloud)
 		{
 			if (cloud == nullptr || cloud->size() == 0)
 			{
@@ -977,7 +976,7 @@ namespace VDB
 			cudaDeviceSynchronize();
 		}
 
-		void Build(CuPointCloud* cloud, float cellSize)
+		void Build(PointCloud* cloud, float cellSize)
 		{
 			if (cloud == nullptr || cloud->size() == 0)
 			{
@@ -1040,7 +1039,7 @@ namespace VDB
 			CUDA_TE(CuSParseCellsBuild);
 		}
 
-		void ApplyClustering(CuPointCloud* cloud, unsigned int* d_outLabels, float clusterDistance = 0.1f)
+		void ApplyClustering(PointCloud* cloud, unsigned int* d_outLabels, float clusterDistance = 0.1f)
 		{
 			if (cloud == nullptr || cloud->size() == 0 || d_outLabels == nullptr)
 			{
@@ -1074,30 +1073,30 @@ namespace VDB
 			CUDA_TE(Clustering_UnionFind);
 		}
 
-		thrust::device_vector<float> ApplySOR(CuPointCloud* cloud, int k = 30, float stdDevMult = 1.0f);
+		thrust::device_vector<float> ApplySOR(PointCloud* cloud, int k = 30, float stdDevMult = 1.0f);
 
-		thrust::device_vector<float> ApplyPFOR(CuPointCloud* cloud, int k = 30, float distanceThreshold = 0.085f);
+		thrust::device_vector<float> ApplyPFOR(PointCloud* cloud, int k = 30, float distanceThreshold = 0.085f);
 
-		thrust::device_vector<float> ApplyNND(CuPointCloud* cloud, int k = 30);
+		thrust::device_vector<float> ApplyNND(PointCloud* cloud, int k = 30);
 
-		thrust::device_vector<float> ApplyLDE(CuPointCloud* cloud, float radius);
+		thrust::device_vector<float> ApplyLDE(PointCloud* cloud, float radius);
 
-		//thrust::device_vector<float> ApplyKDE(CuPointCloud* cloud, float bandwidth);
+		//thrust::device_vector<float> ApplyKDE(PointCloud* cloud, float bandwidth);
 
 		std::vector<std::pair<float3, float3>> GetActiveCellBounds();
 
-		void ColorizePointsByCell(CuPointCloud* cloud);
+		void ColorizePointsByCell(PointCloud* cloud);
 
-		std::vector<CuCellStats> GetActiveCellStats(CuPointCloud* cloud);
+		std::vector<CellInfo> GetActiveCellInfo(PointCloud* cloud);
 
 		void ApplyEdgePreservingSmoothing(
-			CuPointCloud* cloud,
+			PointCloud* cloud,
 			float radius,
 			float factor,
 			float edgeThreshold,
 			int iterations);
 
-		void ApplyEnergySmoothing(CuPointCloud* cloud, float radius, float dataWeight, float smoothWeight, int iterations);
+		void ApplyEnergySmoothing(PointCloud* cloud, float radius, float dataWeight, float smoothWeight, int iterations);
 
 	private:
 		float computeAutoCellSize(const thrust::device_vector<float3>& points, float multiplier);
@@ -1810,7 +1809,7 @@ namespace VDB
 
 				size_t rawCount = surfacePoints.size();
 
-				CuPointCloud cloud;
+				PointCloud cloud;
 				cloud.FromHostPointers(
 					(float3*)surfacePoints.data(),
 					(float3*)surfaceNormals.data(),
@@ -1819,7 +1818,7 @@ namespace VDB
 					aabbMin,
 					aabbMax);
 
-				CuSparseCells cellGrid;
+				SparseCells cellGrid;
 				cellGrid.cellSize = 0.3f;
 				cellGrid.Build(&cloud, cellGrid.cellSize);
 
@@ -1903,7 +1902,7 @@ namespace VDB
 
 				cudaFree(labelsDevice);
 
-				//CuPointCloud filterd;
+				//PointCloud filterd;
 				//filterd.FromHostPointers(
 				//	(float3*)mainPos.data(),
 				//	(float3*)mainNorm.data(),
