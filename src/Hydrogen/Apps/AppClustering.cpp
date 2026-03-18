@@ -125,6 +125,95 @@ struct FlatClustering
 
 	std::vector<std::vector<unsigned int>> ExtractClusters(
 		const std::vector<Eigen::Vector3f>& points,
+		float distThreshold = 0.1f)
+	{
+		std::vector<std::vector<unsigned int>> clusters;
+		if (blockKeys.empty())
+		{
+			return clusters;
+		}
+
+		const float sqDistThreshold = distThreshold * distThreshold;
+		std::unordered_map<uint64_t, size_t> keyToBlockIdx;
+		for (size_t i = 0; i < blockKeys.size(); ++i) keyToBlockIdx[blockKeys[i]] = i;
+
+		std::vector<bool> blockVisited(blockKeys.size(), false);
+
+		for (size_t i = 0; i < blockKeys.size(); ++i)
+		{
+			if (blockVisited[i]) continue;
+
+			std::vector<unsigned int> currentCluster;
+			std::vector<size_t> blockQueue;
+
+			blockQueue.push_back(i);
+			blockVisited[i] = true;
+
+			size_t head = 0;
+			while (head < blockQueue.size())
+			{
+				size_t currBlockIdx = blockQueue[head++];
+				uint64_t key = blockKeys[currBlockIdx];
+				unsigned int curOffset = blockOffsets[currBlockIdx];
+				unsigned int curCount = blockCounts[currBlockIdx];
+
+				for (unsigned int p = 0; p < curCount; ++p) {
+					unsigned int pIdx = sortedIndices[curOffset + p];
+					currentCluster.push_back(pIdx);
+				}
+
+				int64_t xi = (int64_t)((key >> 42) & 0x1FFFFF); if (xi & 0x100000) xi |= ~0x1FFFFF;
+				int64_t yi = (int64_t)((key >> 21) & 0x1FFFFF); if (yi & 0x100000) yi |= ~0x1FFFFF;
+				int64_t zi = (int64_t)(key & 0x1FFFFF); if (zi & 0x100000) zi |= ~0x1FFFFF;
+
+				for (int64_t dz = -1; dz <= 1; ++dz) {
+					for (int64_t dy = -1; dy <= 1; ++dy) {
+						for (int64_t dx = -1; dx <= 1; ++dx) {
+							if (dx == 0 && dy == 0 && dz == 0) continue;
+
+							uint64_t neighborKey = GetKeyFromIndices(xi + dx, yi + dy, zi + dz);
+							auto it = keyToBlockIdx.find(neighborKey);
+
+							if (it != keyToBlockIdx.end() && !blockVisited[it->second])
+							{
+								size_t neighborBlockIdx = it->second;
+								unsigned int nOffset = blockOffsets[neighborBlockIdx];
+								unsigned int nCount = blockCounts[neighborBlockIdx];
+								bool isConnected = false;
+
+								for (unsigned int p1 = 0; p1 < curCount; ++p1) {
+									unsigned int idx1 = sortedIndices[curOffset + p1];
+									const Eigen::Vector3f& pt1 = points[idx1];
+
+									for (unsigned int p2 = 0; p2 < nCount; ++p2) {
+										unsigned int idx2 = sortedIndices[nOffset + p2];
+										if ((pt1 - points[idx2]).squaredNorm() <= sqDistThreshold) {
+											isConnected = true;
+											break;
+										}
+									}
+									if (isConnected) break;
+								}
+
+								if (isConnected) {
+									blockVisited[neighborBlockIdx] = true;
+									blockQueue.push_back(neighborBlockIdx);
+								}
+							}
+						}
+					}
+				}
+			}
+
+			if (!currentCluster.empty()) {
+				clusters.push_back(std::move(currentCluster));
+			}
+		}
+		return clusters;
+	}
+
+	std::vector<std::vector<unsigned int>> ExtractClusters(
+		const std::vector<Eigen::Vector3f>& points,
 		const std::vector<Eigen::Vector3f>& normals,
 		float distThreshold = 0.1f,
 		float normalThreshold = 0.9f)
@@ -224,7 +313,7 @@ public:
 	virtual void Execute() override
 	{
 		PLYFormat ply;
-		ply.Deserialize("D:\\Resources\\Default\\Compound.ply");
+		ply.Deserialize("D:\\Debug\\original_points.ply");
 		if (ply.GetPoints().empty())
 		{
 			printf("Failed to load point cloud.\n");
@@ -236,15 +325,19 @@ public:
 		static FlatClustering clustering;
 
 		TS(Build);
-		clustering.Build(ply.GetPoints(), 0.3f);
+		clustering.Build(ply.GetPoints(), 0.1f);
 		TE(Build);
 
 		TS(Extract);
+		//auto clusters = clustering.ExtractClusters(
+		//	ply.GetPoints(),
+		//	ply.GetNormals(),
+		//	0.15f,
+		//	0.9f);
+
 		auto clusters = clustering.ExtractClusters(
 			ply.GetPoints(),
-			ply.GetNormals(),
-			0.1f,
-			0.9f);
+			0.175f);
 		TE(Extract);
 
 		TE(Total);

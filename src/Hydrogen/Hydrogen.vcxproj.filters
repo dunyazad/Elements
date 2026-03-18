@@ -16,6 +16,15 @@
     <Filter Include="Apps">
       <UniqueIdentifier>{f4a6ff7c-aa59-4832-8e84-bf963dbd6b37}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Apps\Core">
+      <UniqueIdentifier>{695e6899-a538-4932-a0b8-f03f663b8725}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Apps\Core\DataStructures">
+      <UniqueIdentifier>{b79d9829-e735-4e4d-81b3-50a66643f351}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Apps\Core\Common">
+      <UniqueIdentifier>{ad7fd6b0-f894-4db5-9d31-c8432406eb39}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -35,6 +44,39 @@
     </ClInclude>
     <ClInclude Include="Apps\Apps.h">
       <Filter>Apps</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\DataStructures\VoxelDataBase.h">
+      <Filter>Apps\Core\DataStructures</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\CodingSugar.h">
+      <Filter>Apps\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\Core.h">
+      <Filter>Apps\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\DataStructures\PCD.h">
+      <Filter>Apps\Core\DataStructures</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\DataStructures\SparseCells.h">
+      <Filter>Apps\Core\DataStructures</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\DataStructures\VolumeBase.h">
+      <Filter>Apps\Core\DataStructures</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\Common\CUDAMath.h">
+      <Filter>Apps\Core\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\Common\DeviceCommon.h">
+      <Filter>Apps\Core\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\Common\DevicePrimitiveTypes.h">
+      <Filter>Apps\Core\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\Common\HostCommon.h">
+      <Filter>Apps\Core\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\Common\Time.h">
+      <Filter>Apps\Core\Common</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -91,6 +133,18 @@
   <ItemGroup>
     <CudaCompile Include="Apps\AppVVV.cu">
       <Filter>Apps</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppVoxelDataBase.cu">
+      <Filter>Apps</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\Core\DataStructures\VoxelDataBase.cu">
+      <Filter>Apps\Core\DataStructures</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\Core\DataStructures\PCD.cu">
+      <Filter>Apps\Core\DataStructures</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\Core\DataStructures\SparseCells.cu">
+      <Filter>Apps\Core\DataStructures</Filter>
     </CudaCompile>
   </ItemGroup>
 </Project>

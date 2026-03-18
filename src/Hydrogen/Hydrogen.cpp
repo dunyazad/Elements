@@ -34,6 +34,7 @@ using VD = VisualDebugging;
 
 #include "Apps/Apps.h"
 
+//const std::string  appName = "AppSimple";
 //const std::string  appName = "AppTSDF";
 //const std::string  appName = "AppTSDFDevice";
 //const std::string  appName = "AppVoxelDataBaseMemoryUsageCheck";
@@ -43,7 +44,8 @@ using VD = VisualDebugging;
 //const std::string  appName = "AppMorphologyDebug";
 //const std::string  appName = "AppICP";
 //const std::string  appName = "AppClusteringDevice";
-const std::string  appName = "AppVVV";
+//const std::string  appName = "AppVVV";
+const std::string  appName = "AppVoxelDataBase";
 
 #define MAX_LOADSTRING 100
 

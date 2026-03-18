@@ -140,7 +140,7 @@ public:
 
         unsigned int* d_labels = nullptr;
         cudaMalloc(&d_labels, rawCount * sizeof(unsigned int));
-        cellGrid.ApplyClustering(&cloud, d_labels, 0.125f);
+        cellGrid.ApplyClustering(&cloud, d_labels, 0.15f);
 
         TE(ClusteringTotal);
 
@@ -239,11 +239,12 @@ public:
 
         if (!mainPos.empty())
         {
-            VD::AddSphereBatch("PointCloud", mainPos, mainNorm, 0.025f, mainCol);
+            //VD::AddSphereBatch("PointCloud", mainPos, mainNorm, 0.025f, mainCol);
+            VD::AddSphereBatch("PointCloud", mainPos, mainNorm, 0.025f, Color::white());
         }
         if (!otherPos.empty())
         {
-            //VD::AddSphereBatch("OtherClusters", otherPos, otherNorm, 0.05f, otherCol);
+            VD::AddSphereBatch("OtherClusters", otherPos, otherNorm, 0.05f, otherCol);
         }
 
         {

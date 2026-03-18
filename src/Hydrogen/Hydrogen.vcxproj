@@ -117,7 +117,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;$(SolutionDir)External\nvapi510\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;$(SolutionDir)src\Hydrogen\Apps;$(SolutionDir)inc\robin_hood;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <DisableSpecificWarnings>4819</DisableSpecificWarnings>
     </ClCompile>
@@ -133,6 +133,8 @@
       <Defines>
       </Defines>
       <AdditionalOptions>-std=c++17 -Xcompiler /wd4819,/wd4251 -diag-suppress 177,20012,1444 -Wno-deprecated-gpu-targets %(AdditionalOptions)</AdditionalOptions>
+      <Include>
+      </Include>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -143,7 +145,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;$(SolutionDir)External\nvapi510\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;$(SolutionDir)src\Hydrogen\Apps;$(SolutionDir)inc\robin_hood;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <DisableSpecificWarnings>4819</DisableSpecificWarnings>
@@ -160,10 +162,23 @@
       <Defines>
       </Defines>
       <AdditionalOptions>-std=c++17 -Xcompiler /wd4819,/wd4251 -diag-suppress 177,20012,1444 -Wno-deprecated-gpu-targets %(AdditionalOptions)</AdditionalOptions>
+      <Include>
+      </Include>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Apps\Apps.h" />
+    <ClInclude Include="Apps\Core\CodingSugar.h" />
+    <ClInclude Include="Apps\Core\Common\CUDAMath.h" />
+    <ClInclude Include="Apps\Core\Common\DeviceCommon.h" />
+    <ClInclude Include="Apps\Core\Common\DevicePrimitiveTypes.h" />
+    <ClInclude Include="Apps\Core\Common\HostCommon.h" />
+    <ClInclude Include="Apps\Core\Common\Time.h" />
+    <ClInclude Include="Apps\Core\Core.h" />
+    <ClInclude Include="Apps\Core\DataStructures\PCD.h" />
+    <ClInclude Include="Apps\Core\DataStructures\SparseCells.h" />
+    <ClInclude Include="Apps\Core\DataStructures\VolumeBase.h" />
+    <ClInclude Include="Apps\Core\DataStructures\VoxelDataBase.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Hydrogen.h" />
     <ClInclude Include="Resource.h" />
@@ -192,7 +207,11 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="Apps\AppVoxelDataBase.cu" />
     <CudaCompile Include="Apps\AppVVV.cu" />
+    <CudaCompile Include="Apps\Core\DataStructures\PCD.cu" />
+    <CudaCompile Include="Apps\Core\DataStructures\SparseCells.cu" />
+    <CudaCompile Include="Apps\Core\DataStructures\VoxelDataBase.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
