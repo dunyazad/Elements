@@ -1,5 +1,8 @@
 #pragma once
 
+#define D2R (3.14159265358979323846 / 180.0)
+#define R2D (180.0 / 3.14159265358979323846)
+
 #define XY(v) (v).x, (v).y
 #define XY_(v) (v).x(), (v).y()
 #define XYZ(v) (v).x, (v).y, (v).z

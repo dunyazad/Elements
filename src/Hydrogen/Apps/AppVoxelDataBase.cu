@@ -129,8 +129,8 @@ public:
 
 
 
-#define DTSDF 1
-#define CLUSTERING 0
+#define DTSDF 0
+#define CLUSTERING 1
 
 #include "Apps.h"
 class AppVoxelDataBase : public App
@@ -591,7 +591,7 @@ virtual void Execute() override
 	CUDA_MALLOC(&d_labels, sizeof(unsigned int) * pcd.GetNumberOfPositions());
 
 	CUDA_TS(ApplyClustering);
-	cells.ApplyClustering(&pcd, d_labels, 0.125f, nullptr);
+	cells.ApplyClustering(&pcd, d_labels, 0.125f, 15.0f * D2R, nullptr);
 	CUDA_TE(ApplyClustering);
 
 	std::vector<unsigned int> h_labels(pcd.GetNumberOfPositions());
@@ -637,7 +637,7 @@ virtual void Execute() override
 
 		auto color = colors[l % colors.size()];
 
-		VD::AddSphere("points",
+		VD::AddSphere("PointCloud",
 			{ p.x, p.y, p.z },
 			{ n.x, n.y, n.z },
 			0.05f,

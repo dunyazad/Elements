@@ -13,8 +13,8 @@ namespace Huvitz
 
         void Build(PCD* cloud, float cellSize, CUstream_st* stream = nullptr);
         void Build(float3* points, size_t numberOfPoints, float cellSize, CUstream_st* stream = nullptr);
-        void ApplyClustering(PCD* cloud, unsigned int* outLabels, float clusterDistance, CUstream_st* stream = nullptr);
-        void ApplyClustering(float3* points, size_t numberOfPoints, unsigned int* outLabels, float clusterDistance, CUstream_st* stream = nullptr);
+        void ApplyClustering(PCD* cloud, unsigned int* labels, float clusterDistance, float angleThreshold, CUstream_st* stream = nullptr);
+        void ApplyClustering(float3* points, float3* normals, size_t numberOfPoints, unsigned int* labels, float clusterDistance, float angleThreshold, CUstream_st* stream = nullptr);
 
         inline float3 GetWorldOrigin() const
         {
@@ -44,6 +44,6 @@ namespace Huvitz
         size_t nextPointCapacity = 0;
 
         void InitialAllocate();
-        void BuildInternal(float3* points, size_t n, float cellSize, float3 origin, CUstream_st* stream);
+        void BuildInternal(float3* points, size_t numberOfPoints, float cellSize, float3 origin, CUstream_st* stream);
     };
 }
