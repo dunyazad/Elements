@@ -124,17 +124,19 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\;$(CudaToolkitLibDir);$(SolutionDir)External\Manifold\lib\$(Configuration)\</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Helium.lib;Copper.lib;cudart.lib;manifold.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\;$(CudaToolkitLibDir);$(SolutionDir)External\Manifold\lib\$(Configuration)\;$(SolutionDir)External\nvapi510\amd64</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Helium.lib;Copper.lib;cudart.lib;manifold.lib;nvapi64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
     </Link>
     <CudaCompile>
       <AdditionalCompilerOptions>
       </AdditionalCompilerOptions>
       <Defines>
       </Defines>
-      <AdditionalOptions>-std=c++17 -Xcompiler /wd4819,/wd4251 -diag-suppress 177,20012,1444 -Wno-deprecated-gpu-targets %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-std=c++17 -Xcompiler /wd4819,/wd4251 -diag-suppress 177,20012,1444 -Wno-deprecated-gpu-targets --extended-lambda %(AdditionalOptions)</AdditionalOptions>
       <Include>
       </Include>
+      <CodeGeneration>compute_86,sm_86</CodeGeneration>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -153,17 +155,19 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\;$(CudaToolkitLibDir);$(SolutionDir)External\Manifold\lib\$(Configuration)\</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\;$(CudaToolkitLibDir);$(SolutionDir)External\Manifold\lib\$(Configuration)\;$(SolutionDir)External\nvapi510\amd64</AdditionalLibraryDirectories>
       <AdditionalDependencies>Helium.lib;Copper.lib;cudart.lib;manifold.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
     </Link>
     <CudaCompile>
       <AdditionalCompilerOptions>
       </AdditionalCompilerOptions>
       <Defines>
       </Defines>
-      <AdditionalOptions>-std=c++17 -Xcompiler /wd4819,/wd4251 -diag-suppress 177,20012,1444 -Wno-deprecated-gpu-targets %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-std=c++17 -Xcompiler /wd4819,/wd4251 -diag-suppress 177,20012,1444 -Wno-deprecated-gpu-targets --extended-lambda %(AdditionalOptions)</AdditionalOptions>
       <Include>
       </Include>
+      <CodeGeneration>compute_86,sm_86</CodeGeneration>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>

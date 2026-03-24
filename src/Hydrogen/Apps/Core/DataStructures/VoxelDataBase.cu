@@ -1,38 +1,10 @@
 #include <Core/DataStructures/VoxelDataBase.h>
 #include <Core/Common/DeviceCommon.h>
 
-typedef unsigned char uchar;
-typedef float voxel_value_t;
-
 namespace Huvitz
 {
-	struct VoxelExtraAttrib {
-		static const VoxelExtraAttrib Zero;
-
-		uchar deepLearningClass; // enum DL_Class_Names
-		uchar materialID; // 0: other 255: tooth
-		unsigned short startPatchID;	// ∫πºø¿« ¡∂«’ø° øµ«‚¿ª πÃƒ£ √π ∆–ƒ° π¯»£
-		unsigned int flags : 2; // ∫πºø¿« ¿·±›ªÛ≈¬ µÓ¿« ªÛ≈¬∏¶ ¿˙¿Â.VOXEL_FLAG_**** _BIT ∑Œ ∫Ò±≥
-		unsigned int label : 30;	// ≈¨∑ØΩ∫≈Õ∏µ µ» ∑π¿Ã∫Ì π¯»£
-
-		uint8_t colorMap[4]; // colors[3], alpha (Ω≈∑⁄µµ)
-	};
-
-	struct Voxel {
-		voxel_value_t		value;
-		unsigned short		valueCount;
-		Eigen::Vector3f		normal;
-		Eigen::Vector3b		color;
-
-		Eigen::Vector3b		color_list[3];
-		uint8_t				color_score[3];
-
-		char				segmentation;
-		VoxelExtraAttrib	extraAttrib;
-	};
-
 	template <typename T>
-	__device__ inline float GetVoxelValue(VoxelDataBase<T>& db, const Eigen::Vector3f& pos)
+	__device__ inline float GetVoxelValue(VoxelDataBase<T>& db, const Vector3f& pos)
 	{
 		T* v = db.GetVoxel(pos);
 		if (v != nullptr && v->valueCount > 0)
@@ -47,17 +19,13 @@ namespace Huvitz
 	{
 		uint32_t slot = blockIdx.x * blockDim.x + threadIdx.x;
 		if (slot >= db.GetMaxBlockCount())
-		{
 			return;
-		}
 
 		uint64_t* hashTable = db.GetHashTable();
 		uint64_t key = hashTable[slot];
 
 		if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL)
-		{
 			return;
-		}
 
 		hashTable[slot] = 0;
 
@@ -70,48 +38,34 @@ namespace Huvitz
 	{
 		uint32_t threadid = blockIdx.x * blockDim.x + threadIdx.x;
 		if (threadid >= parameters.mapWidth * parameters.mapHeight)
-		{
 			return;
-		}
 
 		uint32_t u = threadid % parameters.mapWidth;
 		uint32_t v = threadid / parameters.mapWidth;
 
-		Eigen::Vector3f p_cam = parameters.d_depthMap[v * parameters.mapWidth + u];
+		Vector3f p_cam = parameters.d_depthMap[v * parameters.mapWidth + u];
 		if (false == VECTOR3F_VALID_(p_cam))
-		{
 			return;
-		}
 
-		if (p_cam.z() <= 0)
-		{
-			return;
-		}
+		Vector3f n_cam = parameters.d_normalMap[v * parameters.mapWidth + u];
+		unsigned int r = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 0];
+		unsigned int g = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 1];
+		unsigned int b = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 2];
+		Vector3b color(r, g, b);
 
-		Eigen::Vector3f n_cam = parameters.d_normalMap[v * parameters.mapWidth + u];
-		auto r = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 0];
-		auto g = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 1];
-		auto b = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 2];
-		Eigen::Vector3b color(r, g, b);
-
-		Eigen::Vector4f p_world4 = parameters.transform * Eigen::Vector4f(p_cam.x(), p_cam.y(), p_cam.z(), 1.0f);
-		Eigen::Vector4f n_world4 = parameters.transform * Eigen::Vector4f(n_cam.x(), n_cam.y(), n_cam.z(), 0.0f);
-
-		Eigen::Vector3f p_world = { p_world4.x(), p_world4.y(), p_world4.z() };
-		Eigen::Vector3f n_world = { n_world4.x(), n_world4.y(), n_world4.z() };
+		Vector3f p_world = parameters.transform.Transform(p_cam);
+		Vector3f n_world = parameters.transform.TransformNormal(n_cam);
 
 		float voxelSize = db.GetBlockSize() / 8.0f;
 		float truncDist = voxelSize * 10.0f;
 		float invVoxelSize = 1.0f / voxelSize;
 
-		Eigen::Vector3f camPos = { parameters.transform(0, 3), parameters.transform(1, 3), parameters.transform(2, 3) };
-		Eigen::Vector3f rayDir = p_world - camPos;
+		Vector3f camPos = { parameters.transform(0, 3), parameters.transform(1, 3), parameters.transform(2, 3) };
+		Vector3f rayDir = p_world - camPos;
 		float rayLen = sqrtf(rayDir.x() * rayDir.x() + rayDir.y() * rayDir.y() + rayDir.z() * rayDir.z());
 
 		if (rayLen < 1e-6f)
-		{
 			return;
-		}
 
 		rayDir.x() /= rayLen;
 		rayDir.y() /= rayLen;
@@ -122,14 +76,14 @@ namespace Huvitz
 		float step = voxelSize * 0.8f;
 
 		VoxelBlock<T>* cachedBlock = nullptr;
-		uint64_t       cachedBlockKey = 0;
-		Eigen::Vector3f       cachedBlockCenter = { 0.0f, 0.0f, 0.0f };
-		float          blockSize = db.GetBlockSize();
-		float          halfBlock = blockSize * 0.5f;
+		uint64_t cachedBlockKey = 0xFFFFFFFFFFFFFFFFULL;
+		Vector3f cachedBlockCenter = { 0.0f, 0.0f, 0.0f };
+		float blockSize = db.GetBlockSize();
+		float halfBlock = blockSize * 0.5f;
 
 		for (float t = tStart; t <= tEnd; t += step)
 		{
-			Eigen::Vector3f samplePos;
+			Vector3f samplePos;
 			samplePos.x() = camPos.x() + rayDir.x() * t;
 			samplePos.y() = camPos.y() + rayDir.y() * t;
 			samplePos.z() = camPos.z() + rayDir.z() * t;
@@ -146,9 +100,7 @@ namespace Huvitz
 			}
 
 			if (cachedBlock == nullptr)
-			{
 				continue;
-			}
 
 			int lx = static_cast<int>(floorf((samplePos.x() - (cachedBlockCenter.x() - halfBlock)) * invVoxelSize + 1e-4f));
 			int ly = static_cast<int>(floorf((samplePos.y() - (cachedBlockCenter.y() - halfBlock)) * invVoxelSize + 1e-4f));
@@ -187,17 +139,567 @@ namespace Huvitz
 		}
 	}
 
-	struct NoiseFilter2DCache
+	template <typename T>
+	__global__ void Kernel_IntegrateSurfaceNormal(VoxelDataBase<T> db, VoxelDataBaseIntegrationParameters parameters)
 	{
-		float* d_data;
-		uint32_t dimX;
-		uint32_t dimY;
-		float    originX;
-		float    originY;
-		float    cellSize;
-	};
+		uint32_t threadid = blockIdx.x * blockDim.x + threadIdx.x;
+		if (threadid >= parameters.mapWidth * parameters.mapHeight)
+			return;
 
-	// Step 1: depth map -> 2D XY ±Ì¿Ã ƒ≥Ω√ ±∏√‡
+		uint32_t u = threadid % parameters.mapWidth;
+		uint32_t v = threadid / parameters.mapWidth;
+
+		Vector3f p_cam = parameters.d_depthMap[v * parameters.mapWidth + u];
+		if (false == VECTOR3F_VALID_(p_cam))
+			return;
+
+		Vector3f n_cam = parameters.d_normalMap[v * parameters.mapWidth + u];
+		if (false == VECTOR3F_VALID_(n_cam))
+			return;
+
+		Vector3f p_world = parameters.transform.Transform(p_cam);
+		Vector3f n_world = parameters.transform.TransformNormal(n_cam);
+
+		float nLen = sqrtf(n_world.x() * n_world.x() + n_world.y() * n_world.y() + n_world.z() * n_world.z());
+		if (nLen < 1e-6f)
+			return;
+		float invNLen = 1.0f / nLen;
+		n_world.x() *= invNLen;
+		n_world.y() *= invNLen;
+		n_world.z() *= invNLen;
+
+		Vector3f camPos = {
+			parameters.transform(0, 3),
+			parameters.transform(1, 3),
+			parameters.transform(2, 3)
+		};
+
+		float vvx = p_world.x() - camPos.x();
+		float vvy = p_world.y() - camPos.y();
+		float vvz = p_world.z() - camPos.z();
+		float viewDist = sqrtf(vvx * vvx + vvy * vvy + vvz * vvz);
+		if (viewDist < 1e-6f)
+			return;
+
+		float invViewDist = 1.0f / viewDist;
+		float vdx = vvx * invViewDist;
+		float vdy = vvy * invViewDist;
+		float vdz = vvz * invViewDist;
+
+		float cosAngle = fabsf(vdx * n_world.x() + vdy * n_world.y() + vdz * n_world.z());
+		if (cosAngle < 0.1f)
+			return;
+
+		float w_depth = fminf(1.0f / fmaxf(viewDist, 1e-4f), 1.0f);
+
+		float voxelSize = db.GetBlockSize() / 8.0f;
+		float truncDist = voxelSize * 10.0f;
+		float step = voxelSize * 0.8f;
+		float invVoxelSize = 1.0f / voxelSize;
+		float blockSize = db.GetBlockSize();
+		float halfBlock = blockSize * 0.5f;
+
+		unsigned int colorR = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 0];
+		unsigned int colorG = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 1];
+		unsigned int colorB = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 2];
+
+		VoxelBlock<T>* cachedBlock = nullptr;
+		uint64_t cachedBlockKey = 0xFFFFFFFFFFFFFFFFULL;
+		Vector3f cachedBlockCenter = { 0.0f, 0.0f, 0.0f };
+
+		for (float t = -truncDist; t <= truncDist; t += step)
+		{
+			Vector3f samplePos = {
+				p_world.x() + n_world.x() * t,
+				p_world.y() + n_world.y() * t,
+				p_world.z() + n_world.z() * t
+			};
+
+			Morton64 blockKey = Morton64::FromPosition(samplePos, blockSize);
+			uint64_t key = blockKey.code;
+			if (key == 0) key = 0xFFFFFFFFFFFFFFFFULL;
+
+			if (key != cachedBlockKey)
+			{
+				cachedBlock = db.GetOrCreateVoxelBlock(samplePos);
+				cachedBlockKey = key;
+				cachedBlockCenter = blockKey.ToPosition(blockSize);
+			}
+
+			if (cachedBlock == nullptr)
+				continue;
+
+			int lx = static_cast<int>(floorf((samplePos.x() - (cachedBlockCenter.x() - halfBlock)) * invVoxelSize + 1e-4f));
+			int ly = static_cast<int>(floorf((samplePos.y() - (cachedBlockCenter.y() - halfBlock)) * invVoxelSize + 1e-4f));
+			int lz = static_cast<int>(floorf((samplePos.z() - (cachedBlockCenter.z() - halfBlock)) * invVoxelSize + 1e-4f));
+			lx = lx < 0 ? 0 : (lx > 7 ? 7 : lx);
+			ly = ly < 0 ? 0 : (ly > 7 ? 7 : ly);
+			lz = lz < 0 ? 0 : (lz > 7 ? 7 : lz);
+
+			T* voxelPtr = &(cachedBlock->voxels[(lz << 6) | (ly << 3) | lx]);
+
+			float vcx = cachedBlockCenter.x() - halfBlock + (lx + 0.5f) * voxelSize;
+			float vcy = cachedBlockCenter.y() - halfBlock + (ly + 0.5f) * voxelSize;
+			float vcz = cachedBlockCenter.z() - halfBlock + (lz + 0.5f) * voxelSize;
+
+			float sdf_raw = (p_world.x() - vcx) * n_world.x()
+				+ (p_world.y() - vcy) * n_world.y()
+				+ (p_world.z() - vcz) * n_world.z();
+
+			float tsdfValue = fmaxf(-1.0f, fminf(1.0f, sdf_raw / truncDist));
+
+			unsigned short oldWeightUS = atomicAddUShort(&(voxelPtr->valueCount), 1);
+			float oldWeight = fminf((float)oldWeightUS, MAX_WEIGHT);
+			float newWeight = oldWeight + 1.0f;
+			float weightFactor = oldWeight / newWeight;
+			float invNewWeight = 1.0f / newWeight;
+
+			float effectiveFactor = cosAngle * w_depth;
+			float blendedInvNew = invNewWeight * effectiveFactor;
+			float blendedFactor = 1.0f - blendedInvNew;
+
+			voxelPtr->value = voxelPtr->value * blendedFactor + tsdfValue * blendedInvNew;
+
+			float bNx = voxelPtr->normal.x() * weightFactor + n_world.x() * invNewWeight;
+			float bNy = voxelPtr->normal.y() * weightFactor + n_world.y() * invNewWeight;
+			float bNz = voxelPtr->normal.z() * weightFactor + n_world.z() * invNewWeight;
+			float nInvLen = rsqrtf(bNx * bNx + bNy * bNy + bNz * bNz + 1e-10f);
+			voxelPtr->normal.x() = bNx * nInvLen;
+			voxelPtr->normal.y() = bNy * nInvLen;
+			voxelPtr->normal.z() = bNz * nInvLen;
+
+			voxelPtr->color.x() = (uint8_t)((float)voxelPtr->color.x() * weightFactor + (float)colorR * invNewWeight + 0.5f);
+			voxelPtr->color.y() = (uint8_t)((float)voxelPtr->color.y() * weightFactor + (float)colorG * invNewWeight + 0.5f);
+			voxelPtr->color.z() = (uint8_t)((float)voxelPtr->color.z() * weightFactor + (float)colorB * invNewWeight + 0.5f);
+		}
+	}
+
+	__global__ void Kernel_IntegrateDirectional_Phase1(
+		VoxelDataBase<DirectionalVoxel<Voxel>> db,
+		VoxelDataBaseIntegrationParameters parameters)
+	{
+		uint32_t threadid = blockIdx.x * blockDim.x + threadIdx.x;
+		if (threadid >= parameters.mapWidth * parameters.mapHeight)
+			return;
+
+		uint32_t u = threadid % parameters.mapWidth;
+		uint32_t v = threadid / parameters.mapWidth;
+
+		Vector3f p_cam = parameters.d_depthMap[v * parameters.mapWidth + u];
+		if (false == VECTOR3F_VALID_(p_cam))
+			return;
+
+		Vector3f n_cam = parameters.d_normalMap[v * parameters.mapWidth + u];
+		if (false == VECTOR3F_VALID_(n_cam))
+			return;
+
+		Vector3f p_world = parameters.transform.Transform(p_cam);
+		Vector3f n_world = parameters.transform.TransformNormal(n_cam);
+
+		float nLen = sqrtf(n_world.x() * n_world.x() + n_world.y() * n_world.y() + n_world.z() * n_world.z());
+		if (nLen < 1e-6f)
+			return;
+		float invNLen = 1.f / nLen;
+		n_world.x() *= invNLen;
+		n_world.y() *= invNLen;
+		n_world.z() *= invNLen;
+
+		Vector3f camPos = {
+			parameters.transform(0, 3),
+			parameters.transform(1, 3),
+			parameters.transform(2, 3)
+		};
+
+		float vvx = p_world.x() - camPos.x();
+		float vvy = p_world.y() - camPos.y();
+		float vvz = p_world.z() - camPos.z();
+		float viewDist = sqrtf(vvx * vvx + vvy * vvy + vvz * vvz);
+		if (viewDist < 1e-6f)
+			return;
+		float invVD = 1.f / viewDist;
+
+		float cosAngle = fabsf((vvx * n_world.x() + vvy * n_world.y() + vvz * n_world.z()) * invVD);
+		if (cosAngle < 0.1f)
+			return;
+
+		float w_depth = fminf(1.f / fmaxf(viewDist, 1e-4f), 1.f);
+		float viewDotN = (vvx * n_world.x() + vvy * n_world.y() + vvz * n_world.z()) * invVD;
+
+		int   applicableDirs[3];
+		float dirWeights[3];
+		int   numDirs = 0;
+
+		for (int d = 0; d < DIR_COUNT; ++d)
+		{
+			Vector3f vD = GetDirectionVector(d);
+			float dot = n_world.x() * vD.x() + n_world.y() * vD.y() + n_world.z() * vD.z();
+			if (dot > kDirThreshold)
+			{
+				applicableDirs[numDirs] = d;
+				dirWeights[numDirs] = dot;
+				++numDirs;
+			}
+		}
+
+		if (numDirs == 0)
+			return;
+
+		float voxelSize = db.GetBlockSize() / 8.f;
+		float truncDist = voxelSize * 10.f;
+		float step = voxelSize * 0.8f;
+		float invVoxSize = 1.f / voxelSize;
+		float blockSize = db.GetBlockSize();
+		float halfBlock = blockSize * 0.5f;
+
+		unsigned int colorR = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 0];
+		unsigned int colorG = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 1];
+		unsigned int colorB = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 2];
+
+		VoxelBlock<DirectionalVoxel<Voxel>>* cachedBlock = nullptr;
+		uint64_t       cachedBlockKey = 0xFFFFFFFFFFFFFFFFULL;
+		Vector3f cachedCenter = { 0.f, 0.f, 0.f };
+
+		for (float t = -truncDist; t <= truncDist; t += step)
+		{
+			Vector3f samplePos = {
+				p_world.x() + n_world.x() * t,
+				p_world.y() + n_world.y() * t,
+				p_world.z() + n_world.z() * t
+			};
+
+			Morton64 bKey = Morton64::FromPosition(samplePos, blockSize);
+			uint64_t key = bKey.code;
+			if (key == 0) key = 0xFFFFFFFFFFFFFFFFULL;
+
+			if (key != cachedBlockKey)
+			{
+				cachedBlock = db.GetOrCreateVoxelBlock(samplePos);
+				cachedBlockKey = key;
+				cachedCenter = bKey.ToPosition(blockSize);
+			}
+			if (cachedBlock == nullptr)
+				continue;
+
+			int lx = (int)floorf((samplePos.x() - (cachedCenter.x() - halfBlock)) * invVoxSize + 1e-4f);
+			int ly = (int)floorf((samplePos.y() - (cachedCenter.y() - halfBlock)) * invVoxSize + 1e-4f);
+			int lz = (int)floorf((samplePos.z() - (cachedCenter.z() - halfBlock)) * invVoxSize + 1e-4f);
+			lx = lx < 0 ? 0 : (lx > 7 ? 7 : lx);
+			ly = ly < 0 ? 0 : (ly > 7 ? 7 : ly);
+			lz = lz < 0 ? 0 : (lz > 7 ? 7 : lz);
+
+			DirectionalVoxel<Voxel>* voxelPtr = &(cachedBlock->voxels[(lz << 6) | (ly << 3) | lx]);
+
+			float vcx = cachedCenter.x() - halfBlock + (lx + 0.5f) * voxelSize;
+			float vcy = cachedCenter.y() - halfBlock + (ly + 0.5f) * voxelSize;
+			float vcz = cachedCenter.z() - halfBlock + (lz + 0.5f) * voxelSize;
+
+			float sdf_raw = (p_world.x() - vcx) * n_world.x()
+				+ (p_world.y() - vcy) * n_world.y()
+				+ (p_world.z() - vcz) * n_world.z();
+			float sdf_norm = fmaxf(-1.f, fminf(1.f, sdf_raw / truncDist));
+
+			if (sdf_norm < -0.5f && viewDotN > 0.f)
+				continue;
+
+			for (int i = 0; i < numDirs; ++i)
+			{
+				int   d = applicableDirs[i];
+				float w = dirWeights[i] * cosAngle * w_depth;
+				atomicAdd(&voxelPtr->accSd[d], w * sdf_norm);
+				atomicAdd(&voxelPtr->accSw[d], w);
+			}
+
+			unsigned short oldCnt = atomicAddUShort(&voxelPtr->valueCount, 1);
+			float oldW = fminf((float)oldCnt, 100.f);
+			float newW = oldW + 1.f;
+			float invNew = 1.f / newW;
+			float oldFactor = oldW * invNew;
+
+			voxelPtr->color.x() = (uint8_t)(voxelPtr->color.x() * oldFactor + colorR * invNew + 0.5f);
+			voxelPtr->color.y() = (uint8_t)(voxelPtr->color.y() * oldFactor + colorG * invNew + 0.5f);
+			voxelPtr->color.z() = (uint8_t)(voxelPtr->color.z() * oldFactor + colorB * invNew + 0.5f);
+
+			voxelPtr->normal.x() = n_world.x();
+			voxelPtr->normal.y() = n_world.y();
+			voxelPtr->normal.z() = n_world.z();
+		}
+	}
+
+	__global__ void Kernel_IntegrateDirectional_Phase2_Voxel(
+		VoxelDataBase<DirectionalVoxel<Voxel>> db,
+		uint32_t* occupiedSlots,
+		uint32_t occupiedCount)
+	{
+		uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+		// 1 thread = 1 voxel
+		uint32_t slotIdx = tid / VoxelBlock<DirectionalVoxel<Voxel>>::VOXELS_PER_BLOCK;
+		uint32_t voxelIdx = tid % VoxelBlock<DirectionalVoxel<Voxel>>::VOXELS_PER_BLOCK;
+
+		if (slotIdx >= occupiedCount)
+			return;
+
+		uint32_t slot = occupiedSlots[slotIdx];
+		DirectionalVoxel<Voxel>& v = db.GetBlocks()[slot].voxels[voxelIdx];
+
+		bool anyUpdated = false;
+
+		for (int d = 0; d < DIR_COUNT; ++d)
+		{
+			float sw = v.accSw[d];
+			if (sw < 1e-9f) continue;
+
+			float sd = v.accSd[d];
+			float W_old = v.weight[d];
+			float D_old = v.HasDirection(d) ? v.dirValue[d] : 0.f;
+
+			v.dirValue[d] = (W_old * D_old + sd) / (W_old + sw);
+			v.weight[d] = W_old + sw;
+			v.validMask |= (1u << d);
+			v.accSd[d] = 0.f;
+			v.accSw[d] = 0.f;
+			anyUpdated = true;
+		}
+
+		for (int d = 0; d < DIR_COUNT; d += 2)
+		{
+			int dOpp = d + 1;
+			if (v.HasDirection(d) && v.HasDirection(dOpp))
+			{
+				if (v.dirValue[d] < 0.f && v.dirValue[dOpp] < 0.f)
+				{
+					v.validMask &= ~(1u << d);
+					v.validMask &= ~(1u << dOpp);
+					v.weight[d] = 0.f;
+					v.weight[dOpp] = 0.f;
+				}
+			}
+		}
+
+		if (anyUpdated && v.valueCount == 0)
+			atomicAddUShort(&v.valueCount, 1);
+	}
+
+	__global__ void Kernel_IntegrateDirectional_Phase1(
+		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db,
+		VoxelDataBaseIntegrationParameters parameters)
+	{
+		uint32_t threadid = blockIdx.x * blockDim.x + threadIdx.x;
+		if (threadid >= parameters.mapWidth * parameters.mapHeight)
+			return;
+
+		uint32_t u = threadid % parameters.mapWidth;
+		uint32_t v = threadid / parameters.mapWidth;
+
+		Vector3f p_cam = parameters.d_depthMap[v * parameters.mapWidth + u];
+		if (false == VECTOR3F_VALID_(p_cam))
+			return;
+
+		Vector3f n_cam = parameters.d_normalMap[v * parameters.mapWidth + u];
+		if (false == VECTOR3F_VALID_(n_cam))
+			return;
+
+		Vector3f p_world = parameters.transform.Transform(p_cam);
+		Vector3f n_world = parameters.transform.TransformNormal(n_cam);
+
+		float nLen = sqrtf(n_world.x() * n_world.x() + n_world.y() * n_world.y() + n_world.z() * n_world.z());
+		if (nLen < 1e-6f)
+			return;
+		float invNLen = 1.f / nLen;
+		n_world.x() *= invNLen;
+		n_world.y() *= invNLen;
+		n_world.z() *= invNLen;
+
+		Vector3f camPos = {
+			parameters.transform(0, 3),
+			parameters.transform(1, 3),
+			parameters.transform(2, 3)
+		};
+
+		float vvx = p_world.x() - camPos.x();
+		float vvy = p_world.y() - camPos.y();
+		float vvz = p_world.z() - camPos.z();
+		float viewDist = sqrtf(vvx * vvx + vvy * vvy + vvz * vvz);
+		if (viewDist < 1e-6f)
+			return;
+		float invVD = 1.f / viewDist;
+
+		float cosAngle = fabsf((vvx * n_world.x() + vvy * n_world.y() + vvz * n_world.z()) * invVD);
+		if (cosAngle < 0.1f)
+			return;
+
+		float w_depth = fminf(1.f / fmaxf(viewDist, 1e-4f), 1.f);
+		float viewDotN = (vvx * n_world.x() + vvy * n_world.y() + vvz * n_world.z()) * invVD;
+
+		int   applicableDirs[3];
+		float dirWeights[3];
+		int   numDirs = 0;
+
+		for (int d = 0; d < DIR_COUNT; ++d)
+		{
+			Vector3f vD = GetDirectionVector(d);
+			float dot = n_world.x() * vD.x() + n_world.y() * vD.y() + n_world.z() * vD.z();
+			if (dot > kDirThreshold)
+			{
+				applicableDirs[numDirs] = d;
+				dirWeights[numDirs] = dot;
+				++numDirs;
+			}
+		}
+
+		if (numDirs == 0)
+			return;
+
+		float voxelSize = db.GetBlockSize() / 8.f;
+		float truncDist = voxelSize * 5.0f;
+		float step = voxelSize * 0.8f;
+		float invVoxSize = 1.f / voxelSize;
+		float blockSize = db.GetBlockSize();
+		float halfBlock = blockSize * 0.5f;
+
+		float maxLateralDist2 = (voxelSize * 0.8f) * (voxelSize * 0.8f);
+
+		unsigned int colorR = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 0];
+		unsigned int colorG = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 1];
+		unsigned int colorB = parameters.d_colorMap[(v * parameters.mapWidth + u) * 3 + 2];
+
+		VoxelBlock<DirectionalVoxel<DummyVoxel>>* cachedBlock = nullptr;
+		uint64_t cachedBlockKey = 0xFFFFFFFFFFFFFFFFULL;
+		Vector3f cachedCenter = { 0.f, 0.f, 0.f };
+
+		for (float t = -truncDist; t <= truncDist; t += step)
+		{
+			Vector3f samplePos = {
+				p_world.x() + n_world.x() * t,
+				p_world.y() + n_world.y() * t,
+				p_world.z() + n_world.z() * t
+			};
+
+			Morton64 bKey = Morton64::FromPosition(samplePos, blockSize);
+			uint64_t key = bKey.code;
+			if (key == 0) key = 0xFFFFFFFFFFFFFFFFULL;
+
+			if (key != cachedBlockKey)
+			{
+				cachedBlock = db.GetOrCreateVoxelBlock(samplePos);
+				cachedBlockKey = key;
+				cachedCenter = bKey.ToPosition(blockSize);
+			}
+			if (cachedBlock == nullptr)
+				continue;
+
+			int lx = (int)floorf((samplePos.x() - (cachedCenter.x() - halfBlock)) * invVoxSize + 1e-4f);
+			int ly = (int)floorf((samplePos.y() - (cachedCenter.y() - halfBlock)) * invVoxSize + 1e-4f);
+			int lz = (int)floorf((samplePos.z() - (cachedCenter.z() - halfBlock)) * invVoxSize + 1e-4f);
+			lx = lx < 0 ? 0 : (lx > 7 ? 7 : lx);
+			ly = ly < 0 ? 0 : (ly > 7 ? 7 : ly);
+			lz = lz < 0 ? 0 : (lz > 7 ? 7 : lz);
+
+			float vcx = cachedCenter.x() - halfBlock + (lx + 0.5f) * voxelSize;
+			float vcy = cachedCenter.y() - halfBlock + (ly + 0.5f) * voxelSize;
+			float vcz = cachedCenter.z() - halfBlock + (lz + 0.5f) * voxelSize;
+
+			float dx = vcx - p_world.x();
+			float dy = vcy - p_world.y();
+			float dz = vcz - p_world.z();
+
+			float dotN = dx * n_world.x() + dy * n_world.y() + dz * n_world.z();
+			float latX = dx - dotN * n_world.x();
+			float latY = dy - dotN * n_world.y();
+			float latZ = dz - dotN * n_world.z();
+			float lateralDist2 = latX * latX + latY * latY + latZ * latZ;
+
+			if (lateralDist2 > maxLateralDist2)
+				continue;
+
+			DirectionalVoxel<DummyVoxel>* voxelPtr = &(cachedBlock->voxels[(lz << 6) | (ly << 3) | lx]);
+
+			float sdf_raw = (p_world.x() - vcx) * n_world.x()
+				+ (p_world.y() - vcy) * n_world.y()
+				+ (p_world.z() - vcz) * n_world.z();
+			float sdf_norm = fmaxf(-1.f, fminf(1.f, sdf_raw / truncDist));
+
+			if (sdf_norm < -0.5f && viewDotN > 0.f)
+				continue;
+
+			for (int i = 0; i < numDirs; ++i)
+			{
+				int   d = applicableDirs[i];
+				float w = dirWeights[i] * cosAngle * w_depth;
+				atomicAdd(&voxelPtr->accSd[d], w * sdf_norm);
+				atomicAdd(&voxelPtr->accSw[d], w);
+			}
+
+			unsigned short oldCnt = atomicAddUShort(&voxelPtr->valueCount, 1);
+			float oldW = fminf((float)oldCnt, 100.f);
+			float newW = oldW + 1.f;
+			float invNew = 1.f / newW;
+			float oldFactor = oldW * invNew;
+
+			voxelPtr->color.x() = (uint8_t)(voxelPtr->color.x() * oldFactor + colorR * invNew + 0.5f);
+			voxelPtr->color.y() = (uint8_t)(voxelPtr->color.y() * oldFactor + colorG * invNew + 0.5f);
+			voxelPtr->color.z() = (uint8_t)(voxelPtr->color.z() * oldFactor + colorB * invNew + 0.5f);
+
+			voxelPtr->normal.x() = n_world.x();
+			voxelPtr->normal.y() = n_world.y();
+			voxelPtr->normal.z() = n_world.z();
+		}
+	}
+
+	__global__ void Kernel_IntegrateDirectional_Phase2_DummyVoxel(
+		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db,
+		uint32_t* occupiedSlots,
+		uint32_t occupiedCount)
+	{
+		uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+		uint32_t slotIdx = tid / VoxelBlock<DirectionalVoxel<DummyVoxel>>::VOXELS_PER_BLOCK;
+		uint32_t voxelIdx = tid % VoxelBlock<DirectionalVoxel<DummyVoxel>>::VOXELS_PER_BLOCK;
+
+		if (slotIdx >= occupiedCount)
+			return;
+
+		uint32_t slot = occupiedSlots[slotIdx];
+		DirectionalVoxel<DummyVoxel>& v = db.GetBlocks()[slot].voxels[voxelIdx];
+
+		bool anyUpdated = false;
+
+		for (int d = 0; d < DIR_COUNT; ++d)
+		{
+			float sw = v.accSw[d];
+			if (sw < 1e-9f) continue;
+
+			float sd = v.accSd[d];
+			float W_old = v.weight[d];
+			float D_old = v.HasDirection(d) ? v.dirValue[d] : 0.f;
+
+			v.dirValue[d] = (W_old * D_old + sd) / (W_old + sw);
+			v.weight[d] = W_old + sw;
+			v.validMask |= (1u << d);
+			v.accSd[d] = 0.f;
+			v.accSw[d] = 0.f;
+			anyUpdated = true;
+		}
+
+		for (int d = 0; d < DIR_COUNT; d += 2)
+		{
+			int dOpp = d + 1;
+			if (v.HasDirection(d) && v.HasDirection(dOpp))
+			{
+				if (v.dirValue[d] < 0.f && v.dirValue[dOpp] < 0.f)
+				{
+					v.validMask &= ~(1u << d);
+					v.validMask &= ~(1u << dOpp);
+					v.weight[d] = 0.f;
+					v.weight[dOpp] = 0.f;
+				}
+			}
+		}
+
+		if (anyUpdated && v.valueCount == 0)
+			atomicAddUShort(&v.valueCount, 1);
+	}
+
 	template <typename T>
 	__global__ void Kernel_BuildNoiseFilter2DCache(NoiseFilterParameters nf)
 	{
@@ -205,21 +707,19 @@ namespace Huvitz
 		if (threadid >= nf.mapWidth * nf.mapHeight)
 			return;
 
-		Eigen::Vector3f p_cam = nf.d_depthMap[threadid];
+		Vector3f p_cam = nf.d_depthMap[threadid];
 		if (false == VECTOR3F_VALID_(p_cam) || p_cam.z() <= 0.0f)
 			return;
 
-		Eigen::Vector4f p_world4 = nf.transform *
-			Eigen::Vector4f(p_cam.x(), p_cam.y(), p_cam.z(), 1.0f);
+		Vector3f p_world = nf.transform.Transform(p_cam);
 
-		int ix = (int)floorf((p_world4.x() - nf.originX) / nf.cellSize);
-		int iy = (int)floorf((p_world4.y() - nf.originY) / nf.cellSize);
+		int ix = (int)floorf((p_world.x() - nf.originX) / nf.cellSize);
+		int iy = (int)floorf((p_world.y() - nf.originY) / nf.cellSize);
 
 		if (ix < 0 || iy < 0 || ix >= (int)nf.dimX || iy >= (int)nf.dimY)
 			return;
 
-		// µø¿œ ƒ√∑≥ø° ø©∑Ø «»ºø¿Ã µøΩ√ø° æ≤π«∑Œ atomic min (∞°¿Â ∞°±ÓøÓ «•∏È ¿Ø¡ˆ)
-		atomicMinFloat(&nf.d_depthCache[(uint32_t)iy * nf.dimX + (uint32_t)ix], p_world4.z());
+		atomicMinFloat(&nf.d_depthCache[(uint32_t)iy * nf.dimX + (uint32_t)ix], p_world.z());
 	}
 
 	template <typename T>
@@ -236,8 +736,8 @@ namespace Huvitz
 		Morton64 bKey(key);
 		float    bSize = db.GetBlockSize();
 		float    vSize = bSize / 8.0f;
-		Eigen::Vector3f bc = bKey.ToPosition(bSize);
-		Eigen::Vector3f origin = { bc.x() - bSize * 0.5f, bc.y() - bSize * 0.5f, bc.z() - bSize * 0.5f };
+		Vector3f bc = bKey.ToPosition(bSize);
+		Vector3f origin = { bc.x() - bSize * 0.5f, bc.y() - bSize * 0.5f, bc.z() - bSize * 0.5f };
 
 		const uint16_t MIN_WEIGHT = 3;
 		const uint16_t WEAK_WEIGHT = 10;
@@ -245,7 +745,6 @@ namespace Huvitz
 		const float    nearTolerance = vSize * 2.0f;
 		const float    farCutoff = vSize * 500.0f;
 
-		// constexpr πËø≠ ¥ÎΩ≈ static const ∑Œ º±æ (CUDA ƒø≥Œ ≥ª∫Œ »£»Ø)
 		static const int DX[6] = { 1, -1,  0,  0,  0,  0 };
 		static const int DY[6] = { 0,  0,  1, -1,  0,  0 };
 		static const int DZ[6] = { 0,  0,  0,  0,  1, -1 };
@@ -264,7 +763,6 @@ namespace Huvitz
 					float wy = origin.y() + (ly + 0.5f) * vSize;
 					float wz = origin.z() + (lz + 0.5f) * vSize;
 
-					// Phase 1: 2D ±Ì¿Ã ƒ≥Ω√ ¡∂»∏
 					int   ix = (int)floorf((wx - nf.originX) / nf.cellSize);
 					int   iy = (int)floorf((wy - nf.originY) / nf.cellSize);
 					bool  inCache = (ix >= 0 && iy >= 0 && ix < (int)nf.dimX && iy < (int)nf.dimY);
@@ -284,7 +782,6 @@ namespace Huvitz
 						continue;
 					}
 
-					// Phase 2: æ‡«— ∫πºø 6-connectivity ¿ÃøÙ ∞ÀªÁ
 					if (voxel.valueCount >= WEAK_WEIGHT)
 						continue;
 
@@ -304,7 +801,7 @@ namespace Huvitz
 						}
 						else
 						{
-							Eigen::Vector3f neighborPos = {
+							Vector3f neighborPos = {
 								origin.x() + (nx + 0.5f) * vSize,
 								origin.y() + (ny + 0.5f) * vSize,
 								origin.z() + (nz + 0.5f) * vSize
@@ -322,16 +819,13 @@ namespace Huvitz
 	}
 
 	template <typename T>
-	__global__ void InsertKernel(VoxelDataBase<T> db, Eigen::Matrix4f rt, const Eigen::Vector3f* points, const Eigen::Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
+	__global__ void InsertKernel(VoxelDataBase<T> db, Matrix4f rt, const Vector3f* points, const Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
 	{
 		uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 		if (idx >= count)
-		{
 			return;
-		}
 
-		Eigen::Vector3f p = (rt * Eigen::Vector4f(points[idx], 1.0f)).head<3>();
-
+		Vector3f p = rt.Transform(points[idx]);
 		T* v = db.GetOrCreateVoxel(p);
 
 		if (v != nullptr)
@@ -339,125 +833,13 @@ namespace Huvitz
 			atomicAdd(&(v->value), 1.0f);
 
 			if (v->valueCount < 65535)
-			{
 				atomicAddUShort(&(v->valueCount), 1);
-			}
 
 			v->color = colors[idx];
 
-			auto block = db.GetVoxelBlock(p);
+			VoxelBlock<T>* block = db.GetVoxelBlock(p);
 			if (nullptr != block)
-			{
 				block->lastTouchedFrameId = frameId;
-			}
-		}
-	}
-
-	template <typename T>
-	__global__ void TSDFIntegrateKernel(VoxelDataBase<T> db, Eigen::Matrix4f rt, const Eigen::Vector3f* points, const Eigen::Vector3f* normals, const Eigen::Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId)
-	{
-		uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
-		if (index >= count)
-		{
-			return;
-		}
-
-		Eigen::Vector3f p_local = points[index];
-		Eigen::Vector3f n_local = normals[index];
-		Eigen::Vector3b color = colors[index];
-
-		Eigen::Vector3f p_world = (rt * Eigen::Vector4f(p_local, 1.0f)).head<3>();
-		Eigen::Vector3f n_world = (rt * Eigen::Vector4f(n_local, 0.0f)).head<3>();
-
-		float n_len = rsqrtf(n_world.x() * n_world.x() + n_world.y() * n_world.y() + n_world.z() * n_world.z() + 1e-10f);
-		n_world.x() *= n_len; n_world.y() *= n_len; n_world.z() *= n_len;
-
-		float voxel_size = blockSize / 8.0f;
-		float inv_voxel_size = 1.0f / voxel_size;
-		float trunc_dist = voxel_size * 5.0f;
-
-		Eigen::Vector3f start_pos = {
-			p_world.x() - n_world.x() * trunc_dist,
-			p_world.y() - n_world.y() * trunc_dist,
-			p_world.z() - n_world.z() * trunc_dist
-		};
-
-		int curr_x = __float2int_rd(start_pos.x() * inv_voxel_size);
-		int curr_y = __float2int_rd(start_pos.y() * inv_voxel_size);
-		int curr_z = __float2int_rd(start_pos.z() * inv_voxel_size);
-
-		int step_x = (n_world.x() > 0) ? 1 : -1;
-		int step_y = (n_world.y() > 0) ? 1 : -1;
-		int step_z = (n_world.z() > 0) ? 1 : -1;
-		auto calc_t_max = [&](float pos, float dir, int step, int curr) {
-			if (fabsf(dir) < 1e-7f) return 1e30f;
-			float border = (float)(curr + (step > 0 ? 1 : 0)) * voxel_size;
-			return (border - pos) / dir;
-			};
-
-		float t_max_x = calc_t_max(start_pos.x(), n_world.x(), step_x, curr_x);
-		float t_max_y = calc_t_max(start_pos.y(), n_world.y(), step_y, curr_y);
-		float t_max_z = calc_t_max(start_pos.z(), n_world.z(), step_z, curr_z);
-
-		float t_delta_x = (fabsf(n_world.x()) > 1e-7f) ? fabsf(voxel_size / n_world.x()) : 1e30f;
-		float t_delta_y = (fabsf(n_world.y()) > 1e-7f) ? fabsf(voxel_size / n_world.y()) : 1e30f;
-		float t_delta_z = (fabsf(n_world.z()) > 1e-7f) ? fabsf(voxel_size / n_world.z()) : 1e30f;
-
-		float max_t = 2.0f * trunc_dist;
-		float t = 0.0f;
-
-		while (t <= max_t)
-		{
-			Eigen::Vector3f voxel_center = { (curr_x + 0.5f) * voxel_size, (curr_y + 0.5f) * voxel_size, (curr_z + 0.5f) * voxel_size };
-			T* voxel_ptr = db.GetOrCreateVoxel(voxel_center);
-
-			if (voxel_ptr != nullptr)
-			{
-				float dist = (voxel_center.x() - p_world.x()) * n_world.x() +
-					(voxel_center.y() - p_world.y()) * n_world.y() +
-					(voxel_center.z() - p_world.z()) * n_world.z();
-
-				unsigned short old_w_us = atomicAddUShort(&(voxel_ptr->valueCount), 1);
-
-				float old_w = fminf((float)old_w_us, MAX_WEIGHT);
-				float new_w = old_w + 1.0f;
-
-				float weight_factor = old_w / new_w;
-				float new_factor = 1.0f / new_w;
-
-				// 1. TSDF ∞™ ≈Î«’
-				voxel_ptr->value = (voxel_ptr->value * weight_factor) + (dist * new_factor);
-
-				// 2. Color ≈Î«’
-				voxel_ptr->color.x() = (uint8_t)((float)voxel_ptr->color.x() * weight_factor + (float)color.x() * new_factor + 0.5f);
-				voxel_ptr->color.y() = (uint8_t)((float)voxel_ptr->color.y() * weight_factor + (float)color.y() * new_factor + 0.5f);
-				voxel_ptr->color.z() = (uint8_t)((float)voxel_ptr->color.z() * weight_factor + (float)color.z() * new_factor + 0.5f);
-
-				// 3. Normal ≈Î«’
-				Eigen::Vector3f blended_n = {
-					voxel_ptr->normal.x() * weight_factor + n_world.x() * new_factor,
-					voxel_ptr->normal.y() * weight_factor + n_world.y() * new_factor,
-					voxel_ptr->normal.z() * weight_factor + n_world.z() * new_factor
-				};
-				float bn_len = rsqrtf(blended_n.x() * blended_n.x() + blended_n.y() * blended_n.y() + blended_n.z() * blended_n.z() + 1e-10f);
-				voxel_ptr->normal = { blended_n.x() * bn_len, blended_n.y() * bn_len, blended_n.z() * bn_len };
-				VoxelBlock<T>* block = db.GetVoxelBlock(voxel_center);
-				if (block)
-				{
-					block->lastTouchedFrameId = frameId;
-				}
-			}
-
-			if (t_max_x < t_max_y)
-			{
-				if (t_max_x < t_max_z) { t = t_max_x; t_max_x += t_delta_x; curr_x += step_x; }
-				else { t = t_max_z; t_max_z += t_delta_z; curr_z += step_z; }
-			}
-			else
-			{
-				if (t_max_y < t_max_z) { t = t_max_y; t_max_y += t_delta_y; curr_y += step_y; }
-				else { t = t_max_z; t_max_z += t_delta_z; curr_z += step_z; }
-			}
 		}
 	}
 
@@ -467,30 +849,37 @@ namespace Huvitz
 		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut)
 	{
 		uint32_t slot = blockIdx.x * blockDim.x + threadIdx.x;
-		if (slot >= db.GetMaxBlockCount()) return;
+		if (slot >= db.GetMaxBlockCount())
+			return;
 
 		uint64_t key = db.GetHashTable()[slot];
-		if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL) return;
+		if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL)
+			return;
 
 		Morton64 bKey(key);
-		Eigen::Vector3f bc = bKey.ToPosition(blockSize);
-		float    vSize = blockSize / 8.0f;
+		Vector3f bc = bKey.ToPosition(blockSize);
+		float vSize = blockSize / 8.0f;
+		float halfBlock = blockSize * 0.5f;
+
+		VoxelBlock<T>& block = db.GetBlocks()[slot];
 
 		for (int i = 0; i < 512; ++i)
 		{
-			T& v = db.GetBlocks()[slot].voxels[i];
-			if (v.valueCount == 0) continue;
+			T& v = block.voxels[i];
+			if (v.valueCount == 0)
+				continue;
 
 			uint32_t idx = atomicAdd(count, 1);
-			if (idx >= maxOut) return;
+			if (idx >= maxOut)
+				return;
 
 			int lz = i / 64;
 			int ly = (i % 64) / 8;
 			int lx = i % 8;
 
-			out[idx].position.x() = (bc.x() - blockSize * 0.5f) + (lx + 0.5f) * vSize;
-			out[idx].position.y() = (bc.y() - blockSize * 0.5f) + (ly + 0.5f) * vSize;
-			out[idx].position.z() = (bc.z() - blockSize * 0.5f) + (lz + 0.5f) * vSize;
+			out[idx].position.x() = (bc.x() - halfBlock) + (lx + 0.5f) * vSize;
+			out[idx].position.y() = (bc.y() - halfBlock) + (ly + 0.5f) * vSize;
+			out[idx].position.z() = (bc.z() - halfBlock) + (lz + 0.5f) * vSize;
 			out[idx].normal = v.normal;
 			out[idx].weight = (float)v.valueCount;
 			out[idx].color[0] = v.color.x();
@@ -511,8 +900,8 @@ namespace Huvitz
 		if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL) return;
 
 		Morton64 bKey(key);
-		Eigen::Vector3f bc = bKey.ToPosition(blockSize);
-		Eigen::Vector3f origin = { bc.x() - blockSize * 0.5f, bc.y() - blockSize * 0.5f, bc.z() - blockSize * 0.5f};
+		Vector3f bc = bKey.ToPosition(blockSize);
+		Vector3f origin = { bc.x() - blockSize * 0.5f, bc.y() - blockSize * 0.5f, bc.z() - blockSize * 0.5f };
 		float voxelSize = blockSize / 8.0f;
 		float eps = voxelSize;
 
@@ -522,10 +911,9 @@ namespace Huvitz
 				{
 					int idx0 = (lz << 6) | (ly << 3) | lx;
 					T& v0 = db.GetBlocks()[slot].voxels[idx0];
+					if (v0.valueCount < 1) continue;
 
-					if (v0.valueCount < 5) continue;
-
-					Eigen::Vector3f p0 = {
+					Vector3f p0 = {
 						origin.x() + (lx + 0.5f) * voxelSize,
 						origin.y() + (ly + 0.5f) * voxelSize,
 						origin.z() + (lz + 0.5f) * voxelSize
@@ -540,8 +928,8 @@ namespace Huvitz
 						else if (axis == 1 && ly < 7) isInternal = true;
 						else if (axis == 2 && lz < 7) isInternal = true;
 
-						Eigen::Vector3f p1 = p0;
-						if (axis == 0) p1.x() += voxelSize;
+						Vector3f p1 = p0;
+						if (axis == 0)      p1.x() += voxelSize;
 						else if (axis == 1) p1.y() += voxelSize;
 						else                p1.z() += voxelSize;
 
@@ -549,7 +937,7 @@ namespace Huvitz
 							? &db.GetBlocks()[slot].voxels[idx0 + neighborStride[axis]]
 							: db.GetVoxel(p1);
 
-						if (v1 == nullptr || v1->valueCount < 5) continue;
+						if (v1 == nullptr || v1->valueCount < 1) continue;
 
 						float f0 = v0.value;
 						float f1 = v1->value;
@@ -559,8 +947,7 @@ namespace Huvitz
 						if (outIdx >= maxOut) return;
 
 						float mu = fminf(fmaxf(-f0 / (f1 - f0), 0.0f), 1.0f);
-
-						Eigen::Vector3f interpPos = {
+						Vector3f interpPos = {
 							p0.x() + mu * (p1.x() - p0.x()),
 							p0.y() + mu * (p1.y() - p0.y()),
 							p0.z() + mu * (p1.z() - p0.z())
@@ -569,8 +956,7 @@ namespace Huvitz
 						out[outIdx].position = interpPos;
 						out[outIdx].weight = (float)v0.valueCount;
 
-						// gradient ±‚π› normal
-						float vxp = GetVoxelValue<T>(db, { interpPos.x() + eps, interpPos.y(),       interpPos.z()});
+						float vxp = GetVoxelValue<T>(db, { interpPos.x() + eps, interpPos.y(),       interpPos.z() });
 						float vxm = GetVoxelValue<T>(db, { interpPos.x() - eps, interpPos.y(),       interpPos.z() });
 						float vyp = GetVoxelValue<T>(db, { interpPos.x(),       interpPos.y() + eps, interpPos.z() });
 						float vym = GetVoxelValue<T>(db, { interpPos.x(),       interpPos.y() - eps, interpPos.z() });
@@ -583,26 +969,25 @@ namespace Huvitz
 
 						if (hasGrad)
 						{
-							Eigen::Vector3f grad = { vxp - vxm, vyp - vym, vzp - vzm };
+							Vector3f grad = { vxp - vxm, vyp - vym, vzp - vzm };
 							float len = sqrtf(grad.x() * grad.x() + grad.y() * grad.y() + grad.z() * grad.z());
 							out[outIdx].normal = (len > 1e-6f)
-								? Eigen::Vector3f(grad.x() / len, grad.y() / len, grad.z() / len)
-							: Eigen::Vector3f(0.0f, 1.0f, 0.0f);
+								? Vector3f(-grad.x() / len, -grad.y() / len, -grad.z() / len)
+								: Vector3f(0.0f, 1.0f, 0.0f);
 						}
 						else
 						{
-							Eigen::Vector3f blended = {
+							Vector3f blended = {
 								v0.normal.x() + mu * (v1->normal.x() - v0.normal.x()),
 								v0.normal.y() + mu * (v1->normal.y() - v0.normal.y()),
 								v0.normal.z() + mu * (v1->normal.z() - v0.normal.z())
 							};
 							float len = sqrtf(blended.x() * blended.x() + blended.y() * blended.y() + blended.z() * blended.z());
 							out[outIdx].normal = (len > 1e-6f)
-								? Eigen::Vector3f(blended.x() / len, blended.y() / len, blended.z() / len)
-							: v0.normal;
+								? Vector3f(blended.x() / len, blended.y() / len, blended.z() / len)
+								: v0.normal;
 						}
 
-						// color ∫∏∞£
 						out[outIdx].color[0] = (uint8_t)(v0.color.x() + mu * (float(v1->color.x()) - v0.color.x()));
 						out[outIdx].color[1] = (uint8_t)(v0.color.y() + mu * (float(v1->color.y()) - v0.color.y()));
 						out[outIdx].color[2] = (uint8_t)(v0.color.z() + mu * (float(v1->color.z()) - v0.color.z()));
@@ -614,7 +999,7 @@ namespace Huvitz
 	__global__ void Kernel_ExtractIntraRegion(
 		VoxelDataBase<T> db, float blockSize,
 		VoxelDataBaseExtractionParameters::Mode mode,
-		Eigen::Vector3f aabbMin, Eigen::Vector3f aabbMax,
+		Vector3f aabbMin, Vector3f aabbMax,
 		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut)
 	{
 		uint32_t slot = blockIdx.x * blockDim.x + threadIdx.x;
@@ -624,15 +1009,15 @@ namespace Huvitz
 		if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL) return;
 
 		Morton64 bKey(key);
-		Eigen::Vector3f bc = bKey.ToPosition(blockSize);
+		Vector3f bc = bKey.ToPosition(blockSize);
 
-		Eigen::Vector3f bMin = { bc.x() - blockSize * 0.5f, bc.y() - blockSize * 0.5f, bc.z() - blockSize * 0.5f };
-		Eigen::Vector3f bMax = { bc.x() + blockSize * 0.5f, bc.y() + blockSize * 0.5f, bc.z() + blockSize * 0.5f };
+		Vector3f bMin = { bc.x() - blockSize * 0.5f, bc.y() - blockSize * 0.5f, bc.z() - blockSize * 0.5f };
+		Vector3f bMax = { bc.x() + blockSize * 0.5f, bc.y() + blockSize * 0.5f, bc.z() + blockSize * 0.5f };
 		if (bMax.x() < aabbMin.x() || bMin.x() > aabbMax.x()) return;
 		if (bMax.y() < aabbMin.y() || bMin.y() > aabbMax.y()) return;
 		if (bMax.z() < aabbMin.z() || bMin.z() > aabbMax.z()) return;
 
-		Eigen::Vector3f origin = bMin;
+		Vector3f origin = bMin;
 		float voxelSize = blockSize / 8.0f;
 
 		auto sampleTSDF = [&](float sx, float sy, float sz) -> float
@@ -650,7 +1035,7 @@ namespace Huvitz
 					T& vn = db.GetBlocks()[slot].voxels[(lz_ << 6) | (ly_ << 3) | lx_];
 					return (vn.valueCount > 0) ? vn.value : FLT_MAX;
 				}
-				Eigen::Vector3f p = { sx, sy, sz };
+				Vector3f p = { sx, sy, sz };
 				return GetVoxelValue<T>(db, p);
 			};
 
@@ -661,16 +1046,12 @@ namespace Huvitz
 				T& v = db.GetBlocks()[slot].voxels[i];
 				if (v.valueCount == 0) continue;
 
-				int lz = i / 64;
-				int ly = (i % 64) / 8;
-				int lx = i % 8;
-
-				Eigen::Vector3f pos = {
+				int lz = i / 64, ly = (i % 64) / 8, lx = i % 8;
+				Vector3f pos = {
 					origin.x() + (lx + 0.5f) * voxelSize,
 					origin.y() + (ly + 0.5f) * voxelSize,
 					origin.z() + (lz + 0.5f) * voxelSize
 				};
-
 				if (pos.x() < aabbMin.x() || pos.x() > aabbMax.x()) continue;
 				if (pos.y() < aabbMin.y() || pos.y() > aabbMax.y()) continue;
 				if (pos.z() < aabbMin.z() || pos.z() > aabbMax.z()) continue;
@@ -699,7 +1080,7 @@ namespace Huvitz
 						T& v0 = db.GetBlocks()[slot].voxels[idx0];
 						if (v0.valueCount < 5) continue;
 
-						Eigen::Vector3f p0 = {
+						Vector3f p0 = {
 							origin.x() + (lx + 0.5f) * voxelSize,
 							origin.y() + (ly + 0.5f) * voxelSize,
 							origin.z() + (lz + 0.5f) * voxelSize
@@ -712,8 +1093,8 @@ namespace Huvitz
 							else if (axis == 1 && ly < 7) isInternal = true;
 							else if (axis == 2 && lz < 7) isInternal = true;
 
-							Eigen::Vector3f p1 = p0;
-							if (axis == 0) p1.x() += voxelSize;
+							Vector3f p1 = p0;
+							if (axis == 0)      p1.x() += voxelSize;
 							else if (axis == 1) p1.y() += voxelSize;
 							else                p1.z() += voxelSize;
 
@@ -723,13 +1104,11 @@ namespace Huvitz
 
 							if (v1 == nullptr || v1->valueCount < 5) continue;
 
-							float f0 = v0.value;
-							float f1 = v1->value;
+							float f0 = v0.value, f1 = v1->value;
 							if (f0 * f1 >= 0.0f) continue;
 
 							float mu = fminf(fmaxf(-f0 / (f1 - f0), 0.0f), 1.0f);
-
-							Eigen::Vector3f interpPos = {
+							Vector3f interpPos = {
 								p0.x() + mu * (p1.x() - p0.x()),
 								p0.y() + mu * (p1.y() - p0.y()),
 								p0.z() + mu * (p1.z() - p0.z())
@@ -758,23 +1137,23 @@ namespace Huvitz
 
 							if (hasGrad)
 							{
-								Eigen::Vector3f grad = { vxp - vxm, vyp - vym, vzp - vzm };
+								Vector3f grad = { vxp - vxm, vyp - vym, vzp - vzm };
 								float len = sqrtf(grad.x() * grad.x() + grad.y() * grad.y() + grad.z() * grad.z());
 								out[outIdx].normal = (len > 1e-6f)
-									? Eigen::Vector3f{ grad.x() / len, grad.y() / len, grad.z() / len }
-								: Eigen::Vector3f{ 0.0f, 1.0f, 0.0f };
+									? Vector3f(-grad.x() / len, -grad.y() / len, -grad.z() / len)
+									: Vector3f(0.0f, 1.0f, 0.0f);
 							}
 							else
 							{
-								Eigen::Vector3f blended = {
+								Vector3f blended = {
 									v0.normal.x() + mu * (v1->normal.x() - v0.normal.x()),
 									v0.normal.y() + mu * (v1->normal.y() - v0.normal.y()),
 									v0.normal.z() + mu * (v1->normal.z() - v0.normal.z())
 								};
 								float len = sqrtf(blended.x() * blended.x() + blended.y() * blended.y() + blended.z() * blended.z());
 								out[outIdx].normal = (len > 1e-6f)
-									? Eigen::Vector3f{ blended.x() / len, blended.y() / len, blended.z() / len }
-								: v0.normal;
+									? Vector3f(blended.x() / len, blended.y() / len, blended.z() / len)
+									: v0.normal;
 							}
 
 							out[outIdx].color[0] = (uint8_t)(v0.color.x() + mu * (float(v1->color.x()) - v0.color.x()));
@@ -782,6 +1161,257 @@ namespace Huvitz
 							out[outIdx].color[2] = (uint8_t)(v0.color.z() + mu * (float(v1->color.z()) - v0.color.z()));
 						}
 					}
+		}
+	}
+
+	__global__ void Kernel_ExtractZeroCrossing_Directional(
+		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db, float blockSize,
+		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut)
+	{
+		uint32_t slot = blockIdx.x * blockDim.x + threadIdx.x;
+		if (slot >= db.GetMaxBlockCount()) return;
+
+		uint64_t key = db.GetHashTable()[slot];
+		if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL) return;
+
+		Morton64 bKey(key);
+		Vector3f bc = bKey.ToPosition(blockSize);
+		Vector3f origin = {
+			bc.x() - blockSize * 0.5f,
+			bc.y() - blockSize * 0.5f,
+			bc.z() - blockSize * 0.5f
+		};
+		float voxelSize = blockSize / 8.0f;
+		int neighborStride[3] = { 1, 8, 64 };
+
+		auto getScalarSDF = [](const DirectionalVoxel<DummyVoxel>& v) -> float {
+			float totalW = 0.f, totalVal = 0.f;
+			for (int d = 0; d < DIR_COUNT; ++d)
+			{
+				if (v.HasDirection(d) && v.weight[d] > 0.f)
+				{
+					totalVal += v.weight[d] * v.dirValue[d];
+					totalW += v.weight[d];
+				}
+			}
+			return (totalW > 1e-9f) ? (totalVal / totalW) : FLT_MAX;
+			};
+
+		auto getMaxWeight = [](const DirectionalVoxel<DummyVoxel>& v) -> float {
+			float maxW = 0.f;
+			for (int d = 0; d < DIR_COUNT; ++d)
+				if (v.HasDirection(d) && v.weight[d] > maxW)
+					maxW = v.weight[d];
+			return maxW;
+			};
+
+		const float MIN_WEIGHT = 0.0f;
+
+		for (int lz = 0; lz < 8; ++lz)
+			for (int ly = 0; ly < 8; ++ly)
+				for (int lx = 0; lx < 8; ++lx)
+				{
+					int idx0 = (lz << 6) | (ly << 3) | lx;
+					DirectionalVoxel<DummyVoxel>& v0 = db.GetBlocks()[slot].voxels[idx0];
+					if (v0.validMask == 0) continue;
+					if (getMaxWeight(v0) < MIN_WEIGHT) continue;
+
+					float f0 = getScalarSDF(v0);
+					if (f0 == FLT_MAX) continue;
+
+					Vector3f p0 = {
+						origin.x() + (lx + 0.5f) * voxelSize,
+						origin.y() + (ly + 0.5f) * voxelSize,
+						origin.z() + (lz + 0.5f) * voxelSize
+					};
+
+					for (int axis = 0; axis < 3; ++axis)
+					{
+						bool isInternal = false;
+						if (axis == 0 && lx < 7) isInternal = true;
+						else if (axis == 1 && ly < 7) isInternal = true;
+						else if (axis == 2 && lz < 7) isInternal = true;
+
+						Vector3f p1 = p0;
+						if (axis == 0)      p1.x() += voxelSize;
+						else if (axis == 1) p1.y() += voxelSize;
+						else                p1.z() += voxelSize;
+
+						DirectionalVoxel<DummyVoxel>* v1 = isInternal
+							? &db.GetBlocks()[slot].voxels[idx0 + neighborStride[axis]]
+							: db.GetVoxel(p1);
+
+						if (v1 == nullptr || v1->validMask == 0) continue;
+						if (getMaxWeight(*v1) < MIN_WEIGHT) continue;
+
+						float f1 = getScalarSDF(*v1);
+						if (f1 == FLT_MAX) continue;
+						if (f0 * f1 >= 0.0f) continue;
+
+						uint32_t outIdx = atomicAdd(count, 1);
+						if (outIdx >= maxOut) return;
+
+						float mu = fminf(fmaxf(-f0 / (f1 - f0), 0.0f), 1.0f);
+						out[outIdx].position = {
+							p0.x() + mu * (p1.x() - p0.x()),
+							p0.y() + mu * (p1.y() - p0.y()),
+							p0.z() + mu * (p1.z() - p0.z())
+						};
+						out[outIdx].weight = getMaxWeight(v0);
+						out[outIdx].normal = v0.normal;
+						out[outIdx].color[0] = (uint8_t)(v0.color.x() + mu * (float(v1->color.x()) - v0.color.x()));
+						out[outIdx].color[1] = (uint8_t)(v0.color.y() + mu * (float(v1->color.y()) - v0.color.y()));
+						out[outIdx].color[2] = (uint8_t)(v0.color.z() + mu * (float(v1->color.z()) - v0.color.z()));
+					}
+				}
+	}
+
+	__global__ void Kernel_ExtractSurface_Directional(
+		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db, float blockSize,
+		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut)
+	{
+		uint32_t slot = blockIdx.x * blockDim.x + threadIdx.x;
+		if (slot >= db.GetMaxBlockCount()) return;
+
+		uint64_t key = db.GetHashTable()[slot];
+		if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL) return;
+
+		Morton64 bKey(key);
+		Vector3f bc = bKey.ToPosition(blockSize);
+		float vSize = blockSize / 8.0f;
+		float halfBlock = blockSize * 0.5f;
+		float surfaceThresh = 0.1f;
+		float minWeight = 5.0f;
+
+		VoxelBlock<DirectionalVoxel<DummyVoxel>>& block = db.GetBlocks()[slot];
+
+		for (int i = 0; i < 512; ++i)
+		{
+			DirectionalVoxel<DummyVoxel>& v = block.voxels[i];
+			if (v.validMask == 0) continue;
+
+			bool  isSurface = false;
+			float bestWeight = 0.f;
+			for (int d = 0; d < DIR_COUNT; ++d)
+			{
+				if (!v.HasDirection(d)) continue;
+				if (v.weight[d] < minWeight) continue;
+				if (fabsf(v.dirValue[d]) < surfaceThresh)
+				{
+					isSurface = true;
+					if (v.weight[d] > bestWeight)
+						bestWeight = v.weight[d];
+				}
+			}
+			if (!isSurface) continue;
+
+			uint32_t idx = atomicAdd(count, 1);
+			if (idx >= maxOut) return;
+
+			int lz = i / 64, ly = (i % 64) / 8, lx = i % 8;
+			out[idx].position.x() = (bc.x() - halfBlock) + (lx + 0.5f) * vSize;
+			out[idx].position.y() = (bc.y() - halfBlock) + (ly + 0.5f) * vSize;
+			out[idx].position.z() = (bc.z() - halfBlock) + (lz + 0.5f) * vSize;
+			out[idx].normal = v.normal;
+			out[idx].weight = bestWeight;
+			out[idx].color[0] = v.color.x();
+			out[idx].color[1] = v.color.y();
+			out[idx].color[2] = v.color.z();
+		}
+	}
+
+	template <typename T>
+	__global__ void Kernel_PerFrameFilter(
+		VoxelDataBase<T> db,
+		VoxelDataBaseIntegrationParameters parameters)
+	{
+		uint32_t threadid = blockIdx.x * blockDim.x + threadIdx.x;
+		if (threadid >= parameters.mapWidth * parameters.mapHeight)
+			return;
+
+		uint32_t u = threadid % parameters.mapWidth;
+		uint32_t v = threadid / parameters.mapWidth;
+
+		Vector3f p_cam = parameters.d_depthMap[v * parameters.mapWidth + u];
+		if (false == VECTOR3F_VALID_(p_cam))
+			return;
+
+		Vector3f p_world = parameters.transform.Transform(p_cam);
+
+		Vector3f camPos = {
+			parameters.transform(0, 3),
+			parameters.transform(1, 3),
+			parameters.transform(2, 3)
+		};
+
+		float dx = p_world.x() - camPos.x();
+		float dy = p_world.y() - camPos.y();
+		float dz = p_world.z() - camPos.z();
+		float rayLen = sqrtf(dx * dx + dy * dy + dz * dz);
+		if (rayLen < 1e-6f)
+			return;
+
+		float invRayLen = 1.f / rayLen;
+		float rdx = dx * invRayLen;
+		float rdy = dy * invRayLen;
+		float rdz = dz * invRayLen;
+
+		float voxelSize = db.GetBlockSize() / 8.f;
+		// Tighter guard zone: only protect voxels very close to the actual surface
+		float truncDist = voxelSize * 1.5f;
+		float step = voxelSize * 0.8f;
+		float blockSize = db.GetBlockSize();
+		float halfBlock = blockSize * 0.5f;
+		float invVoxSize = 1.f / voxelSize;
+
+		float tEnd = rayLen - truncDist;
+		if (tEnd <= step)
+			return;
+
+		// Weak voxels in free-space are likely noise: remove if below this count
+		// Strong voxels are confirmed surface from multiple frames: preserve
+		static constexpr uint16_t CARVE_THRESHOLD = 4;
+
+		VoxelBlock<T>* cachedBlock = nullptr;
+		uint64_t       cachedBlockKey = 0xFFFFFFFFFFFFFFFFULL;
+		Vector3f       cachedCenter = { 0.f, 0.f, 0.f };
+
+		for (float t = step; t < tEnd; t += step)
+		{
+			Vector3f samplePos = {
+				camPos.x() + rdx * t,
+				camPos.y() + rdy * t,
+				camPos.z() + rdz * t
+			};
+
+			Morton64 bKey = Morton64::FromPosition(samplePos, blockSize);
+			uint64_t key = bKey.code;
+			if (key == 0) key = 0xFFFFFFFFFFFFFFFFULL;
+
+			if (key != cachedBlockKey)
+			{
+				cachedBlock = db.GetVoxelBlock(samplePos); // read-only: no new block creation
+				cachedBlockKey = key;
+				cachedCenter = bKey.ToPosition(blockSize);
+			}
+
+			if (cachedBlock == nullptr)
+				continue;
+
+			int lx = (int)floorf((samplePos.x() - (cachedCenter.x() - halfBlock)) * invVoxSize + 1e-4f);
+			int ly = (int)floorf((samplePos.y() - (cachedCenter.y() - halfBlock)) * invVoxSize + 1e-4f);
+			int lz = (int)floorf((samplePos.z() - (cachedCenter.z() - halfBlock)) * invVoxSize + 1e-4f);
+			lx = lx < 0 ? 0 : (lx > 7 ? 7 : lx);
+			ly = ly < 0 ? 0 : (ly > 7 ? 7 : ly);
+			lz = lz < 0 ? 0 : (lz > 7 ? 7 : lz);
+
+			T* voxelPtr = &(cachedBlock->voxels[(lz << 6) | (ly << 3) | lx]);
+			if (voxelPtr->valueCount == 0)
+				continue;
+
+			// Only carve weak voxels: strong voxels were confirmed from many frames
+			if (voxelPtr->valueCount < CARVE_THRESHOLD)
+				*voxelPtr = {};
 		}
 	}
 
@@ -796,22 +1426,18 @@ namespace Huvitz
 	{
 		uint32_t slot = blockIdx.x * blockDim.x + threadIdx.x;
 		if (slot >= db.GetMaxBlockCount())
-		{
 			return;
-		}
 
 		uint64_t key = db.GetHashTable()[slot];
 		if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL)
-		{
 			return;
-		}
 
-		auto& block = db.GetBlocks()[slot];
+		VoxelBlock<T>& block = db.GetBlocks()[slot];
 
 		Morton64 bKey(key);
 		float bSize = db.GetBlockSize();
 		float vSize = bSize / 8.0f;
-		Eigen::Vector3f blockOrigin = {
+		Vector3f blockOrigin = {
 			bKey.ToPosition(bSize).x() - bSize * 0.5f,
 			bKey.ToPosition(bSize).y() - bSize * 0.5f,
 			bKey.ToPosition(bSize).z() - bSize * 0.5f
@@ -825,22 +1451,13 @@ namespace Huvitz
 			uint32_t outIdx = atomicAdd(numberOfVoxels, 1);
 			if (outIdx >= maxOut) return;
 
-			int lz = voxelIdx / 64;
-			int ly = (voxelIdx % 64) / 8;
-			int lx = voxelIdx % 8;
-
+			int lz = voxelIdx / 64, ly = (voxelIdx % 64) / 8, lx = voxelIdx % 8;
 			positions[outIdx] = {
 				blockOrigin.x() + (lx + 0.5f) * vSize,
 				blockOrigin.y() + (ly + 0.5f) * vSize,
 				blockOrigin.z() + (lz + 0.5f) * vSize
 			};
-
-			normals[outIdx] = {
-				voxel.normal.x(),
-				voxel.normal.y(),
-				voxel.normal.z()
-			};
-
+			normals[outIdx] = { voxel.normal.x(), voxel.normal.y(), voxel.normal.z() };
 			colors[outIdx] = {
 				(unsigned char)voxel.color.x(),
 				(unsigned char)voxel.color.y(),
@@ -849,64 +1466,118 @@ namespace Huvitz
 		}
 	}
 
+	__global__ void Kernel_ComputeAABB(
+		const Vector3f* d_depthMap,
+		uint32_t        pixelCount,
+		Matrix4f        transform,
+		cuAABB* d_aabb)
+	{
+		__shared__ float s_min[3];
+		__shared__ float s_max[3];
+
+		if (threadIdx.x == 0)
+		{
+			s_min[0] = s_min[1] = s_min[2] = FLT_MAX;
+			s_max[0] = s_max[1] = s_max[2] = -FLT_MAX;
+		}
+		__syncthreads();
+
+		uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+		if (tid < pixelCount)
+		{
+			Vector3f p_cam = d_depthMap[tid];
+			if (VECTOR3F_VALID_(p_cam))
+			{
+				Vector3f p = transform.Transform(p_cam);
+
+				// Intra-block reduction via atomicCAS on shared memory
+				// shared memory atomicCAS is cheaper than global
+				atomicMinFloatCAS(&s_min[0], p.x());
+				atomicMinFloatCAS(&s_min[1], p.y());
+				atomicMinFloatCAS(&s_min[2], p.z());
+				atomicMaxFloatCAS(&s_max[0], p.x());
+				atomicMaxFloatCAS(&s_max[1], p.y());
+				atomicMaxFloatCAS(&s_max[2], p.z());
+			}
+		}
+		__syncthreads();
+
+		// One thread per block writes block result to global
+		// -> global atomic contention = num_blocks not num_pixels
+		if (threadIdx.x == 0)
+		{
+			atomicMinFloatCAS(&d_aabb->min.x, s_min[0]);
+			atomicMinFloatCAS(&d_aabb->min.y, s_min[1]);
+			atomicMinFloatCAS(&d_aabb->min.z, s_min[2]);
+			atomicMaxFloatCAS(&d_aabb->max.x, s_max[0]);
+			atomicMaxFloatCAS(&d_aabb->max.y, s_max[1]);
+			atomicMaxFloatCAS(&d_aabb->max.z, s_max[2]);
+		}
+	}
+
 	template <typename T>
-	void VoxelDataBase<T>::Initialize(uint32_t maxBlocks, float blockSize = 0.8f)
+	bool VoxelDataBase<T>::Initialize(uint32_t maxBlocks, float blockSize)
 	{
 		maxBlockCount = maxBlocks;
 		this->blockSize = blockSize;
 
-		cudaMalloc(&d_blocks, sizeof(VoxelBlock<T>) * maxBlocks);
+		cudaError_t err = cudaMalloc(&d_blocks, sizeof(VoxelBlock<T>) * maxBlocks);
+		if (err != cudaSuccess)
+		{
+			printf("[Initialize] d_blocks alloc FAILED: %s (%zu bytes requested)\n",
+				cudaGetErrorString(err),
+				sizeof(VoxelBlock<T>) * maxBlocks);
+			return false;
+		}
+
 		cudaMalloc(&d_hashTable, sizeof(uint64_t) * maxBlocks);
 		cudaMalloc(&d_blockCount, sizeof(uint32_t));
+		cudaMalloc(&d_occupiedSlots, sizeof(uint32_t) * maxBlocks);
+
 		cudaMemset(d_blocks, 0, sizeof(VoxelBlock<T>) * maxBlocks);
 		cudaMemset(d_hashTable, 0, sizeof(uint64_t) * maxBlocks);
 		cudaMemset(d_blockCount, 0, sizeof(uint32_t));
+		cudaMemset(d_occupiedSlots, 0, sizeof(uint32_t) * maxBlocks);
+
+		return true;
 	}
 
 	template <typename T>
 	void VoxelDataBase<T>::Terminate()
 	{
-		if (d_blocks) cudaFree(d_blocks);
-		if (d_hashTable) cudaFree(d_hashTable);
-		if (d_blockCount) cudaFree(d_blockCount);
+		if (d_blocks)        cudaFree(d_blocks);
+		if (d_hashTable)     cudaFree(d_hashTable);
+		if (d_blockCount)    cudaFree(d_blockCount);
+		if (d_occupiedSlots) cudaFree(d_occupiedSlots);
+
 		d_blocks = nullptr;
 		d_hashTable = nullptr;
 		d_blockCount = nullptr;
+		d_occupiedSlots = nullptr;
 	}
 
 	template <typename T>
-	void VoxelDataBase<T>::IntegrateTSDF(const Eigen::Matrix4f& rt, const Eigen::Vector3f* d_points, const Eigen::Vector3f* d_normals, const Eigen::Vector3b* d_colors, uint32_t count, float blockSize, uint32_t frameId)
-	{
-#ifdef __CUDACC__
-		int threads = 256;
-		int blocks = (count + threads - 1) / threads;
-		//TSDFIntegrateKernel << <blocks, threads >> > (*this, rt, d_points, d_normals, d_colors, count, blockSize, frameId);
-		cudaDeviceSynchronize();
-#endif
-	}
-
-	template <typename T>
-	__device__ VoxelBlock<T>* VoxelDataBase<T>::GetVoxelBlock(const Eigen::Vector3f& position)
+	__device__ VoxelBlock<T>* VoxelDataBase<T>::GetVoxelBlock(const Vector3f& position)
 	{
 		uint32_t slot = FindBlockSlot(position);
 		return (slot != INVALID_BLOCK) ? &d_blocks[slot] : nullptr;
 	}
 
 	template <typename T>
-	__device__ VoxelBlock<T>* VoxelDataBase<T>::GetOrCreateVoxelBlock(const Eigen::Vector3f& position)
+	__device__ VoxelBlock<T>* VoxelDataBase<T>::GetOrCreateVoxelBlock(const Vector3f& position)
 	{
 		uint32_t slot = GetOrCreateBlockSlot(position);
 		return (slot != INVALID_BLOCK) ? &d_blocks[slot] : nullptr;
 	}
 
 	template <typename T>
-	__device__ T* VoxelDataBase<T>::GetVoxel(const Eigen::Vector3f& position)
+	__device__ T* VoxelDataBase<T>::GetVoxel(const Vector3f& position)
 	{
 		uint32_t slot = FindBlockSlot(position);
 		if (slot == INVALID_BLOCK) return nullptr;
 
 		Morton64 blockKey = Morton64::FromPosition(position, blockSize);
-		Eigen::Vector3f bc = blockKey.ToPosition(blockSize);
+		Vector3f bc = blockKey.ToPosition(blockSize);
 
 		const float vSize = blockSize / 8.0f;
 
@@ -922,7 +1593,7 @@ namespace Huvitz
 	}
 
 	template <typename T>
-	__device__ T* VoxelDataBase<T>::GetOrCreateVoxel(const Eigen::Vector3f& position)
+	__device__ T* VoxelDataBase<T>::GetOrCreateVoxel(const Vector3f& position)
 	{
 		VoxelBlock<T>* block = GetOrCreateVoxelBlock(position);
 		if (block == nullptr) return nullptr;
@@ -930,7 +1601,7 @@ namespace Huvitz
 		const float vSize = blockSize / 8.0f;
 
 		Morton64 blockKey = Morton64::FromPosition(position, blockSize);
-		Eigen::Vector3f bc = blockKey.ToPosition(blockSize);
+		Vector3f bc = blockKey.ToPosition(blockSize);
 
 		int lx = static_cast<int>(floorf((position.x() - (bc.x() - blockSize * 0.5f)) / vSize + 1e-4f));
 		int ly = static_cast<int>(floorf((position.y() - (bc.y() - blockSize * 0.5f)) / vSize + 1e-4f));
@@ -943,7 +1614,7 @@ namespace Huvitz
 	}
 
 	template <typename T>
-	__device__ inline uint32_t VoxelDataBase<T>::FindBlockSlot(const Eigen::Vector3f& position)
+	__device__ inline uint32_t VoxelDataBase<T>::FindBlockSlot(const Vector3f& position)
 	{
 		Morton64 blockKey = Morton64::FromPosition(position, blockSize);
 		uint64_t key = blockKey.code;
@@ -956,7 +1627,7 @@ namespace Huvitz
 		{
 			uint64_t hKey = d_hashTable[slot];
 			if (hKey == key) return slot;
-			if (hKey == 0) return INVALID_BLOCK;
+			if (hKey == 0)   return INVALID_BLOCK;
 			slot = (slot + 1) % maxBlockCount;
 			if (slot == start) break;
 		}
@@ -964,7 +1635,7 @@ namespace Huvitz
 	}
 
 	template <typename T>
-	__device__ inline uint32_t VoxelDataBase<T>::GetOrCreateBlockSlot(const Eigen::Vector3f& position)
+	__device__ inline uint32_t VoxelDataBase<T>::GetOrCreateBlockSlot(const Vector3f& position)
 	{
 		Morton64 blockKey = Morton64::FromPosition(position, blockSize);
 		uint64_t key = blockKey.code;
@@ -980,7 +1651,9 @@ namespace Huvitz
 
 			if (prev == 0)
 			{
-				atomicAdd(d_blockCount, 1);
+				// ÏÉà Î∏îÎ°ù ÏÉùÏÑ±: blockCountÎ•º Ïù∏Îç±Ïä§Î°ú ÏÇ¨Ïö©Ìï¥ occupiedSlotsÏóê Í∏∞Î°ù
+				uint32_t idx = atomicAdd(d_blockCount, 1);
+				d_occupiedSlots[idx] = slot;  // [Ï∂îÍ∞Ä]
 				return slot;
 			}
 			if (prev == key) return slot;
@@ -991,38 +1664,319 @@ namespace Huvitz
 		return INVALID_BLOCK;
 	}
 
+	template <typename T>
+	void VoxelDataBase<T>::Integrate(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream)
+	{
+#ifdef __CUDACC__
+		VoxelDataBaseIntegrationParameters* params = dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
+		if (nullptr == params)
+			return;
+
+		int threads = 256;
+		int blocks = (params->mapWidth * params->mapHeight + threads - 1) / threads;
+
+		nvtxRangePushA("!!!Integrate");
+		Kernel_Integrate << <blocks, threads, 0, stream >> > (*this, *params);
+		cudaStreamSynchronize(stream);
+		nvtxRangePop();
+#endif
+	}
+
+	template <typename T>
+	void VoxelDataBase<T>::IntegrateSurfaceNormal(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream)
+	{
+#ifdef __CUDACC__
+		VoxelDataBaseIntegrationParameters* params = dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
+		if (nullptr == params)
+			return;
+
+		int threads = 256;
+		int blocks = (params->mapWidth * params->mapHeight + threads - 1) / threads;
+
+		nvtxRangePushA("IntegrateSurfaceNormal");
+		Kernel_IntegrateSurfaceNormal << <blocks, threads, 0, stream >> > (*this, *params);
+		cudaStreamSynchronize(stream);
+		nvtxRangePop();
+#endif
+	}
+
+	template <typename T>
+	void VoxelDataBase<T>::IntegrateDirectional(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream)
+	{
+#ifdef __CUDACC__
+		if constexpr (std::is_same_v<T, DirectionalVoxel<Voxel>>)
+		{
+			VoxelDataBaseIntegrationParameters* params =
+				dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
+			if (nullptr == params)
+				return;
+
+			int threads = 256;
+			int pixBlocks = (params->mapWidth * params->mapHeight + threads - 1) / threads;
+
+			auto& self = reinterpret_cast<VoxelDataBase<DirectionalVoxel<Voxel>>&>(*this);
+
+			nvtxRangePushA("IntegrateDirectional_Phase1");
+			Kernel_IntegrateDirectional_Phase1 << <pixBlocks, threads, 0, stream >> > (self, *params);
+			cudaStreamSynchronize(stream);
+			cudaError_t err1 = cudaGetLastError();
+			if (err1 != cudaSuccess)
+				printf("[Phase1] CUDA error: %s\n", cudaGetErrorString(err1));
+			nvtxRangePop();
+
+			uint32_t blockCount = 0;
+			cudaMemcpy(&blockCount, d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+			printf("[Phase2] blockCount = %u\n", blockCount);
+
+			if (blockCount > 0)
+			{
+				// [ÏàòÏ†ï] 1 thread per voxel, occupiedSlots Í∏∞Î∞ò Îü∞Ïπò
+				constexpr uint32_t VOXELS_PER_BLOCK = VoxelBlock<DirectionalVoxel<Voxel>>::VOXELS_PER_BLOCK;
+				uint32_t totalThreads = blockCount * VOXELS_PER_BLOCK;
+				int volBlocks = (totalThreads + threads - 1) / threads;
+
+				nvtxRangePushA("IntegrateDirectional_Phase2");
+				Kernel_IntegrateDirectional_Phase2_Voxel << <volBlocks, threads, 0, stream >> > (
+					self, d_occupiedSlots, blockCount);
+				cudaStreamSynchronize(stream);
+				cudaError_t err2 = cudaGetLastError();
+				if (err2 != cudaSuccess)
+					printf("[Phase2] CUDA error: %s\n", cudaGetErrorString(err2));
+				nvtxRangePop();
+			}
+		}
+		else if constexpr (std::is_same_v<T, DirectionalVoxel<DummyVoxel>>)
+		{
+			VoxelDataBaseIntegrationParameters* params =
+				dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
+			if (nullptr == params)
+				return;
+
+			int threads = 256;
+			int pixBlocks = (params->mapWidth * params->mapHeight + threads - 1) / threads;
+
+			auto& self = reinterpret_cast<VoxelDataBase<DirectionalVoxel<DummyVoxel>>&>(*this);
+
+			nvtxRangePushA("IntegrateDirectional_Phase1");
+			Kernel_IntegrateDirectional_Phase1 << <pixBlocks, threads, 0, stream >> > (self, *params);
+			cudaStreamSynchronize(stream);
+			cudaError_t err1 = cudaGetLastError();
+			if (err1 != cudaSuccess)
+				printf("[Phase1] CUDA error: %s\n", cudaGetErrorString(err1));
+			nvtxRangePop();
+
+			uint32_t blockCount = 0;
+			cudaMemcpy(&blockCount, d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+			//printf("[Phase2] blockCount = %u\n", blockCount);
+
+			if (blockCount > 0)
+			{
+				constexpr uint32_t VOXELS_PER_BLOCK = VoxelBlock<DirectionalVoxel<DummyVoxel>>::VOXELS_PER_BLOCK;
+				uint32_t totalThreads = blockCount * VOXELS_PER_BLOCK;
+				int volBlocks = (totalThreads + threads - 1) / threads;
+
+				nvtxRangePushA("IntegrateDirectional_Phase2");
+				Kernel_IntegrateDirectional_Phase2_DummyVoxel << <volBlocks, threads, 0, stream >> > (
+					self, d_occupiedSlots, blockCount);
+				cudaStreamSynchronize(stream);
+				cudaError_t err2 = cudaGetLastError();
+				if (err2 != cudaSuccess)
+					printf("[Phase2] CUDA error: %s\n", cudaGetErrorString(err2));
+				nvtxRangePop();
+			}
+		}
+#endif
+	}
+
+	template <typename T>
+	void VoxelDataBase<T>::ApplyIntraRegionNoiseFilter(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream)
+	{
+		VoxelDataBaseIntegrationParameters* params = dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
+		if (nullptr == params)
+			return;
+
+		NoiseFilterParameters nfParams;
+		nfParams.d_depthMap = params->d_depthMap;
+		nfParams.mapWidth = params->mapWidth;
+		nfParams.mapHeight = params->mapHeight;
+		nfParams.transform = params->transform;
+		nfParams.cellSize = params->voxelSize;
+		nfParams.dimX = 256;
+		nfParams.dimY = 256;
+		float camX = nfParams.transform(0, 3);
+		float camY = nfParams.transform(1, 3);
+		nfParams.originX = camX - nfParams.dimX * nfParams.cellSize * 0.5f;
+		nfParams.originY = camY - nfParams.dimY * nfParams.cellSize * 0.5f;
+
+		cudaMalloc(&nfParams.d_depthCache, sizeof(float) * nfParams.dimX * nfParams.dimY);
+
+#ifdef __CUDACC__
+		int threads = 256;
+		cudaMemset(nfParams.d_depthCache, 0x7F, sizeof(float) * nfParams.dimX * nfParams.dimY);
+		int pixelCount = (int)(nfParams.mapWidth * nfParams.mapHeight);
+
+		nvtxRangePushA("ApplyIntraRegionNoiseFilter");
+		Kernel_BuildNoiseFilter2DCache<T> << <(pixelCount + threads - 1) / threads, threads >> > (nfParams);
+		Kernel_IntraRegionNoiseFilter << <(maxBlockCount + threads - 1) / threads, threads >> > (*this, nfParams);
+		cudaStreamSynchronize(stream);
+		nvtxRangePop();
+#endif
+		cudaFree(nfParams.d_depthCache);
+	}
+
+	template <typename T>
+	void VoxelDataBase<T>::Extract(ExtractionParameters* parameters, cached_allocator* allocator, CUstream_st* stream)
+	{
+#ifdef __CUDACC__
+		VoxelDataBaseExtractionParameters* params = dynamic_cast<VoxelDataBaseExtractionParameters*>(parameters);
+		if (nullptr == params)
+			return;
+		if (nullptr == params->d_out || nullptr == params->d_count || params->maxOut == 0)
+			return;
+
+		nvtxRangePushA("ExtetractVoxelDataBase");
+		cudaMemsetAsync(params->d_count, 0, sizeof(uint32_t), stream);
+		cudaStreamSynchronize(stream);
+
+		int threads = 256;
+		int numBlocks = (maxBlockCount + threads - 1) / threads;
+
+		switch (params->mode)
+		{
+		case VoxelDataBaseExtractionParameters::Mode::AllOccupied:
+			Kernel_ExtractAllOccupied << <numBlocks, threads, 0, stream >> > (
+				*this, blockSize, params->d_out, params->d_count, params->maxOut);
+			break;
+		case VoxelDataBaseExtractionParameters::Mode::ZeroCrossing:
+			Kernel_ExtractZeroCrossing << <numBlocks, threads, 0, stream >> > (
+				*this, blockSize, params->d_out, params->d_count, params->maxOut);
+			break;
+		default:
+			break;
+		}
+
+		cudaStreamSynchronize(stream);
+		nvtxRangePop();
+#endif
+	}
+
+	template <typename T>
+	void VoxelDataBase<T>::ExtractIntraRegion(ExtractionParameters* parameters, cached_allocator* allocator, CUstream_st* stream)
+	{
+#ifdef __CUDACC__
+		VoxelDataBaseExtractionParameters* params = dynamic_cast<VoxelDataBaseExtractionParameters*>(parameters);
+		if (nullptr == params)
+			return;
+		if (nullptr == params->d_out || nullptr == params->d_count || params->maxOut == 0)
+			return;
+
+		nvtxRangePushA("ExtractIntraRegion");
+		cudaMemsetAsync(params->d_count, 0, sizeof(uint32_t), stream);
+		cudaStreamSynchronize(stream);
+
+		int threads = 256;
+		int numBlocks = (maxBlockCount + threads - 1) / threads;
+
+		Kernel_ExtractIntraRegion << <numBlocks, threads, 0, stream >> > (
+			*this, blockSize, params->mode,
+			params->cacheMin, params->cacheMax,
+			params->d_out, params->d_count, params->maxOut);
+
+		cudaStreamSynchronize(stream);
+		nvtxRangePop();
+#endif
+	}
+
+	template <typename T>
+	void VoxelDataBase<T>::ExtractDirectional(ExtractionParameters* parameters, cached_allocator* allocator, CUstream_st* stream)
+	{
+#ifdef __CUDACC__
+		VoxelDataBaseExtractionParameters* params =
+			dynamic_cast<VoxelDataBaseExtractionParameters*>(parameters);
+		if (nullptr == params) return;
+		if (nullptr == params->d_out || nullptr == params->d_count || params->maxOut == 0) return;
+
+		cudaMemsetAsync(params->d_count, 0, sizeof(uint32_t), stream);
+		cudaStreamSynchronize(stream);
+
+		int threads = 256;
+		int numBlocks = (maxBlockCount + threads - 1) / threads;
+
+		if constexpr (std::is_same_v<T, DirectionalVoxel<Voxel>> ||
+			std::is_same_v<T, DirectionalVoxel<DummyVoxel>>)
+		{
+			auto& self = reinterpret_cast<VoxelDataBase<DirectionalVoxel<DummyVoxel>>&>(*this);
+			Kernel_ExtractZeroCrossing_Directional << <numBlocks, threads, 0, stream >> > (
+				self, blockSize, params->d_out, params->d_count, params->maxOut);
+		}
+		else
+		{
+			switch (params->mode)
+			{
+			case VoxelDataBaseExtractionParameters::Mode::AllOccupied:
+				Kernel_ExtractAllOccupied << <numBlocks, threads, 0, stream >> > (
+					*this, blockSize, params->d_out, params->d_count, params->maxOut);
+				break;
+			case VoxelDataBaseExtractionParameters::Mode::ZeroCrossing:
+				Kernel_ExtractZeroCrossing << <numBlocks, threads, 0, stream >> > (
+					*this, blockSize, params->d_out, params->d_count, params->maxOut);
+				break;
+			default: break;
+			}
+		}
+
+		cudaStreamSynchronize(stream);
+#endif
+	}
+
+	template <typename T>
+	void VoxelDataBase<T>::PerFrameFilter(
+		IntegrationParameters* parameters,
+		cached_allocator* allocator,
+		CUstream_st* stream)
+	{
+#ifdef __CUDACC__
+		VoxelDataBaseIntegrationParameters* params =
+			dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
+		if (nullptr == params)
+			return;
+
+		int threads = 256;
+		int numBlocks = (params->mapWidth * params->mapHeight + threads - 1) / threads;
+
+		nvtxRangePushA("PerFrameFilter");
+		Kernel_PerFrameFilter << <numBlocks, threads, 0, stream >> > (*this, *params);
+		cudaStreamSynchronize(stream);
+		nvtxRangePop();
+#endif
+	}
+
 	struct VoxelDBHeader
 	{
-		uint32_t magic;          // 0x564F5842 ("VOXB")
-		uint32_t version;        // 1
+		uint32_t magic;
+		uint32_t version;
 		uint32_t maxBlockCount;
-		uint32_t blockCount;     // Ω«¡¶ ¡°¿Øµ» ∫Ì∑œ ºˆ
+		uint32_t blockCount;
 		float    blockSize;
-		uint32_t voxelStride;    // sizeof(T) ∞À¡ıøÎ
+		uint32_t voxelStride;
 		uint32_t reserved[2];
 	};
 
 	static constexpr uint32_t VOXEL_DB_MAGIC = 0x564F5842u;
 	static constexpr uint32_t VOXEL_DB_VERSION = 1u;
 
-
 	template <typename T>
 	void VoxelDataBase<T>::Serialize(const std::wstring& filename)
 	{
-		// Ω«¡¶ ¡°¿Ø ∫Ì∑œ ºˆ »Æ¿Œ
 		uint32_t blockCount = 0;
 		cudaMemcpy(&blockCount, d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
 
-		// GPU -> CPU ∫πªÁ
-		std::vector<uint64_t>     h_hashTable(maxBlockCount);
+		std::vector<uint64_t>      h_hashTable(maxBlockCount);
 		std::vector<VoxelBlock<T>> h_blocks(maxBlockCount);
 
-		cudaMemcpy(h_hashTable.data(), d_hashTable,
-			sizeof(uint64_t) * maxBlockCount, cudaMemcpyDeviceToHost);
-		cudaMemcpy(h_blocks.data(), d_blocks,
-			sizeof(VoxelBlock<T>) * maxBlockCount, cudaMemcpyDeviceToHost);
+		cudaMemcpy(h_hashTable.data(), d_hashTable, sizeof(uint64_t) * maxBlockCount, cudaMemcpyDeviceToHost);
+		cudaMemcpy(h_blocks.data(), d_blocks, sizeof(VoxelBlock<T>) * maxBlockCount, cudaMemcpyDeviceToHost);
 
-		// ∆ƒ¿œ æ≤±‚
 		FILE* fp = _wfopen(filename.c_str(), L"wb");
 		if (nullptr == fp)
 		{
@@ -1041,7 +1995,6 @@ namespace Huvitz
 		fwrite(&header, sizeof(VoxelDBHeader), 1, fp);
 		fwrite(h_hashTable.data(), sizeof(uint64_t), maxBlockCount, fp);
 		fwrite(h_blocks.data(), sizeof(VoxelBlock<T>), maxBlockCount, fp);
-
 		fclose(fp);
 
 		printf("[VoxelDataBase::Serialize] Saved %u blocks to file\n", blockCount);
@@ -1057,62 +2010,55 @@ namespace Huvitz
 			return;
 		}
 
-		// «Ï¥ı ¿–±‚ π◊ ∞À¡ı
 		VoxelDBHeader header = {};
 		fread(&header, sizeof(VoxelDBHeader), 1, fp);
 
 		if (header.magic != VOXEL_DB_MAGIC)
 		{
 			printf("[VoxelDataBase::Deserialize] Invalid magic number\n");
-			fclose(fp);
-			return;
+			fclose(fp); return;
 		}
-
 		if (header.version != VOXEL_DB_VERSION)
 		{
 			printf("[VoxelDataBase::Deserialize] Version mismatch: file=%u, expected=%u\n",
 				header.version, VOXEL_DB_VERSION);
-			fclose(fp);
-			return;
+			fclose(fp); return;
 		}
-
 		if (header.voxelStride != (uint32_t)sizeof(T))
 		{
 			printf("[VoxelDataBase::Deserialize] Voxel stride mismatch: file=%u, sizeof(T)=%u\n",
 				header.voxelStride, (uint32_t)sizeof(T));
-			fclose(fp);
-			return;
+			fclose(fp); return;
 		}
 
-		// «ˆ¿Á «“¥Á ≈©±‚∞° ¥Ÿ∏£∏È ¿Á√ ±‚»≠
 		if (header.maxBlockCount != maxBlockCount || header.blockSize != blockSize)
 		{
 			printf("[VoxelDataBase::Deserialize] Re-initializing: maxBlocks %u->%u, blockSize %.4f->%.4f\n",
 				maxBlockCount, header.maxBlockCount, blockSize, header.blockSize);
-
 			Terminate();
 			Initialize(header.maxBlockCount, header.blockSize);
 		}
 
-		// CPU πˆ∆€ø° ¿–±‚
 		std::vector<uint64_t>      h_hashTable(maxBlockCount);
 		std::vector<VoxelBlock<T>> h_blocks(maxBlockCount);
 
 		fread(h_hashTable.data(), sizeof(uint64_t), maxBlockCount, fp);
 		fread(h_blocks.data(), sizeof(VoxelBlock<T>), maxBlockCount, fp);
-
 		fclose(fp);
 
-		// CPU -> GPU æ˜∑ŒµÂ
-		cudaMemcpy(d_hashTable, h_hashTable.data(),
-			sizeof(uint64_t) * maxBlockCount, cudaMemcpyHostToDevice);
-		cudaMemcpy(d_blocks, h_blocks.data(),
-			sizeof(VoxelBlock<T>) * maxBlockCount, cudaMemcpyHostToDevice);
-		cudaMemcpy(d_blockCount, &header.blockCount,
-			sizeof(uint32_t), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_hashTable, h_hashTable.data(), sizeof(uint64_t) * maxBlockCount, cudaMemcpyHostToDevice);
+		cudaMemcpy(d_blocks, h_blocks.data(), sizeof(VoxelBlock<T>) * maxBlockCount, cudaMemcpyHostToDevice);
+		cudaMemcpy(d_blockCount, &header.blockCount, sizeof(uint32_t), cudaMemcpyHostToDevice);
 
 		printf("[VoxelDataBase::Deserialize] Loaded %u blocks from file\n", header.blockCount);
 	}
 
 	template class VoxelDataBase<Voxel>;
+	template<> std::unique_ptr<DataFrameRecorder<VoxelDataBaseIntegrationParameters>> VoxelDataBase<Voxel>::recorder = nullptr;
+
+	template class VoxelDataBase<DirectionalVoxel<Voxel>>;
+	template<> std::unique_ptr<DataFrameRecorder<VoxelDataBaseIntegrationParameters>> VoxelDataBase<DirectionalVoxel<Voxel>>::recorder = nullptr;
+
+	template class VoxelDataBase<DirectionalVoxel<DummyVoxel>>;
+	template<> std::unique_ptr<DataFrameRecorder<VoxelDataBaseIntegrationParameters>> VoxelDataBase<DirectionalVoxel<DummyVoxel>>::recorder = nullptr;
 }

@@ -69,6 +69,34 @@ namespace Huvitz
 		return __int_as_float(old);
 	}
 
+    __device__ inline void atomicMinFloatCAS(float* addr, float val)
+    {
+        int* addr_i = (int*)addr;
+        int  old_i = *addr_i;
+        int  val_i = __float_as_int(val);
+
+        while (__int_as_float(old_i) > val)
+        {
+            int prev = atomicCAS(addr_i, old_i, val_i);
+            if (prev == old_i) break;
+            old_i = prev;
+        }
+    }
+
+    __device__ inline void atomicMaxFloatCAS(float* addr, float val)
+    {
+        int* addr_i = (int*)addr;
+        int  old_i = *addr_i;
+        int  val_i = __float_as_int(val);
+
+        while (__int_as_float(old_i) < val)
+        {
+            int prev = atomicCAS(addr_i, old_i, val_i);
+            if (prev == old_i) break;
+            old_i = prev;
+        }
+    }
+
 	__device__ inline uint32_t StrongHash(uint64_t key, uint32_t maxBlocks)
 	{
 		key ^= key >> 33;

@@ -33,6 +33,10 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <cuda_fp16.h>
+#include <nvapi.h>
+#include <NvApiDriverSettings.h>
+
+#pragma comment(lib, "nvapi64.lib")
 
 //#include <Copper/Copper.h>
 //#include <Copper/CuPointCloud.h>
@@ -59,6 +63,119 @@ namespace Eigen
     typedef Matrix<uint32_t, 3, 1, 0, 3, 1> Vector3ui;
 }
 
+class NvDriverSetting {
+public:
+	NvDriverSetting() {
+		m_previous_gpu_performance = PREFERRED_PSTATE_DEFAULT;
+	}
+
+	~NvDriverSetting() {
+	}
+
+	bool forceGPUPerformance()
+	{
+		NvAPI_Status status;
+
+		NvDRSSessionHandle hSession = 0;
+		status = NvAPI_DRS_CreateSession(&hSession);
+		if (status != NVAPI_OK)
+			return false;
+
+		// (2) load all the system settings into the session
+		status = NvAPI_DRS_LoadSettings(hSession);
+		if (status != NVAPI_OK)
+			return false;
+
+		NvDRSProfileHandle hProfile = 0;
+		status = NvAPI_DRS_GetBaseProfile(hSession, &hProfile);
+		if (status != NVAPI_OK)
+			return false;
+
+		NVDRS_SETTING drsGet = { 0, };
+		drsGet.version = NVDRS_SETTING_VER;
+		status = NvAPI_DRS_GetSetting(hSession, hProfile, PREFERRED_PSTATE_ID, &drsGet);
+		if (status != NVAPI_OK)
+			return false;
+
+		if (drsGet.u32CurrentValue == PREFERRED_PSTATE_PREFER_MAX) {
+			m_previous_gpu_performance = PREFERRED_PSTATE_PREFER_MAX;
+		}
+		else {
+			NVDRS_SETTING drsSetting = { 0, };
+			drsSetting.version = NVDRS_SETTING_VER;
+			drsSetting.settingId = PREFERRED_PSTATE_ID;
+			drsSetting.settingType = NVDRS_DWORD_TYPE;
+			drsSetting.u32CurrentValue = PREFERRED_PSTATE_PREFER_MAX;
+			m_previous_gpu_performance = PREFERRED_PSTATE_PREFER_MAX;
+
+			status = NvAPI_DRS_SetSetting(hSession, hProfile, &drsSetting);
+			if (status != NVAPI_OK)
+				return false;
+
+			status = NvAPI_DRS_SaveSettings(hSession);
+			if (status != NVAPI_OK)
+				return false;
+		}
+
+		// (6) We clean up. This is analogous to doing a free()
+		NvAPI_DRS_DestroySession(hSession);
+		hSession = 0;
+
+		return true;
+	}
+
+	bool restoreGPUPerformance()
+	{
+		NvAPI_Status status;
+
+		NvDRSSessionHandle hSession = 0;
+		status = NvAPI_DRS_CreateSession(&hSession);
+		if (status != NVAPI_OK)
+			return false;
+
+		// (2) load all the system settings into the session
+		status = NvAPI_DRS_LoadSettings(hSession);
+		if (status != NVAPI_OK)
+			return false;
+
+		NvDRSProfileHandle hProfile = 0;
+		status = NvAPI_DRS_GetBaseProfile(hSession, &hProfile);
+		if (status != NVAPI_OK)
+			return false;
+
+		NVDRS_SETTING drsGet = { 0, };
+		drsGet.version = NVDRS_SETTING_VER;
+		status = NvAPI_DRS_GetSetting(hSession, hProfile, PREFERRED_PSTATE_ID, &drsGet);
+		if (status != NVAPI_OK)
+			return false;
+
+		if (drsGet.u32CurrentValue != m_previous_gpu_performance) {
+			NVDRS_SETTING drsSetting = { 0, };
+			drsSetting.version = NVDRS_SETTING_VER;
+			drsSetting.settingId = PREFERRED_PSTATE_ID;
+			drsSetting.settingType = NVDRS_DWORD_TYPE;
+			drsSetting.u32CurrentValue = m_previous_gpu_performance;
+
+			status = NvAPI_DRS_SetSetting(hSession, hProfile, &drsSetting);
+			if (status != NVAPI_OK)
+				return false;
+
+			status = NvAPI_DRS_SaveSettings(hSession);
+			if (status != NVAPI_OK)
+				return false;
+		}
+
+		// (6) We clean up. This is analogous to doing a free()
+		NvAPI_DRS_DestroySession(hSession);
+		hSession = 0;
+
+		return true;
+	}
+
+protected:
+    unsigned long	m_previous_gpu_performance;
+};
+
 class App
 {
 public:
@@ -67,50 +184,53 @@ public:
     }
 
     virtual void Execute() = 0;
+
+protected:
+	NvDriverSetting nvDriverSetting;
 };
 
 class Apps
 {
 public:
-    static std::map<std::string, App*>& GetRegistry()
-    {
-        static std::map<std::string, App*> instance;
-        return instance;
-    }
+	static std::map<std::string, App*>& GetRegistry()
+	{
+		static std::map<std::string, App*> instance;
+		return instance;
+	}
 
-    static void Add(const std::string& name, App* app)
-    {
-        GetRegistry()[name] = app;
-    }
+	static void Add(const std::string& name, App* app)
+	{
+		GetRegistry()[name] = app;
+	}
 
-    static void Run(const std::string& name)
-    {
-        //auto t = std::thread([name]()
-            {
-                auto& registry = GetRegistry();
-                auto it = registry.find(name);
+	static void Run(const std::string& name)
+	{
+		//auto t = std::thread([name]()
+		{
+			auto& registry = GetRegistry();
+			auto it = registry.find(name);
 
-                if (it != registry.end())
-                {
-                    it->second->Execute();
-                }
-                else
-                {
-                    std::cout << "오류: '" << name << "' 을(를) 찾을 수 없습니다." << std::endl;
-                }
-            }
-        //);
+			if (it != registry.end())
+			{
+				it->second->Execute();
+			}
+			else
+			{
+				std::cout << "오류: '" << name << "' 을(를) 찾을 수 없습니다." << std::endl;
+			}
+		}
+		//);
 		//t.detach();
-    }
+	}
 
-    static void Clear()
-    {
-        for (auto const& [name, app] : GetRegistry())
-        {
-            delete app;
-        }
-        GetRegistry().clear();
-    }
+	static void Clear()
+	{
+		for (auto const& [name, app] : GetRegistry())
+		{
+			delete app;
+		}
+		GetRegistry().clear();
+	}
 };
 
 template <typename T>

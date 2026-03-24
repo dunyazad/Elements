@@ -54,6 +54,17 @@
 #define CUDA_FREE(ptr) cudaFree(ptr);
 #endif
 
+#ifndef CUDA_CHECK
+#define CUDA_CHECK(call) \
+    do { \
+        cudaError_t err = call; \
+        if (err != cudaSuccess) { \
+            fprintf(stderr, "CUDA Error in %s at line %d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+            exit(err); \
+        } \
+    } while(0)
+#endif
+
 #ifndef CUDA_SAFE_FREE
 #define CUDA_SAFE_FREE(ptr) { if(ptr) { CUDA_CHECK(cudaFree(ptr)); ptr = nullptr; } }
 //#define CUDA_SAFE_FREE(ptr) \

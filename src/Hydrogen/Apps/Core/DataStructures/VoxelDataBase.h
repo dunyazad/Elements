@@ -8,6 +8,8 @@
 
 #include <Helium/Serialization.hpp>
 
+#include <DataFrameIO/DataFrameIO.hpp>
+
 namespace Huvitz
 {
 	using BlockID = uint32_t;
@@ -19,10 +21,100 @@ namespace Huvitz
 	template <typename T>
 	class VoxelDataBase;
 
+	typedef unsigned char uchar;
+	typedef float voxel_value_t;
+
+	struct VoxelExtraAttrib {
+		static const VoxelExtraAttrib Zero;
+
+		uchar deepLearningClass; // enum DL_Class_Names
+		uchar materialID; // 0: other 255: tooth
+		unsigned short startPatchID;	// Î≥µÏÖÄÏùò Ï°∞Ìï©Ïóê ÏòÅÌñ•ÏùÑ ÎØ∏Ïπú Ï≤´ Ìå®Ïπò Î≤àÌò∏
+		unsigned int flags : 2; // Î≥µÏÖÄÏùò Ïû†Í∏àÏÉÅÌÉú Îì±Ïùò ÏÉÅÌÉúÎ•º Ï†ÄÏû•.VOXEL_FLAG_**** _BIT Î°ú ÎπÑÍµê
+		unsigned int label : 30;	// ÌÅ¥Îü¨Ïä§ÌÑ∞ÎßÅ Îêú Î†àÏù¥Î∏î Î≤àÌò∏
+
+		uint8_t colorMap[4]; // colors[3], alpha (Ïã†Î¢∞ÎèÑ)
+	};
+
+	struct Voxel {
+		voxel_value_t		value;
+		unsigned short		valueCount;
+		//Eigen::Vector3f		position; // ÏÇ¨Ïö©ÌïòÏßÄ ÏïäÏùå
+		Eigen::Vector3f		normal;
+		Eigen::Vector3b		color;
+
+		//	mscho	@20250806
+		Eigen::Vector3b		color_list[3];
+		uint8_t				color_score[3];
+
+		//float				colorScore; // ÏÇ¨Ïö©ÌïòÏßÄ ÏïäÏùå
+		char				segmentation;
+		VoxelExtraAttrib	extraAttrib;
+#ifdef USE_EXPERIMENTAL_COLOR_OPT2
+		ColorReconData		voxelColorReconData;
+#endif //USE_EXPERIMENTAL_COLOR_OPT2
+	};
+
+	struct DummyVoxel
+	{
+		float           value = 0.f;
+		uint16_t        valueCount = 0;
+		uint8_t         _pad[2] = {};
+		Vector3f normal = Vector3f::Zero();
+		Vector3b color = Vector3b::Zero();
+	};
+
+	// Direction indices: X+, X-, Y+, Y-, Z+, Z-
+	static constexpr int DIR_XP = 0;
+	static constexpr int DIR_XN = 1;
+	static constexpr int DIR_YP = 2;
+	static constexpr int DIR_YN = 3;
+	static constexpr int DIR_ZP = 4;
+	static constexpr int DIR_ZN = 5;
+	static constexpr int DIR_COUNT = 6;
+
+	__device__ __host__ inline Vector3f GetDirectionVector(int d)
+	{
+		switch (d)
+		{
+		case DIR_XP: return { 1.f,  0.f,  0.f };
+		case DIR_XN: return { -1.f,  0.f,  0.f };
+		case DIR_YP: return { 0.f,  1.f,  0.f };
+		case DIR_YN: return { 0.f, -1.f,  0.f };
+		case DIR_ZP: return { 0.f,  0.f,  1.f };
+		case DIR_ZN: return { 0.f,  0.f, -1.f };
+		default:     return { 0.f,  0.f,  0.f };
+		}
+	}
+
+	static constexpr float kDirThreshold = 0.3827f;
+
+	template<typename T>
+	struct DirectionalVoxel : public T
+	{
+		float    dirValue[DIR_COUNT];
+		float    weight[DIR_COUNT];
+		float    accSd[DIR_COUNT];
+		float    accSw[DIR_COUNT];
+		Vector3f normal;
+		Vector3b color;
+		uint8_t  validMask;
+
+		__device__ __host__ inline bool HasDirection(int d) const
+		{
+			return (validMask >> d) & 1u;
+		}
+
+		__device__ __host__ inline float GetValue(int d) const
+		{
+			return HasDirection(d) ? dirValue[d] : FLT_MAX;
+		}
+	};
+
 	struct ExtractedVoxel
 	{
-		Eigen::Vector3f position;
-		Eigen::Vector3f normal;
+		Vector3f position;
+		Vector3f normal;
 		uint8_t color[3];
 		float weight;
 	};
@@ -33,7 +125,6 @@ namespace Huvitz
 		static constexpr int BLOCK_SIZE = 8;
 		static constexpr int VOXELS_PER_BLOCK = BLOCK_SIZE * BLOCK_SIZE * BLOCK_SIZE;
 		T voxels[VOXELS_PER_BLOCK];
-		//uint32_t lastTouchedFrameId = 0xFFFFFFFF;
 	};
 
 	class VoxelDataBaseIntegrationParameters : public IntegrationParameters
@@ -42,18 +133,18 @@ namespace Huvitz
 		unsigned int mapWidth = 0;
 		unsigned int mapHeight = 0;
 
-		Eigen::Vector3f* d_depthMap = nullptr;
-		Eigen::Vector3f* d_normalMap = nullptr;
-		//Eigen::Vector3b* d_colorMap = nullptr;
+		Vector3f* d_depthMap = nullptr;
+		Vector3f* d_normalMap = nullptr;
 		unsigned int* d_colorMap = nullptr;
-		Eigen::Matrix4f transform = Eigen::Matrix4f::Identity();
+		Matrix4f transform = Matrix4f::Identity();
 
 		float voxelSize = 0.1f;
+
+		cuAABB aabb;
 	};
 
 	struct NoiseFilterParameters
 	{
-		// 2D XY ±Ì¿Ã ƒ≥Ω√ (GPU πˆ∆€, √ ±‚∞™ FLT_MAX)
 		float* d_depthCache;
 		uint32_t dimX;
 		uint32_t dimY;
@@ -61,11 +152,10 @@ namespace Huvitz
 		float    originY;
 		float    cellSize;
 
-		// ±Ì¿Ã∏  º“Ω∫ (Kernel_Integrate ¿« d_depthMap ∞˙ µø¿œ)
-		const Eigen::Vector3f* d_depthMap;
-		uint32_t               mapWidth;
-		uint32_t               mapHeight;
-		Eigen::Matrix4f        transform;
+		const Vector3f* d_depthMap;
+		uint32_t mapWidth;
+		uint32_t mapHeight;
+		Matrix4f transform;
 	};
 
 	class VoxelDataBaseExtractionParameters : public ExtractionParameters
@@ -73,20 +163,20 @@ namespace Huvitz
 	public:
 		enum class Mode
 		{
-			AllOccupied,     // valueCount > 0 ¿Œ ∏µÁ ∫πºø √ﬂ√‚
-			ZeroCrossing     // TSDF ∫Œ»£ ∫Ø»≠ ¡ˆ¡° («•∏È) √ﬂ√‚
+			AllOccupied,
+			ZeroCrossing
 		};
 
 		Mode mode = Mode::ZeroCrossing;
 		ExtractedVoxel* d_out = nullptr;
 		uint32_t* d_count = nullptr;
 		uint32_t maxOut = 0;
-		Eigen::Vector3f cacheMin;
-		Eigen::Vector3f cacheMax;
+		Vector3f cacheMin;
+		Vector3f cacheMax;
 	};
 
 	template <typename T>
-	__device__ inline float GetVoxelValue(VoxelDataBase<T>& db, const Eigen::Vector3f& pos);
+	__device__ inline float GetVoxelValue(VoxelDataBase<T>& db, const Vector3f& pos);
 
 	template <typename T>
 	__global__ void Kernel_Clear(VoxelDataBase<T> db);
@@ -95,16 +185,16 @@ namespace Huvitz
 	__global__ void Kernel_Integrate(VoxelDataBase<T> db, VoxelDataBaseIntegrationParameters parameters);
 
 	template <typename T>
+	__global__ void Kernel_IntegrateSurfaceNormal(VoxelDataBase<T> db, VoxelDataBaseIntegrationParameters parameters);
+
+	template <typename T>
 	__global__ void Kernel_BuildNoiseFilter2DCache(NoiseFilterParameters nf);
 
 	template <typename T>
 	__global__ void Kernel_IntraRegionNoiseFilter(VoxelDataBase<T> db, NoiseFilterParameters nf);
 
 	template <typename T>
-	__global__ void InsertKernel(VoxelDataBase<T> db, Eigen::Matrix4f rt, const Eigen::Vector3f* points, const Eigen::Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId);
-
-	template <typename T>
-	__global__ void TSDFIntegrateKernel(VoxelDataBase<T> db, Eigen::Matrix4f rt, const Eigen::Vector3f* points, const Eigen::Vector3f* normals, const Eigen::Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId);
+	__global__ void InsertKernel(VoxelDataBase<T> db, Matrix4f rt, const Vector3f* points, const Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId);
 
 	template <typename T>
 	__global__ void Kernel_ExtractAllOccupied(
@@ -120,7 +210,7 @@ namespace Huvitz
 	__global__ void Kernel_ExtractIntraRegion(
 		VoxelDataBase<T> db, float blockSize,
 		VoxelDataBaseExtractionParameters::Mode mode,
-		Eigen::Vector3f aabbMin, Eigen::Vector3f aabbMax,
+		Vector3f aabbMin, Vector3f aabbMax,
 		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut);
 
 	template <typename T>
@@ -131,15 +221,37 @@ namespace Huvitz
 		uchar3* colors,
 		uint32_t* numberOfVoxels);
 
+	// [ÏàòÏ†ï] Phase2 Ïª§ÎÑê: occupiedSlots + 1 thread per voxel
+	__global__ void Kernel_IntegrateDirectional_Phase2_Voxel(
+		VoxelDataBase<DirectionalVoxel<Voxel>> db,
+		uint32_t* occupiedSlots,
+		uint32_t occupiedCount);
+
+	__global__ void Kernel_IntegrateDirectional_Phase2_DummyVoxel(
+		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db,
+		uint32_t* occupiedSlots,
+		uint32_t occupiedCount);
+
+	__global__ void Kernel_ExtractZeroCrossing_Directional(
+		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db, float blockSize,
+		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut);
+
+	__global__ void Kernel_ExtractSurface_Directional(
+		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db, float blockSize,
+		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut);
+
+	template <typename T>
+	__global__ void Kernel_PerFrameFilter(
+		VoxelDataBase<T> db,
+		VoxelDataBaseIntegrationParameters parameters);
+
 	template <typename T>
 	class VoxelDataBase : public VolumeBase
 	{
 	public:
-		void Initialize(uint32_t maxBlocks, float blockSize = 0.8f);
+		bool Initialize(uint32_t maxBlocks, float blockSize = 0.8f);
 
 		void Terminate();
-
-		void IntegrateTSDF(const Eigen::Matrix4f& rt, const Eigen::Vector3f* d_points, const Eigen::Vector3f* d_normals, const Eigen::Vector3b* d_colors, uint32_t count, float blockSize, uint32_t frameId);
 
 		__host__ __device__ inline VoxelBlock<T>* GetBlocks() { return d_blocks; }
 		__host__ __device__ inline uint64_t* GetHashTable() { return d_hashTable; }
@@ -147,13 +259,16 @@ namespace Huvitz
 		__host__ __device__ inline uint32_t GetMaxBlockCount() { return maxBlockCount; }
 		__host__ __device__ inline float GetBlockSize() { return blockSize; }
 
-		__device__ inline VoxelBlock<T>* GetVoxelBlock(const Eigen::Vector3f& position);
+		// [Ï∂îÍ∞Ä] occupied slot Î¶¨Ïä§Ìä∏ Ï†ëÍ∑ºÏûê
+		__host__ __device__ inline uint32_t* GetOccupiedSlots() { return d_occupiedSlots; }
 
-		__device__ inline VoxelBlock<T>* GetOrCreateVoxelBlock(const Eigen::Vector3f& position);
+		__device__ inline VoxelBlock<T>* GetVoxelBlock(const Vector3f& position);
 
-		__device__ inline T* GetVoxel(const Eigen::Vector3f& position);
+		__device__ inline VoxelBlock<T>* GetOrCreateVoxelBlock(const Vector3f& position);
 
-		__device__ inline T* GetOrCreateVoxel(const Eigen::Vector3f& position);
+		__device__ inline T* GetVoxel(const Vector3f& position);
+
+		__device__ inline T* GetOrCreateVoxel(const Vector3f& position);
 
 		void Serialize(const std::wstring& filename);
 		void Deserialize(const std::wstring& filename);
@@ -164,163 +279,36 @@ namespace Huvitz
 			nvtxRangePushA("Clear Voxel Data Base");
 			printf("Clear Voxel Data Base\n");
 			Kernel_Clear << <(maxBlockCount + 255) / 256, 256, 0, stream >> > (*this);
-
-			nvtxRangePop();
-#endif
-			//cudaMemsetAsync(d_blocks, 0, sizeof(VoxelBlock<T>) * maxBlockCount, stream);
-			//cudaMemsetAsync(d_hashTable, 0, sizeof(uint64_t) * maxBlockCount, stream);
-			//cudaMemsetAsync(d_blockCount, 0, sizeof(uint32_t), stream);
-		}
-
-		virtual void Integrate(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream) override
-		{
-#ifdef __CUDACC__
-			//printf("!!!Integrate\n");
-
-			auto params = dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
-			if(nullptr == params)
-			{
-				return;
-			}
-
-			int threads = 256;
-			int blocks = (params->mapWidth * params->mapHeight + threads - 1) / threads;
-
-			nvtxRangePushA("!!!Integrate");
-			Kernel_Integrate<<<blocks, threads, 0, stream>>>(*this, *params);
-
-			cudaStreamSynchronize(stream);
+			// [ÏàòÏ†ï] Clear ÌõÑ blockCountÏôÄ occupiedSlotsÎèÑ Î¶¨ÏÖã
+			cudaMemsetAsync(d_blockCount, 0, sizeof(uint32_t), stream);
 			nvtxRangePop();
 #endif
 		}
 
-		void ApplyIntraRegionNoiseFilter(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream)
-		{
-			auto params = dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
-			if (nullptr == params)
-			{
-				return;
-			}
-
-			NoiseFilterParameters nfParams;
-			nfParams.d_depthMap = params->d_depthMap;
-			nfParams.mapWidth = params->mapWidth;
-			nfParams.mapHeight = params->mapHeight;
-			nfParams.transform = params->transform;
-			nfParams.cellSize = params->voxelSize;
-			nfParams.dimX = 256;
-			nfParams.dimY = 256;
-			float camX = nfParams.transform(0, 3);
-			float camY = nfParams.transform(1, 3);
-			nfParams.originX = camX - nfParams.dimX * nfParams.cellSize * 0.5f;
-			nfParams.originY = camY - nfParams.dimY * nfParams.cellSize * 0.5f;
-
-			cudaMalloc(&nfParams.d_depthCache, sizeof(float) * nfParams.dimX * nfParams.dimY);
-
-#ifdef __CUDACC__
-			int threads = 256;
-
-			// Step 1: 2D ƒ≥Ω√ √ ±‚»≠ (0x7F7F7F7F = FLT_MAX bit pattern)
-			cudaMemset(nfParams.d_depthCache, 0x7F,
-				sizeof(float) * nfParams.dimX * nfParams.dimY);
-
-			int pixelCount = (int)(nfParams.mapWidth * nfParams.mapHeight);
-
-			nvtxRangePushA("ApplyIntraRegionNoiseFilter");
-			Kernel_BuildNoiseFilter2DCache<T> << <(pixelCount + threads - 1) / threads, threads >> > (nfParams);
-
-			// Step 2: ∫πºø « ≈Õ∏µ
-			Kernel_IntraRegionNoiseFilter << <(maxBlockCount + threads - 1) / threads, threads >> > (*this, nfParams);
-
-			cudaStreamSynchronize(stream);
-			nvtxRangePop();
-#endif
-			cudaFree(nfParams.d_depthCache);
-		}
-
-		virtual void Extract(ExtractionParameters* parameters, cached_allocator* allocator, CUstream_st* stream) override
-		{
-#ifdef __CUDACC__
-			//CUDA_TS(ExtractVoxelDataBase);
-
-			auto params = dynamic_cast<VoxelDataBaseExtractionParameters*>(parameters);
-			if (nullptr == params)
-				return;
-
-			if (nullptr == params->d_out || nullptr == params->d_count || params->maxOut == 0)
-				return;
-
-			nvtxRangePushA("ExtetractVoxelDataBase");
-
-			cudaMemsetAsync(params->d_count, 0, sizeof(uint32_t), stream);
-
-			int threads = 256;
-			int numBlocks = (maxBlockCount + threads - 1) / threads;
-
-			switch (params->mode)
-			{
-			case VoxelDataBaseExtractionParameters::Mode::AllOccupied:
-				Kernel_ExtractAllOccupied << <numBlocks, threads, 0, stream >> > (
-					*this, blockSize, params->d_out, params->d_count, params->maxOut);
-				break;
-
-			case VoxelDataBaseExtractionParameters::Mode::ZeroCrossing:
-				Kernel_ExtractZeroCrossing << <numBlocks, threads, 0, stream >> > (
-					*this, blockSize, params->d_out, params->d_count, params->maxOut);
-				break;
-
-			default:
-				break;
-			}
-
-			cudaStreamSynchronize(stream);
-
-			nvtxRangePop();
-
-			//CUDA_TE(ExtractVoxelDataBase);
-#endif
-		}
-
-		virtual void ExtractIntraRegion(ExtractionParameters* parameters, cached_allocator* allocator, CUstream_st* stream)
-		{
-#ifdef __CUDACC__
-			//CUDA_TS(ExtractIntraRegion);
-
-			auto params = dynamic_cast<VoxelDataBaseExtractionParameters*>(parameters);
-			if (nullptr == params)
-				return;
-			if (nullptr == params->d_out || nullptr == params->d_count || params->maxOut == 0)
-				return;
-			
-			nvtxRangePushA("ExtractIntraRegion");
-			
-			cudaMemsetAsync(params->d_count, 0, sizeof(uint32_t), stream);
-			
-			int threads = 256;
-			int numBlocks = (maxBlockCount + threads - 1) / threads;
-			
-			Kernel_ExtractIntraRegion << <numBlocks, threads, 0, stream >> > (
-				*this, blockSize, params->mode,
-				params->cacheMin, params->cacheMax,
-				params->d_out, params->d_count, params->maxOut);
-			
-			cudaStreamSynchronize(stream);
-			
-			nvtxRangePop();
-			
-			//CUDA_TE(ExtractIntraRegion);
-#endif
-		}
+		virtual void Integrate(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream) override;
+		void Integrate_Recording(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream);
+		void IntegrateSurfaceNormal(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream);
+		void IntegrateDirectional(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream);
+		void ApplyIntraRegionNoiseFilter(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream);
+		virtual void Extract(ExtractionParameters* parameters, cached_allocator* allocator, CUstream_st* stream) override;
+		virtual void ExtractIntraRegion(ExtractionParameters* parameters, cached_allocator* allocator, CUstream_st* stream);
+		void ExtractDirectional(ExtractionParameters* parameters, cached_allocator* allocator, CUstream_st* stream);
+		void PerFrameFilter(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream);
 
 	private:
 		VoxelBlock<T>* d_blocks = nullptr;
 		uint64_t* d_hashTable = nullptr;
 		uint32_t* d_blockCount = nullptr;
-		uint32_t maxBlockCount = 0;
-		float blockSize = 0.8f;
+		uint32_t  maxBlockCount = 0;
+		float     blockSize = 0.8f;
 
-		__device__ inline uint32_t FindBlockSlot(const Eigen::Vector3f& position);
+		// [Ï∂îÍ∞Ä] occupied Ïä¨Î°Ø Ïù∏Îç±Ïä§ Î¶¨Ïä§Ìä∏: d_occupiedSlots[0..blockCount-1]
+		uint32_t* d_occupiedSlots = nullptr;
 
-		__device__ inline uint32_t GetOrCreateBlockSlot(const Eigen::Vector3f& position);
+		__device__ inline uint32_t FindBlockSlot(const Vector3f& position);
+
+		__device__ inline uint32_t GetOrCreateBlockSlot(const Vector3f& position);
+
+		static std::unique_ptr<DataFrameRecorder<VoxelDataBaseIntegrationParameters>> recorder;
 	};
 }

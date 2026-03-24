@@ -53,7 +53,7 @@ namespace Huvitz
         }
     }
 
-    __global__ void Kernel_UnionFind_Link_SameCell(
+    __global__ void Kernel_UnionFind_Link(
         const int* __restrict__ hashTable,
         const int* __restrict__ nextPoint,
         const float3* __restrict__ pos,
@@ -75,99 +75,42 @@ namespace Huvitz
         int gy = __float2int_rd((p.y - origin.y) * invCell);
         int gz = __float2int_rd((p.z - origin.z) * invCell);
 
-        int slot = SpatialHash(gx, gy, gz, tableMask);
-        int j = hashTable[slot];
-
-        while (j != -1)
-        {
-            if (i < j)
-            {
-                unsigned int li = labels[i];
-                unsigned int lj = labels[j];
-                if (li != lj)
-                {
-                    float3 pj = pos[j];
-                    float dx = p.x - pj.x;
-                    float dy = p.y - pj.y;
-                    float dz = p.z - pj.z;
-
-                    if (dx * dx + dy * dy + dz * dz <= d2)
-                    {
-                        unsigned int ri = li;
-                        unsigned int rj = lj;
-                        while (ri != rj)
-                        {
-                            unsigned int lo = ri < rj ? ri : rj;
-                            unsigned int hi = ri < rj ? rj : ri;
-                            unsigned int old = atomicMin(&labels[hi], lo);
-                            if (old == hi)
-                            {
-                                break;
-                            }
-                            ri = old;
-                            rj = lo;
-                        }
-                    }
-                }
-            }
-            j = nextPoint[j];
-        }
-    }
-
-    __global__ void Kernel_UnionFind_Link_Neighbors(
-        const int* __restrict__ hashTable,
-        const int* __restrict__ nextPoint,
-        const float3* __restrict__ pos,
-        unsigned int* labels,
-        int n,
-        float d2,
-        float invCell,
-        float3 origin,
-        int tableMask)
-    {
-        int i = blockIdx.x * blockDim.x + threadIdx.x;
-        if (i >= n)
-        {
-            return;
-        }
-
-        float3 p = pos[i];
-        int gx = __float2int_rd((p.x - origin.x) * invCell);
-        int gy = __float2int_rd((p.y - origin.y) * invCell);
-        int gz = __float2int_rd((p.z - origin.z) * invCell);
-
-#pragma unroll
-        for (int k = 1; k < 14; ++k)
+        #pragma unroll
+        for (int k = 0; k < 14; ++k)
         {
             int slot = SpatialHash(gx + offsetX[k], gy + offsetY[k], gz + offsetZ[k], tableMask);
             int j = hashTable[slot];
 
+            bool isSameCell = (k == 0);
+
             while (j != -1)
             {
-                unsigned int li = labels[i];
-                unsigned int lj = labels[j];
-                if (li != lj)
+                if (!isSameCell || i < j)
                 {
                     float3 pj = pos[j];
                     float dx = p.x - pj.x;
                     float dy = p.y - pj.y;
                     float dz = p.z - pj.z;
+                    float distSq = dx * dx + dy * dy + dz * dz;
 
-                    if (dx * dx + dy * dy + dz * dz <= d2)
+                    if (distSq <= d2)
                     {
-                        unsigned int ri = li;
-                        unsigned int rj = lj;
-                        while (ri != rj)
+                        if (labels[i] != labels[j])
                         {
-                            unsigned int lo = ri < rj ? ri : rj;
-                            unsigned int hi = ri < rj ? rj : ri;
-                            unsigned int old = atomicMin(&labels[hi], lo);
-                            if (old == hi)
+                            unsigned int ri = (unsigned int)i;
+                            unsigned int rj = (unsigned int)j;
+                            while (ri != rj)
                             {
-                                break;
+                                unsigned int lo = ri < rj ? ri : rj;
+                                unsigned int hi = ri < rj ? rj : ri;
+                                unsigned int old = atomicMin(&labels[hi], lo);
+                                if (old == hi)
+                                {
+                                    break;
+                                }
+                                ri = old;
+                                rj = lo;
                             }
-                            ri = old;
-                            rj = lo;
                         }
                     }
                 }
@@ -287,7 +230,7 @@ namespace Huvitz
         int bs = 256;
         int gs = (int)((n + bs - 1) / bs);
 
-        Kernel_InsertPoints << <gs, bs, 0, stream >> > (
+        Kernel_InsertPoints<<<gs, bs, 0, stream>>>(
             points, hashTable, nextPoint,
             (int)n, 1.0f / cellSize, worldOrigin, tableMask);
     }
@@ -304,19 +247,13 @@ namespace Huvitz
         float d2 = clusterDistance * clusterDistance;
         float invCell = 1.0f / cellSize;
 
-        Kernel_InitLabels << <gs, bs, 0, stream >> > (outLabels, (int)n);
+        Kernel_InitLabels<<<gs, bs, 0, stream>>>(outLabels, (int)n);
 
-        Kernel_UnionFind_Link_SameCell << <gs, bs, 0, stream >> > (
+        Kernel_UnionFind_Link<<<gs, bs, 0, stream>>>(
             hashTable, nextPoint, points,
             outLabels, (int)n, d2, invCell, worldOrigin, tableMask);
 
-        Kernel_UnionFind_Compress << <gs, bs, 0, stream >> > (outLabels, (int)n);
-
-        Kernel_UnionFind_Link_Neighbors << <gs, bs, 0, stream >> > (
-            hashTable, nextPoint, points,
-            outLabels, (int)n, d2, invCell, worldOrigin, tableMask);
-
-        Kernel_UnionFind_Compress << <gs, bs, 0, stream >> > (outLabels, (int)n);
+        Kernel_UnionFind_Compress<<<gs, bs, 0, stream>>>(outLabels, (int)n);
     }
 
     void SparseCells::ApplyClustering(PCD* cloud, unsigned int* outLabels, float clusterDistance, CUstream_st* stream)
