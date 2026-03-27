@@ -1521,23 +1521,19 @@ namespace Huvitz
 		maxBlockCount = maxBlocks;
 		this->blockSize = blockSize;
 
-		cudaError_t err = cudaMalloc(&d_blocks, sizeof(VoxelBlock<T>) * maxBlocks);
-		if (err != cudaSuccess)
-		{
-			printf("[Initialize] d_blocks alloc FAILED: %s (%zu bytes requested)\n",
-				cudaGetErrorString(err),
-				sizeof(VoxelBlock<T>) * maxBlocks);
-			return false;
-		}
-
+		cudaMalloc(&d_blocks, sizeof(VoxelBlock<T>) * maxBlocks);
 		cudaMalloc(&d_hashTable, sizeof(uint64_t) * maxBlocks);
 		cudaMalloc(&d_blockCount, sizeof(uint32_t));
 		cudaMalloc(&d_occupiedSlots, sizeof(uint32_t) * maxBlocks);
+		cudaMalloc(&d_dirtySlots, sizeof(uint32_t) * maxBlocks);
+		cudaMalloc(&d_dirtyCount, sizeof(uint32_t));
 
 		cudaMemset(d_blocks, 0, sizeof(VoxelBlock<T>) * maxBlocks);
 		cudaMemset(d_hashTable, 0, sizeof(uint64_t) * maxBlocks);
 		cudaMemset(d_blockCount, 0, sizeof(uint32_t));
 		cudaMemset(d_occupiedSlots, 0, sizeof(uint32_t) * maxBlocks);
+		cudaMemset(d_dirtySlots, 0, sizeof(uint32_t) * maxBlocks);
+		cudaMemset(d_dirtyCount, 0, sizeof(uint32_t));
 
 		return true;
 	}
@@ -1549,11 +1545,15 @@ namespace Huvitz
 		if (d_hashTable)     cudaFree(d_hashTable);
 		if (d_blockCount)    cudaFree(d_blockCount);
 		if (d_occupiedSlots) cudaFree(d_occupiedSlots);
+		if (d_dirtySlots)    cudaFree(d_dirtySlots);
+		if (d_dirtyCount)    cudaFree(d_dirtyCount);
 
 		d_blocks = nullptr;
 		d_hashTable = nullptr;
 		d_blockCount = nullptr;
 		d_occupiedSlots = nullptr;
+		d_dirtySlots = nullptr;
+		d_dirtyCount = nullptr;
 	}
 
 	template <typename T>
@@ -1647,16 +1647,26 @@ namespace Huvitz
 		while (true)
 		{
 			unsigned long long* slotPtr = (unsigned long long*) & d_hashTable[slot];
-			unsigned long long prev = atomicCAS(slotPtr, 0ULL, (unsigned long long)key);
+			unsigned long long  prev = atomicCAS(slotPtr, 0ULL, (unsigned long long)key);
 
 			if (prev == 0)
 			{
-				// 새 블록 생성: blockCount를 인덱스로 사용해 occupiedSlots에 기록
+				// 신규 블록
 				uint32_t idx = atomicAdd(d_blockCount, 1);
-				d_occupiedSlots[idx] = slot;  // [추가]
+				d_occupiedSlots[idx] = slot;
+
+				// dirty 목록에도 기록
+				uint32_t dirtyIdx = atomicAdd(d_dirtyCount, 1);
+				d_dirtySlots[dirtyIdx] = slot;
 				return slot;
 			}
-			if (prev == key) return slot;
+			if (prev == (unsigned long long)key)
+			{
+				// 기존 블록 — dirty 목록에만 기록 (중복 허용, Phase 2에서 idempotent)
+				uint32_t dirtyIdx = atomicAdd(d_dirtyCount, 1);
+				d_dirtySlots[dirtyIdx] = slot;
+				return slot;
+			}
 
 			slot = (slot + 1) % maxBlockCount;
 			if (slot == start) break;
@@ -1701,87 +1711,87 @@ namespace Huvitz
 	}
 
 	template <typename T>
-	void VoxelDataBase<T>::IntegrateDirectional(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream)
+	void VoxelDataBase<T>::IntegrateDirectional(
+		IntegrationParameters* parameters,
+		cached_allocator* allocator,
+		CUstream_st* stream)
 	{
 #ifdef __CUDACC__
-		if constexpr (std::is_same_v<T, DirectionalVoxel<Voxel>>)
+		if constexpr (std::is_same_v<T, DirectionalVoxel<DummyVoxel>>)
 		{
 			VoxelDataBaseIntegrationParameters* params =
 				dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
-			if (nullptr == params)
-				return;
-
-			int threads = 256;
-			int pixBlocks = (params->mapWidth * params->mapHeight + threads - 1) / threads;
-
-			auto& self = reinterpret_cast<VoxelDataBase<DirectionalVoxel<Voxel>>&>(*this);
-
-			nvtxRangePushA("IntegrateDirectional_Phase1");
-			Kernel_IntegrateDirectional_Phase1 << <pixBlocks, threads, 0, stream >> > (self, *params);
-			cudaStreamSynchronize(stream);
-			cudaError_t err1 = cudaGetLastError();
-			if (err1 != cudaSuccess)
-				printf("[Phase1] CUDA error: %s\n", cudaGetErrorString(err1));
-			nvtxRangePop();
-
-			uint32_t blockCount = 0;
-			cudaMemcpy(&blockCount, d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-			printf("[Phase2] blockCount = %u\n", blockCount);
-
-			if (blockCount > 0)
-			{
-				// [수정] 1 thread per voxel, occupiedSlots 기반 런치
-				constexpr uint32_t VOXELS_PER_BLOCK = VoxelBlock<DirectionalVoxel<Voxel>>::VOXELS_PER_BLOCK;
-				uint32_t totalThreads = blockCount * VOXELS_PER_BLOCK;
-				int volBlocks = (totalThreads + threads - 1) / threads;
-
-				nvtxRangePushA("IntegrateDirectional_Phase2");
-				Kernel_IntegrateDirectional_Phase2_Voxel << <volBlocks, threads, 0, stream >> > (
-					self, d_occupiedSlots, blockCount);
-				cudaStreamSynchronize(stream);
-				cudaError_t err2 = cudaGetLastError();
-				if (err2 != cudaSuccess)
-					printf("[Phase2] CUDA error: %s\n", cudaGetErrorString(err2));
-				nvtxRangePop();
-			}
-		}
-		else if constexpr (std::is_same_v<T, DirectionalVoxel<DummyVoxel>>)
-		{
-			VoxelDataBaseIntegrationParameters* params =
-				dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
-			if (nullptr == params)
-				return;
-
-			int threads = 256;
-			int pixBlocks = (params->mapWidth * params->mapHeight + threads - 1) / threads;
+			if (nullptr == params) return;
 
 			auto& self = reinterpret_cast<VoxelDataBase<DirectionalVoxel<DummyVoxel>>&>(*this);
 
+			// --- 프레임 시작: dirty 카운터 리셋 ---
+			cudaMemsetAsync(d_dirtyCount, 0, sizeof(uint32_t), stream);
+
+			const int threads = 256;
+			const int pixBlocks =
+				(params->mapWidth * params->mapHeight + threads - 1) / threads;
+
+			// Phase 1
 			nvtxRangePushA("IntegrateDirectional_Phase1");
 			Kernel_IntegrateDirectional_Phase1 << <pixBlocks, threads, 0, stream >> > (self, *params);
 			cudaStreamSynchronize(stream);
-			cudaError_t err1 = cudaGetLastError();
-			if (err1 != cudaSuccess)
-				printf("[Phase1] CUDA error: %s\n", cudaGetErrorString(err1));
 			nvtxRangePop();
 
-			uint32_t blockCount = 0;
-			cudaMemcpy(&blockCount, d_blockCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-			//printf("[Phase2] blockCount = %u\n", blockCount);
+			// Phase 2: 이번 프레임에 실제로 터치된 슬롯만 처리
+			uint32_t dirtyCount = 0;
+			cudaMemcpy(&dirtyCount, d_dirtyCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
 
-			if (blockCount > 0)
+			if (dirtyCount > 0)
 			{
-				constexpr uint32_t VOXELS_PER_BLOCK = VoxelBlock<DirectionalVoxel<DummyVoxel>>::VOXELS_PER_BLOCK;
-				uint32_t totalThreads = blockCount * VOXELS_PER_BLOCK;
+				constexpr uint32_t VPB =
+					VoxelBlock<DirectionalVoxel<DummyVoxel>>::VOXELS_PER_BLOCK;
+
+				// dirty 슬롯에 중복이 있어도 총 스레드 수는 프레임당 터치 블록 수에 비례
+				uint32_t totalThreads = dirtyCount * VPB;
 				int volBlocks = (totalThreads + threads - 1) / threads;
 
 				nvtxRangePushA("IntegrateDirectional_Phase2");
 				Kernel_IntegrateDirectional_Phase2_DummyVoxel << <volBlocks, threads, 0, stream >> > (
-					self, d_occupiedSlots, blockCount);
+					self, d_dirtySlots, dirtyCount);
 				cudaStreamSynchronize(stream);
-				cudaError_t err2 = cudaGetLastError();
-				if (err2 != cudaSuccess)
-					printf("[Phase2] CUDA error: %s\n", cudaGetErrorString(err2));
+				nvtxRangePop();
+			}
+		}
+		else if constexpr (std::is_same_v<T, DirectionalVoxel<Voxel>>)
+		{
+			// Voxel 버전도 동일 패턴으로 수정
+			VoxelDataBaseIntegrationParameters* params =
+				dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
+			if (nullptr == params) return;
+
+			auto& self = reinterpret_cast<VoxelDataBase<DirectionalVoxel<Voxel>>&>(*this);
+
+			cudaMemsetAsync(d_dirtyCount, 0, sizeof(uint32_t), stream);
+
+			const int threads = 256;
+			const int pixBlocks =
+				(params->mapWidth * params->mapHeight + threads - 1) / threads;
+
+			nvtxRangePushA("IntegrateDirectional_Phase1");
+			Kernel_IntegrateDirectional_Phase1 << <pixBlocks, threads, 0, stream >> > (self, *params);
+			cudaStreamSynchronize(stream);
+			nvtxRangePop();
+
+			uint32_t dirtyCount = 0;
+			cudaMemcpy(&dirtyCount, d_dirtyCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+
+			if (dirtyCount > 0)
+			{
+				constexpr uint32_t VPB =
+					VoxelBlock<DirectionalVoxel<Voxel>>::VOXELS_PER_BLOCK;
+				uint32_t totalThreads = dirtyCount * VPB;
+				int volBlocks = (totalThreads + threads - 1) / threads;
+
+				nvtxRangePushA("IntegrateDirectional_Phase2");
+				Kernel_IntegrateDirectional_Phase2_Voxel << <volBlocks, threads, 0, stream >> > (
+					self, d_dirtySlots, dirtyCount);
+				cudaStreamSynchronize(stream);
 				nvtxRangePop();
 			}
 		}

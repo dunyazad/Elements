@@ -130,7 +130,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		{
 			auto entity = Helium.CreateEntity("main");
 			Helium.CreateEventCallback<KeyEvent>(entity, "3D", [](Entity e, const KeyEvent& event) {
-				if (event.action == 1 && KeyCode::Plus == event.keyCode)
+				if (event.action == 1 && KeyCode::Space == event.keyCode)
+				{
+					Helium.GetImmediateModeRenderSystem()->ToggleEnable();
+				}
+				else if (event.action == 1 && KeyCode::Plus == event.keyCode)
 				{
 					auto scale = VD::GetInstanceScale("PointCloud");
 					VD::SetInstanceScale("PointCloud", scale * 1.1f);

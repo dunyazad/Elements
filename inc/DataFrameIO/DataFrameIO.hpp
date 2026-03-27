@@ -263,6 +263,18 @@ public:
         return frame;
     }
 
+    std::optional<DataFrame> read_at(size_t frameIndex)
+    {
+        if (frameIndex >= offsets.size())
+        {
+            throw std::out_of_range(
+                "DataFrameReader::read_at - index " + std::to_string(frameIndex)
+                + " out of range (total " + std::to_string(offsets.size()) + ")");
+        }
+        seek(frameIndex);
+        return next();
+    }
+
     void seek(size_t frameIndex)
     {
         if (frameIndex >= offsets.size())

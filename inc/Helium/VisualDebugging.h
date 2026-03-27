@@ -36,7 +36,7 @@ public:
 
 	static void CreateLineEntity(const std::string& tag);
 	static void CreateTriangleEntity(const std::string& tag);
-	static void CreateBoxEntity(const std::string& tag); // Box는 보통 1x1x1 고정
+	static void CreateBoxEntity(const std::string& tag);
 	static void CreateWiredBoxEntity(const std::string& tag);
 	static void CreateSphereEntity(const std::string& tag, float radius, unsigned int slices, unsigned int stacks);
 	static void CreateDiskEntity(const std::string& tag, float radius, unsigned int slices, bool isBillboard = false);
@@ -295,4 +295,6 @@ private:
 
 	static std::vector<std::string> selectionRenderables;
 	static unsigned int selectionIndex;
+
+	static std::map<int, DebuggingRenderable*> toggleTargets;
 };

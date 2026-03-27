@@ -62,6 +62,68 @@ namespace Huvitz
         unsigned int* labels,
         int numberOfPoints,
         float squaredDistance,
+        float inverseCellSize,
+        float3 origin,
+        int tableMask)
+    {
+        int indexI = blockIdx.x * blockDim.x + threadIdx.x;
+        if (indexI >= numberOfPoints)
+        {
+            return;
+        }
+
+        float3 positionI = positions[indexI];
+        int gridX = __float2int_rd((positionI.x - origin.x) * inverseCellSize);
+        int gridY = __float2int_rd((positionI.y - origin.y) * inverseCellSize);
+        int gridZ = __float2int_rd((positionI.z - origin.z) * inverseCellSize);
+
+        int slot = SpatialHash(gridX, gridY, gridZ, tableMask);
+        int indexJ = hashTable[slot];
+
+        while (indexJ != -1)
+        {
+            if (indexI < indexJ)
+            {
+                unsigned int labelI = labels[indexI];
+                unsigned int labelJ = labels[indexJ];
+                if (labelI != labelJ)
+                {
+                    float3 positionJ = positions[indexJ];
+                    float deltaX = positionI.x - positionJ.x;
+                    float deltaY = positionI.y - positionJ.y;
+                    float deltaZ = positionI.z - positionJ.z;
+
+                    if (deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ <= squaredDistance)
+                    {
+                        unsigned int rootI = labelI;
+                        unsigned int rootJ = labelJ;
+                        while (rootI != rootJ)
+                        {
+                            unsigned int lowerBound = rootI < rootJ ? rootI : rootJ;
+                            unsigned int upperBound = rootI < rootJ ? rootJ : rootI;
+                            unsigned int oldBound = atomicMin(&labels[upperBound], lowerBound);
+                            if (oldBound == upperBound)
+                            {
+                                break;
+                            }
+                            rootI = oldBound;
+                            rootJ = lowerBound;
+                        }
+                    }
+                }
+            }
+            indexJ = nextPoint[indexJ];
+        }
+    }
+
+    __global__ void Kernel_UnionFind_Link_SameCell_Angle(
+        const int* __restrict__ hashTable,
+        const int* __restrict__ nextPoint,
+        const float3* __restrict__ positions,
+        const float3* __restrict__ normals,
+        unsigned int* labels,
+        int numberOfPoints,
+        float squaredDistance,
         float cosAngleThreshold,
         float inverseCellSize,
         float3 origin,
@@ -96,7 +158,6 @@ namespace Huvitz
 
                     if (deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ <= squaredDistance)
                     {
-                        // Angle Threshold를 이용한 Normal 비교
                         float3 normalI = normals[indexI];
                         float3 normalJ = normals[indexJ];
                         float dotProduct = normalI.x * normalJ.x + normalI.y * normalJ.y + normalI.z * normalJ.z;
@@ -126,6 +187,69 @@ namespace Huvitz
     }
 
     __global__ void Kernel_UnionFind_Link_Neighbors(
+        const int* __restrict__ hashTable,
+        const int* __restrict__ nextPoint,
+        const float3* __restrict__ positions,
+        const float3* __restrict__ normals,
+        unsigned int* labels,
+        int numberOfPoints,
+        float squaredDistance,
+        float inverseCellSize,
+        float3 origin,
+        int tableMask)
+    {
+        int indexI = blockIdx.x * blockDim.x + threadIdx.x;
+        if (indexI >= numberOfPoints)
+        {
+            return;
+        }
+
+        float3 positionI = positions[indexI];
+        int gridX = __float2int_rd((positionI.x - origin.x) * inverseCellSize);
+        int gridY = __float2int_rd((positionI.y - origin.y) * inverseCellSize);
+        int gridZ = __float2int_rd((positionI.z - origin.z) * inverseCellSize);
+
+#pragma unroll
+        for (int neighborIndex = 1; neighborIndex < 14; ++neighborIndex)
+        {
+            int slot = SpatialHash(gridX + offsetX[neighborIndex], gridY + offsetY[neighborIndex], gridZ + offsetZ[neighborIndex], tableMask);
+            int indexJ = hashTable[slot];
+
+            while (indexJ != -1)
+            {
+                unsigned int labelI = labels[indexI];
+                unsigned int labelJ = labels[indexJ];
+                if (labelI != labelJ)
+                {
+                    float3 positionJ = positions[indexJ];
+                    float deltaX = positionI.x - positionJ.x;
+                    float deltaY = positionI.y - positionJ.y;
+                    float deltaZ = positionI.z - positionJ.z;
+
+                    if (deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ <= squaredDistance)
+                    {
+                        unsigned int rootI = labelI;
+                        unsigned int rootJ = labelJ;
+                        while (rootI != rootJ)
+                        {
+                            unsigned int lowerBound = rootI < rootJ ? rootI : rootJ;
+                            unsigned int upperBound = rootI < rootJ ? rootJ : rootI;
+                            unsigned int oldBound = atomicMin(&labels[upperBound], lowerBound);
+                            if (oldBound == upperBound)
+                            {
+                                break;
+                            }
+                            rootI = oldBound;
+                            rootJ = lowerBound;
+                        }
+                    }
+                }
+                indexJ = nextPoint[indexJ];
+            }
+        }
+    }
+
+    __global__ void Kernel_UnionFind_Link_Neighbors_Angle(
         const int* __restrict__ hashTable,
         const int* __restrict__ nextPoint,
         const float3* __restrict__ positions,
@@ -168,7 +292,6 @@ namespace Huvitz
 
                     if (deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ <= squaredDistance)
                     {
-                        // Angle Threshold를 이용한 Normal 비교
                         float3 normalI = normals[indexI];
                         float3 normalJ = normals[indexJ];
                         float dotProduct = normalI.x * normalJ.x + normalI.y * normalJ.y + normalI.z * normalJ.z;
@@ -217,7 +340,6 @@ namespace Huvitz
         : hashTable(nullptr), hashTableCapacity(0), tableMask(0)
         , nextPoint(nullptr), nextPointCapacity(0)
     {
-        InitialAllocate();
     }
 
     SparseCells::~SparseCells()
@@ -229,15 +351,6 @@ namespace Huvitz
         if (nextPoint)
         {
             cudaFree(nextPoint);
-        }
-    }
-
-    void SparseCells::InitialAllocate()
-    {
-        if (!nextPoint)
-        {
-            nextPointCapacity = 2000000;
-            cudaMalloc(&nextPoint, sizeof(int) * nextPointCapacity);
         }
     }
 
@@ -313,7 +426,7 @@ namespace Huvitz
             (int)numberOfPoints, 1.0f / cellSize, worldOrigin, tableMask);
     }
 
-    void SparseCells::ApplyClustering(float3* points, float3* normals, size_t numberOfPoints, unsigned int* labels, float clusterDistance, float angleThreshold, CUstream_st* stream)
+    void SparseCells::ApplyClustering(float3* points, float3* normals, size_t numberOfPoints, unsigned int* labels, float clusterDistance, CUstream_st* stream)
     {
         if (numberOfPoints == 0 || !labels || !hashTable || !normals)
         {
@@ -325,17 +438,52 @@ namespace Huvitz
         float squaredDistance = clusterDistance * clusterDistance;
         float inverseCellSize = 1.0f / cellSize;
 
+        Kernel_InitLabels << <gridSizeCuda, blockSize, 0, stream >> > (labels, (int)numberOfPoints);
+
+        Kernel_UnionFind_Link_SameCell << <gridSizeCuda, blockSize, 0, stream >> > (
+            hashTable, nextPoint, points, normals,
+            labels, (int)numberOfPoints, squaredDistance, inverseCellSize, worldOrigin, tableMask);
+
+        Kernel_UnionFind_Compress << <gridSizeCuda, blockSize, 0, stream >> > (labels, (int)numberOfPoints);
+
+        Kernel_UnionFind_Link_Neighbors << <gridSizeCuda, blockSize, 0, stream >> > (
+            hashTable, nextPoint, points, normals,
+            labels, (int)numberOfPoints, squaredDistance, inverseCellSize, worldOrigin, tableMask);
+
+        Kernel_UnionFind_Compress << <gridSizeCuda, blockSize, 0, stream >> > (labels, (int)numberOfPoints);
+    }
+
+    void SparseCells::ApplyClustering(PCD* cloud, unsigned int* labels, float clusterDistance, CUstream_st* stream)
+    {
+        if (!cloud)
+        {
+            return;
+        }
+        ApplyClustering(cloud->GetPositions(), cloud->GetNormals(), cloud->size(), labels, clusterDistance, stream);
+    }
+
+    void SparseCells::ApplyClustering(float3* points, float3* normals, size_t numberOfPoints, unsigned int* labels, float clusterDistance, float angleThreshold, CUstream_st* stream)
+    {
+        if (numberOfPoints == 0 || !labels || !hashTable || !normals)
+        {
+            return;
+        }
+
+        int blockSize = 256;
+        int gridSizeCuda = (int)((numberOfPoints + blockSize - 1) / blockSize);
+        float squaredDistance = clusterDistance * clusterDistance;
+        float inverseCellSize = 1.0f / cellSize;
         float cosAngleThreshold = cosf(angleThreshold);
 
         Kernel_InitLabels << <gridSizeCuda, blockSize, 0, stream >> > (labels, (int)numberOfPoints);
 
-        Kernel_UnionFind_Link_SameCell << <gridSizeCuda, blockSize, 0, stream >> > (
+        Kernel_UnionFind_Link_SameCell_Angle << <gridSizeCuda, blockSize, 0, stream >> > (
             hashTable, nextPoint, points, normals,
             labels, (int)numberOfPoints, squaredDistance, cosAngleThreshold, inverseCellSize, worldOrigin, tableMask);
 
         Kernel_UnionFind_Compress << <gridSizeCuda, blockSize, 0, stream >> > (labels, (int)numberOfPoints);
 
-        Kernel_UnionFind_Link_Neighbors << <gridSizeCuda, blockSize, 0, stream >> > (
+        Kernel_UnionFind_Link_Neighbors_Angle << <gridSizeCuda, blockSize, 0, stream >> > (
             hashTable, nextPoint, points, normals,
             labels, (int)numberOfPoints, squaredDistance, cosAngleThreshold, inverseCellSize, worldOrigin, tableMask);
 

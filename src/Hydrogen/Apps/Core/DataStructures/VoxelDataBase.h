@@ -259,7 +259,6 @@ namespace Huvitz
 		__host__ __device__ inline uint32_t GetMaxBlockCount() { return maxBlockCount; }
 		__host__ __device__ inline float GetBlockSize() { return blockSize; }
 
-		// [추가] occupied slot 리스트 접근자
 		__host__ __device__ inline uint32_t* GetOccupiedSlots() { return d_occupiedSlots; }
 
 		__device__ inline VoxelBlock<T>* GetVoxelBlock(const Vector3f& position);
@@ -279,7 +278,6 @@ namespace Huvitz
 			nvtxRangePushA("Clear Voxel Data Base");
 			printf("Clear Voxel Data Base\n");
 			Kernel_Clear << <(maxBlockCount + 255) / 256, 256, 0, stream >> > (*this);
-			// [수정] Clear 후 blockCount와 occupiedSlots도 리셋
 			cudaMemsetAsync(d_blockCount, 0, sizeof(uint32_t), stream);
 			nvtxRangePop();
 #endif
@@ -302,8 +300,10 @@ namespace Huvitz
 		uint32_t  maxBlockCount = 0;
 		float     blockSize = 0.8f;
 
-		// [추가] occupied 슬롯 인덱스 리스트: d_occupiedSlots[0..blockCount-1]
 		uint32_t* d_occupiedSlots = nullptr;
+
+		uint32_t* d_dirtySlots = nullptr;
+		uint32_t* d_dirtyCount = nullptr;
 
 		__device__ inline uint32_t FindBlockSlot(const Vector3f& position);
 
