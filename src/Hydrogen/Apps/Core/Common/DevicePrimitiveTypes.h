@@ -206,6 +206,27 @@ namespace Huvitz
 		__host__ __device__ inline const float& w() const { return data[3]; }
 
 		__host__ __device__ inline operator Eigen::Vector4f& () { return *reinterpret_cast<Eigen::Vector4f*>(this); }
+
+		__host__ __device__ inline Vector4f operator+(const Vector4f& o) const { return { data[0] + o.data[0], data[1] + o.data[1], data[2] + o.data[2], data[3] + o.data[3] }; }
+		__host__ __device__ inline Vector4f operator-(const Vector4f& o) const { return { data[0] - o.data[0], data[1] - o.data[1], data[2] - o.data[2], data[3] - o.data[3] }; }
+		__host__ __device__ inline Vector4f operator*(const Vector4f& o) const { return { data[0] * o.data[0], data[1] * o.data[1], data[2] * o.data[2], data[3] * o.data[3] }; }
+		__host__ __device__ inline Vector4f operator/(const Vector4f& o) const { return { data[0] / o.data[0], data[1] / o.data[1], data[2] / o.data[2], data[3] / o.data[3] }; }
+
+		__host__ __device__ inline Vector4f operator*(float s) const { return { data[0] * s, data[1] * s, data[2] * s, data[3] * s }; }
+		__host__ __device__ inline Vector4f operator/(float s) const { float inv = 1.0f / s; return { data[0] * inv, data[1] * inv, data[2] * inv, data[3] * inv }; }
+		__host__ __device__ inline Vector4f operator-() const { return { -data[0], -data[1], -data[2], -data[3] }; }
+		__host__ __device__ inline Vector4f& operator+=(const Vector4f& o) { data[0] += o.data[0]; data[1] += o.data[1]; data[2] += o.data[2]; data[3] += o.data[3]; return *this; }
+		__host__ __device__ inline Vector4f& operator-=(const Vector4f& o) { data[0] -= o.data[0]; data[1] -= o.data[1]; data[2] -= o.data[2]; data[3] -= o.data[3]; return *this; }
+		__host__ __device__ inline Vector4f& operator*=(float s) { data[0] *= s; data[1] *= s; data[2] *= s; data[3] *= s; return *this; }
+		__host__ __device__ inline Vector4f& operator/=(float s) { float inv = 1.0f / s; data[0] *= inv; data[1] *= inv; data[2] *= inv; data[3] *= inv; return *this; }
+		__host__ __device__ inline bool operator==(const Vector4f& o) const { return data[0] == o.data[0] && data[1] == o.data[1] && data[2] == o.data[2] && data[3] == o.data[3]; }
+		__host__ __device__ inline bool operator!=(const Vector4f& o) const { return !(*this == o); }
+
+		__host__ __device__ static inline Vector4f Zero() { return { 0.0f, 0.0f, 0.0f, 0.0f }; }
+		__host__ __device__ static inline Vector4f UnitX() { return { 1.0f, 0.0f, 0.0f, 0.0f }; }
+		__host__ __device__ static inline Vector4f UnitY() { return { 0.0f, 1.0f, 0.0f, 0.0f }; }
+		__host__ __device__ static inline Vector4f UnitZ() { return { 0.0f, 0.0f, 1.0f, 0.0f }; }
+		__host__ __device__ static inline Vector4f UnitW() { return { 0.0f, 0.0f, 0.0f, 1.0f }; }
 	};
 
 	// ---------- Matrix3f ----------

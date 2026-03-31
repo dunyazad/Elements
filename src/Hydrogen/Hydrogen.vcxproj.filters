@@ -78,6 +78,9 @@
     <ClInclude Include="Apps\Core\Common\Time.h">
       <Filter>Apps\Core\Common</Filter>
     </ClInclude>
+    <ClInclude Include="Apps\Core\DataStructures\cuda_hashmap.cuh">
+      <Filter>Apps\Core</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Hydrogen.cpp">
@@ -145,6 +148,12 @@
     </CudaCompile>
     <CudaCompile Include="Apps\Core\DataStructures\SparseCells.cu">
       <Filter>Apps\Core\DataStructures</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppVoxelStreaming.cu">
+      <Filter>Apps</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppMergePointClouds.cu">
+      <Filter>Apps</Filter>
     </CudaCompile>
   </ItemGroup>
 </Project>

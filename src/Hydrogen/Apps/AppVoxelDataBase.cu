@@ -375,7 +375,7 @@ virtual void Execute() override
 	{
 		CheckDeviceMemory("After VoxelDataBase Initialization");
 
-		bool usingSerializedData = true;
+		bool usingSerializedData = false;
 		if (false == usingSerializedData)
 		{
 			DataFrameReader reader("D:\\Debug\\voxel_database_integration.df");

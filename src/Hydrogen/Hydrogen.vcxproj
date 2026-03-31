@@ -179,6 +179,7 @@
     <ClInclude Include="Apps\Core\Common\HostCommon.h" />
     <ClInclude Include="Apps\Core\Common\Time.h" />
     <ClInclude Include="Apps\Core\Core.h" />
+    <ClInclude Include="Apps\Core\DataStructures\cuda_hashmap.cuh" />
     <ClInclude Include="Apps\Core\DataStructures\PCD.h" />
     <ClInclude Include="Apps\Core\DataStructures\SparseCells.h" />
     <ClInclude Include="Apps\Core\DataStructures\VolumeBase.h" />
@@ -211,7 +212,9 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="Apps\AppMergePointClouds.cu" />
     <CudaCompile Include="Apps\AppVoxelDataBase.cu" />
+    <CudaCompile Include="Apps\AppVoxelStreaming.cu" />
     <CudaCompile Include="Apps\AppVVV.cu" />
     <CudaCompile Include="Apps\Core\DataStructures\PCD.cu" />
     <CudaCompile Include="Apps\Core\DataStructures\SparseCells.cu" />

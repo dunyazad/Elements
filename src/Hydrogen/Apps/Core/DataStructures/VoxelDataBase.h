@@ -29,17 +29,17 @@ namespace Huvitz
 
 		uchar deepLearningClass; // enum DL_Class_Names
 		uchar materialID; // 0: other 255: tooth
-		unsigned short startPatchID;	// ë³µì…€ì˜ ì¡°í•©ì— ì˜í–¥ì„ ë¯¸ì¹œ ì²« íŒ¨ì¹˜ ë²ˆí˜¸
-		unsigned int flags : 2; // ë³µì…€ì˜ ì ê¸ˆìƒíƒœ ë“±ì˜ ìƒíƒœë¥¼ ì €ì¥.VOXEL_FLAG_**** _BIT ë¡œ ë¹„êµ
-		unsigned int label : 30;	// í´ëŸ¬ìŠ¤í„°ë§ ëœ ë ˆì´ë¸” ë²ˆí˜¸
+		unsigned short startPatchID;	// º¹¼¿ÀÇ Á¶ÇÕ¿¡ ¿µÇâÀ» ¹ÌÄ£ Ã¹ ÆĞÄ¡ ¹øÈ£
+		unsigned int flags : 2; // º¹¼¿ÀÇ Àá±İ»óÅÂ µîÀÇ »óÅÂ¸¦ ÀúÀå.VOXEL_FLAG_**** _BIT ·Î ºñ±³
+		unsigned int label : 30;	// Å¬·¯½ºÅÍ¸µ µÈ ·¹ÀÌºí ¹øÈ£
 
-		uint8_t colorMap[4]; // colors[3], alpha (ì‹ ë¢°ë„)
+		uint8_t colorMap[4]; // colors[3], alpha (½Å·Úµµ)
 	};
 
 	struct Voxel {
 		voxel_value_t		value;
 		unsigned short		valueCount;
-		//Eigen::Vector3f		position; // ì‚¬ìš©í•˜ì§€ ì•ŠìŒ
+		//Eigen::Vector3f		position; // »ç¿ëÇÏÁö ¾ÊÀ½
 		Eigen::Vector3f		normal;
 		Eigen::Vector3b		color;
 
@@ -47,7 +47,7 @@ namespace Huvitz
 		Eigen::Vector3b		color_list[3];
 		uint8_t				color_score[3];
 
-		//float				colorScore; // ì‚¬ìš©í•˜ì§€ ì•ŠìŒ
+		//float				colorScore; // »ç¿ëÇÏÁö ¾ÊÀ½
 		char				segmentation;
 		VoxelExtraAttrib	extraAttrib;
 #ifdef USE_EXPERIMENTAL_COLOR_OPT2
@@ -221,7 +221,7 @@ namespace Huvitz
 		uchar3* colors,
 		uint32_t* numberOfVoxels);
 
-	// [ìˆ˜ì •] Phase2 ì»¤ë„: occupiedSlots + 1 thread per voxel
+	// [¼öÁ¤] Phase2 Ä¿³Î: occupiedSlots + 1 thread per voxel
 	__global__ void Kernel_IntegrateDirectional_Phase2_Voxel(
 		VoxelDataBase<DirectionalVoxel<Voxel>> db,
 		uint32_t* occupiedSlots,

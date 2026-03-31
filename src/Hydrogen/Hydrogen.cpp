@@ -45,7 +45,9 @@ using VD = VisualDebugging;
 //const std::string  appName = "AppICP";
 //const std::string  appName = "AppClusteringDevice";
 //const std::string  appName = "AppVVV";
-const std::string  appName = "AppVoxelDataBase";
+//const std::string  appName = "AppVoxelDataBase";
+//const std::string  appName = "AppVoxelStreaming";
+const std::string  appName = "AppMergePointClouds";
 
 #define MAX_LOADSTRING 100
 
