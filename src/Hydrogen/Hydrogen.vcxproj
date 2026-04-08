@@ -179,11 +179,13 @@
     <ClInclude Include="Apps\Core\Common\HostCommon.h" />
     <ClInclude Include="Apps\Core\Common\Time.h" />
     <ClInclude Include="Apps\Core\Core.h" />
-    <ClInclude Include="Apps\Core\DataStructures\cuda_hashmap.cuh" />
+    <ClInclude Include="Apps\Core\DataStructures\CudaHashMap.cuh" />
     <ClInclude Include="Apps\Core\DataStructures\PCD.h" />
     <ClInclude Include="Apps\Core\DataStructures\SparseCells.h" />
     <ClInclude Include="Apps\Core\DataStructures\VolumeBase.h" />
+    <ClInclude Include="Apps\Core\DataStructures\VoxelCache.h" />
     <ClInclude Include="Apps\Core\DataStructures\VoxelDataBase.h" />
+    <ClInclude Include="Apps\Core\Operations\OperationPointCloudMerge.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Hydrogen.h" />
     <ClInclude Include="Resource.h" />
@@ -212,13 +214,20 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="Apps\AppICP.cu" />
     <CudaCompile Include="Apps\AppMergePointClouds.cu" />
+    <CudaCompile Include="Apps\AppMergePointClouds_Local.cu" />
+    <CudaCompile Include="Apps\AppOperationPointCloudMerge.cu" />
+    <CudaCompile Include="Apps\AppPerframeNoiseFilter.cu" />
+    <CudaCompile Include="Apps\AppVoxelCache.cu" />
     <CudaCompile Include="Apps\AppVoxelDataBase.cu" />
     <CudaCompile Include="Apps\AppVoxelStreaming.cu" />
     <CudaCompile Include="Apps\AppVVV.cu" />
     <CudaCompile Include="Apps\Core\DataStructures\PCD.cu" />
     <CudaCompile Include="Apps\Core\DataStructures\SparseCells.cu" />
+    <CudaCompile Include="Apps\Core\DataStructures\VoxelCache.cu" />
     <CudaCompile Include="Apps\Core\DataStructures\VoxelDataBase.cu" />
+    <CudaCompile Include="Apps\Core\Operations\OperationPointCloudMerge.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

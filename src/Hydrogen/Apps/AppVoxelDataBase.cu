@@ -371,7 +371,7 @@ virtual void Execute() override
 	CheckDeviceMemory("Before VoxelDataBase Initialization");
 
 	VoxelDataBase<DirectionalVoxel<DummyVoxel>> voxelDataBase;
-	if (voxelDataBase.Initialize(80000))
+	if (voxelDataBase.Initialize(160000))
 	{
 		CheckDeviceMemory("After VoxelDataBase Initialization");
 

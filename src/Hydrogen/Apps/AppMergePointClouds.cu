@@ -39,9 +39,9 @@ using VD = IVisualDebugging;
 #include <Core/DataStructures/VoxelDataBase.h>
 using namespace Huvitz;
 
-#include <Core/DataStructures/cuda_hashmap.cuh>
+#include <Core/DataStructures/CudaHashMap.cuh>
 
-namespace fs = std::filesystem; 
+namespace fs = std::filesystem;
 
 using Morton64 = Huvitz::Morton64;
 
@@ -70,7 +70,7 @@ __global__ void insert_point_cloud_kernel(
     Morton64 morton_key = Morton64::FromPosition({ XYZ(pos) }, voxel_size);
     uint64_t key = morton_key.code;
 
-    Point* target = map.insert_and_get(key);
+    Point* target = map.InsertAndGet(key);
 
     if (target != nullptr)
     {
@@ -91,12 +91,12 @@ __global__ void insert_point_cloud_kernel(
 std::vector<Point> GetAllPointsFromHashMap(CudaHashMap<uint64_t, Point>& hash_map)
 {
     cudaDeviceSynchronize();
-    uint64_t capacity = hash_map.capacity();
+    uint64_t capacity = hash_map.GetCapacity();
     std::vector<Slot<uint64_t, Point>> host_slots(capacity);
-    cudaMemcpy(host_slots.data(), hash_map.get_device_slots(), capacity * sizeof(Slot<uint64_t, Point>), cudaMemcpyDeviceToHost);
+    cudaMemcpy(host_slots.data(), hash_map.GetDeviceSlotArray(), capacity * sizeof(Slot<uint64_t, Point>), cudaMemcpyDeviceToHost);
 
     std::vector<Point> result_points;
-    const uint64_t empty = CudaSentinel<uint64_t>::empty_key();
+    const uint64_t empty = CudaSentinel<uint64_t>::EmptyKey();
 
     for (const auto& slot : host_slots)
     {
@@ -128,7 +128,7 @@ public:
         std::vector<float3*> device_positions(number_of_submaps);
         std::vector<float3*> device_normals(number_of_submaps);
         std::vector<float4*> device_colors(number_of_submaps);
-		std::vector<uint64_t> point_counts(number_of_submaps);
+        std::vector<uint64_t> point_counts(number_of_submaps);
         std::string root_path = "D:\\Debug\\MergingTest\\pointclouds";
 
         CheckDeviceMemory("Before CudaHashMap Initialization");
@@ -146,13 +146,15 @@ public:
 
         for (size_t index = 0; index < number_of_submaps; index++)
         {
+            //if (5 <= index) continue;
+
             std::string filename = root_path + "\\SubMap" + std::to_string(index + 1) + ".ply";
 
             PLYFormat ply;
             ply.Deserialize(filename);
 
             uint64_t point_count = ply.GetPoints().size();
-			point_counts[index] = point_count;
+            point_counts[index] = point_count;
             printf("Loaded %s with %llu points\n", filename.c_str(), point_count);
 
             cudaMalloc(&device_positions[index], point_count * sizeof(float3));
@@ -165,13 +167,13 @@ public:
 
             for (size_t i = 0; i < point_count; i++)
             {
-				before_merge_ply.AddPoint(ply.GetPoints()[i]);
-				before_merge_ply.AddNormal(ply.GetNormals()[i].x(), ply.GetNormals()[i].y(), ply.GetNormals()[i].z());
-				before_merge_ply.AddColor(ply.GetColors()[i].x(), ply.GetColors()[i].y(), ply.GetColors()[i].z(), ply.GetColors()[i].w());
+                before_merge_ply.AddPoint(ply.GetPoints()[i]);
+                before_merge_ply.AddNormal(ply.GetNormals()[i].x(), ply.GetNormals()[i].y(), ply.GetNormals()[i].z());
+                before_merge_ply.AddColor(ply.GetColors()[i].x(), ply.GetColors()[i].y(), ply.GetColors()[i].z(), ply.GetColors()[i].w());
             }
         }
 
-		before_merge_ply.Serialize(root_path + "\\BeforeMergePointCloud.ply");
+        before_merge_ply.Serialize(root_path + "\\BeforeMergePointCloud.ply");
 
         CUDA_TS(Total);
         for (size_t index = 0; index < number_of_submaps; index++)
@@ -181,7 +183,7 @@ public:
             CUDA_TS(Insert);
 
             insert_point_cloud_kernel << <block_count, 256 >> > (
-                voxel_map.device_view(),
+                voxel_map.GetDeviceView(),
                 device_positions[index],
                 device_normals[index],
                 device_colors[index],
@@ -194,12 +196,15 @@ public:
         }
         CUDA_TE(Total);
 
-        uint64_t merged_point_count = voxel_map.count_host();
+        uint64_t merged_point_count = voxel_map.CountHost();
         printf("Total merged unique voxels: %llu\n", merged_point_count);
 
 
 
 
+        CUDA_TS(Clear);
+        voxel_map.Clear();
+        CUDA_TE(Clear);
 
 
         printf("Merging completed. Starting data download from GPU...\n");
@@ -208,16 +213,16 @@ public:
 
         printf("Successfully retrieved %zu merged points from GPU.\n", merged_points.size());
 
-		PLYFormat merged_ply;
+        PLYFormat merged_ply;
         if (!merged_points.empty())
         {
             for (const auto& p : merged_points)
             {
                 VD::AddSphere("PointCloud", p.position, p.normal, 0.05f, { 1.0f, 1.0f, 1.0f, 1.0f });
 
-				merged_ply.AddPoint(p.position.x, p.position.y, p.position.z);
-				merged_ply.AddNormal(p.normal.x, p.normal.y, p.normal.z);
-				merged_ply.AddColor(p.color.x, p.color.y, p.color.z, p.color.w);
+                merged_ply.AddPoint(p.position.x, p.position.y, p.position.z);
+                merged_ply.AddNormal(p.normal.x, p.normal.y, p.normal.z);
+                merged_ply.AddColor(p.color.x, p.color.y, p.color.z, p.color.w);
             }
 
             printf("First point position: (%f, %f, %f)\n",
@@ -225,8 +230,8 @@ public:
                 merged_points[0].position.y,
                 merged_points[0].position.z);
 
-			std::string merged_filename = root_path + "\\MergedPointCloud.ply";
-			merged_ply.Serialize(merged_filename);
+            std::string merged_filename = root_path + "\\MergedPointCloud.ply";
+            merged_ply.Serialize(merged_filename);
         }
 
         for (size_t index = 0; index < number_of_submaps; index++)
@@ -267,4 +272,4 @@ public:
     }
 };
 
-REGISTER_APP(AppMergePointClouds, "AppMergePointClouds");
+REGISTER_APP(AppMergePointClouds, "AppMergePointClouds"); 

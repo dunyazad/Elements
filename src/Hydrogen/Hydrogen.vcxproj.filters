@@ -25,6 +25,9 @@
     <Filter Include="Apps\Core\Common">
       <UniqueIdentifier>{ad7fd6b0-f894-4db5-9d31-c8432406eb39}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Apps\Core\Operations">
+      <UniqueIdentifier>{edae16e0-b553-4f44-8c75-82b6f86d3bfd}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -78,8 +81,14 @@
     <ClInclude Include="Apps\Core\Common\Time.h">
       <Filter>Apps\Core\Common</Filter>
     </ClInclude>
-    <ClInclude Include="Apps\Core\DataStructures\cuda_hashmap.cuh">
-      <Filter>Apps\Core</Filter>
+    <ClInclude Include="Apps\Core\DataStructures\CudaHashMap.cuh">
+      <Filter>Apps\Core\DataStructures</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\Operations\OperationPointCloudMerge.h">
+      <Filter>Apps\Core\Operations</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Core\DataStructures\VoxelCache.h">
+      <Filter>Apps\Core\DataStructures</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -153,6 +162,27 @@
       <Filter>Apps</Filter>
     </CudaCompile>
     <CudaCompile Include="Apps\AppMergePointClouds.cu">
+      <Filter>Apps</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppMergePointClouds_Local.cu">
+      <Filter>Apps</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppOperationPointCloudMerge.cu">
+      <Filter>Apps</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\Core\Operations\OperationPointCloudMerge.cu">
+      <Filter>Apps\Core\Operations</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\Core\DataStructures\VoxelCache.cu">
+      <Filter>Apps\Core\DataStructures</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppVoxelCache.cu">
+      <Filter>Apps</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppPerframeNoiseFilter.cu">
+      <Filter>Apps</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppICP.cu">
       <Filter>Apps</Filter>
     </CudaCompile>
   </ItemGroup>

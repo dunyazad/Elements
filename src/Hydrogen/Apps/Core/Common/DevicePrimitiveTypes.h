@@ -357,8 +357,38 @@ namespace Huvitz
 		static constexpr int32_t AXIS_BIAS = 1 << (AXIS_BITS - 1);
 		static constexpr uint64_t AXIS_MASK = (1ull << AXIS_BITS) - 1ull;
 
-		__host__ __device__ Morton64() {}
-		__host__ __device__ explicit Morton64(uint64_t c) : code(c) {}
+		__host__ __device__ Morton64()
+		{
+		}
+
+		__host__ __device__ Morton64(const Morton64& other) : code(other.code)
+		{
+		}
+
+		__host__ __device__ Morton64& operator=(const Morton64& other)
+		{
+			code = other.code;
+			return *this;
+		}
+
+		__host__ __device__ Morton64(const volatile Morton64& other) : code(other.code)
+		{
+		}
+
+		__host__ __device__ Morton64& operator=(const volatile Morton64& other)
+		{
+			code = other.code;
+			return *this;
+		}
+
+		__host__ __device__ void operator=(const volatile Morton64& other) volatile
+		{
+			code = other.code;
+		}
+
+		__host__ __device__ explicit Morton64(uint64_t c) : code(c)
+		{
+		}
 
 		__host__ __device__ inline Morton64(int32_t x, int32_t y, int32_t z)
 		{

@@ -47,7 +47,11 @@ using VD = VisualDebugging;
 //const std::string  appName = "AppVVV";
 //const std::string  appName = "AppVoxelDataBase";
 //const std::string  appName = "AppVoxelStreaming";
-const std::string  appName = "AppMergePointClouds";
+//const std::string  appName = "AppMergePointClouds";
+//const std::string  appName = "AppMergePointClouds_Local";
+const std::string  appName = "AppOperationPointCloudMerge";
+//const std::string  appName = "AppVoxelCache";
+//const std::string  appName = "AppICP";
 
 #define MAX_LOADSTRING 100
 

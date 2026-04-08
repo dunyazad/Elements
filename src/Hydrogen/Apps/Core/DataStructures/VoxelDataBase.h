@@ -27,32 +27,29 @@ namespace Huvitz
 	struct VoxelExtraAttrib {
 		static const VoxelExtraAttrib Zero;
 
-		uchar deepLearningClass; // enum DL_Class_Names
-		uchar materialID; // 0: other 255: tooth
-		unsigned short startPatchID;	// 복셀의 조합에 영향을 미친 첫 패치 번호
-		unsigned int flags : 2; // 복셀의 잠금상태 등의 상태를 저장.VOXEL_FLAG_**** _BIT 로 비교
-		unsigned int label : 30;	// 클러스터링 된 레이블 번호
+		uchar deepLearningClass;
+		uchar materialID;
+		unsigned short startPatchID;
+		unsigned int flags : 2;
+		unsigned int label : 30;
 
-		uint8_t colorMap[4]; // colors[3], alpha (신뢰도)
+		uint8_t colorMap[4];
 	};
 
 	struct Voxel {
 		voxel_value_t		value;
 		unsigned short		valueCount;
-		//Eigen::Vector3f		position; // 사용하지 않음
 		Eigen::Vector3f		normal;
 		Eigen::Vector3b		color;
 
-		//	mscho	@20250806
 		Eigen::Vector3b		color_list[3];
 		uint8_t				color_score[3];
 
-		//float				colorScore; // 사용하지 않음
 		char				segmentation;
 		VoxelExtraAttrib	extraAttrib;
 #ifdef USE_EXPERIMENTAL_COLOR_OPT2
 		ColorReconData		voxelColorReconData;
-#endif //USE_EXPERIMENTAL_COLOR_OPT2
+#endif 
 	};
 
 	struct DummyVoxel
@@ -64,7 +61,6 @@ namespace Huvitz
 		Vector3b color = Vector3b::Zero();
 	};
 
-	// Direction indices: X+, X-, Y+, Y-, Z+, Z-
 	static constexpr int DIR_XP = 0;
 	static constexpr int DIR_XN = 1;
 	static constexpr int DIR_YP = 2;
@@ -125,6 +121,7 @@ namespace Huvitz
 		static constexpr int BLOCK_SIZE = 8;
 		static constexpr int VOXELS_PER_BLOCK = BLOCK_SIZE * BLOCK_SIZE * BLOCK_SIZE;
 		T voxels[VOXELS_PER_BLOCK];
+		uint32_t lastTouchedFrameId = 0;
 	};
 
 	class VoxelDataBaseIntegrationParameters : public IntegrationParameters
@@ -175,75 +172,25 @@ namespace Huvitz
 		Vector3f cacheMax;
 	};
 
+	// LNK2001 방지를 위해 Kernel_Clear를 헤더로 이동시켜 Inline 효과 적용
 	template <typename T>
-	__device__ inline float GetVoxelValue(VoxelDataBase<T>& db, const Vector3f& pos);
+	__global__ void Kernel_Clear(VoxelDataBase<T> db)
+	{
+		uint32_t slot = blockIdx.x * blockDim.x + threadIdx.x;
+		if (slot >= db.GetMaxBlockCount())
+			return;
 
-	template <typename T>
-	__global__ void Kernel_Clear(VoxelDataBase<T> db);
+		uint64_t* hashTable = db.GetHashTable();
+		uint64_t key = hashTable[slot];
 
-	template <typename T>
-	__global__ void Kernel_Integrate(VoxelDataBase<T> db, VoxelDataBaseIntegrationParameters parameters);
+		if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL)
+			return;
 
-	template <typename T>
-	__global__ void Kernel_IntegrateSurfaceNormal(VoxelDataBase<T> db, VoxelDataBaseIntegrationParameters parameters);
+		hashTable[slot] = 0;
 
-	template <typename T>
-	__global__ void Kernel_BuildNoiseFilter2DCache(NoiseFilterParameters nf);
-
-	template <typename T>
-	__global__ void Kernel_IntraRegionNoiseFilter(VoxelDataBase<T> db, NoiseFilterParameters nf);
-
-	template <typename T>
-	__global__ void InsertKernel(VoxelDataBase<T> db, Matrix4f rt, const Vector3f* points, const Vector3b* colors, uint32_t count, float blockSize, uint32_t frameId);
-
-	template <typename T>
-	__global__ void Kernel_ExtractAllOccupied(
-		VoxelDataBase<T> db, float blockSize,
-		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut);
-
-	template <typename T>
-	__global__ void Kernel_ExtractZeroCrossing(
-		VoxelDataBase<T> db, float blockSize,
-		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut);
-
-	template <typename T>
-	__global__ void Kernel_ExtractIntraRegion(
-		VoxelDataBase<T> db, float blockSize,
-		VoxelDataBaseExtractionParameters::Mode mode,
-		Vector3f aabbMin, Vector3f aabbMax,
-		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut);
-
-	template <typename T>
-	__global__ void Kernel_Serialize(
-		VoxelDataBase<T> db,
-		float3* positions,
-		float3* normals,
-		uchar3* colors,
-		uint32_t* numberOfVoxels);
-
-	// [수정] Phase2 커널: occupiedSlots + 1 thread per voxel
-	__global__ void Kernel_IntegrateDirectional_Phase2_Voxel(
-		VoxelDataBase<DirectionalVoxel<Voxel>> db,
-		uint32_t* occupiedSlots,
-		uint32_t occupiedCount);
-
-	__global__ void Kernel_IntegrateDirectional_Phase2_DummyVoxel(
-		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db,
-		uint32_t* occupiedSlots,
-		uint32_t occupiedCount);
-
-	__global__ void Kernel_ExtractZeroCrossing_Directional(
-		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db, float blockSize,
-		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut);
-
-	__global__ void Kernel_ExtractSurface_Directional(
-		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db, float blockSize,
-		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut);
-
-	template <typename T>
-	__global__ void Kernel_PerFrameFilter(
-		VoxelDataBase<T> db,
-		VoxelDataBaseIntegrationParameters parameters);
+		VoxelBlock<T>* blockPtr = &db.GetBlocks()[slot];
+		*blockPtr = {};
+	}
 
 	template <typename T>
 	class VoxelDataBase : public VolumeBase
@@ -301,9 +248,9 @@ namespace Huvitz
 		float     blockSize = 0.8f;
 
 		uint32_t* d_occupiedSlots = nullptr;
-
 		uint32_t* d_dirtySlots = nullptr;
 		uint32_t* d_dirtyCount = nullptr;
+		uint32_t* d_dirtyMask = nullptr; // 최적화: 중복 등록 방지 마스크
 
 		__device__ inline uint32_t FindBlockSlot(const Vector3f& position);
 

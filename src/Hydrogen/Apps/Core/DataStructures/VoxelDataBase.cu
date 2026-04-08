@@ -15,25 +15,6 @@ namespace Huvitz
 	}
 
 	template <typename T>
-	__global__ void Kernel_Clear(VoxelDataBase<T> db)
-	{
-		uint32_t slot = blockIdx.x * blockDim.x + threadIdx.x;
-		if (slot >= db.GetMaxBlockCount())
-			return;
-
-		uint64_t* hashTable = db.GetHashTable();
-		uint64_t key = hashTable[slot];
-
-		if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL)
-			return;
-
-		hashTable[slot] = 0;
-
-		VoxelBlock<T>* blockPtr = &db.GetBlocks()[slot];
-		*blockPtr = {};
-	}
-
-	template <typename T>
 	__global__ void Kernel_Integrate(VoxelDataBase<T> db, VoxelDataBaseIntegrationParameters parameters)
 	{
 		uint32_t threadid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -425,61 +406,6 @@ namespace Huvitz
 		}
 	}
 
-	__global__ void Kernel_IntegrateDirectional_Phase2_Voxel(
-		VoxelDataBase<DirectionalVoxel<Voxel>> db,
-		uint32_t* occupiedSlots,
-		uint32_t occupiedCount)
-	{
-		uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-
-		// 1 thread = 1 voxel
-		uint32_t slotIdx = tid / VoxelBlock<DirectionalVoxel<Voxel>>::VOXELS_PER_BLOCK;
-		uint32_t voxelIdx = tid % VoxelBlock<DirectionalVoxel<Voxel>>::VOXELS_PER_BLOCK;
-
-		if (slotIdx >= occupiedCount)
-			return;
-
-		uint32_t slot = occupiedSlots[slotIdx];
-		DirectionalVoxel<Voxel>& v = db.GetBlocks()[slot].voxels[voxelIdx];
-
-		bool anyUpdated = false;
-
-		for (int d = 0; d < DIR_COUNT; ++d)
-		{
-			float sw = v.accSw[d];
-			if (sw < 1e-9f) continue;
-
-			float sd = v.accSd[d];
-			float W_old = v.weight[d];
-			float D_old = v.HasDirection(d) ? v.dirValue[d] : 0.f;
-
-			v.dirValue[d] = (W_old * D_old + sd) / (W_old + sw);
-			v.weight[d] = W_old + sw;
-			v.validMask |= (1u << d);
-			v.accSd[d] = 0.f;
-			v.accSw[d] = 0.f;
-			anyUpdated = true;
-		}
-
-		for (int d = 0; d < DIR_COUNT; d += 2)
-		{
-			int dOpp = d + 1;
-			if (v.HasDirection(d) && v.HasDirection(dOpp))
-			{
-				if (v.dirValue[d] < 0.f && v.dirValue[dOpp] < 0.f)
-				{
-					v.validMask &= ~(1u << d);
-					v.validMask &= ~(1u << dOpp);
-					v.weight[d] = 0.f;
-					v.weight[dOpp] = 0.f;
-				}
-			}
-		}
-
-		if (anyUpdated && v.valueCount == 0)
-			atomicAddUShort(&v.valueCount, 1);
-	}
-
 	__global__ void Kernel_IntegrateDirectional_Phase1(
 		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db,
 		VoxelDataBaseIntegrationParameters parameters)
@@ -646,21 +572,21 @@ namespace Huvitz
 		}
 	}
 
-	__global__ void Kernel_IntegrateDirectional_Phase2_DummyVoxel(
-		VoxelDataBase<DirectionalVoxel<DummyVoxel>> db,
-		uint32_t* occupiedSlots,
-		uint32_t occupiedCount)
+	// [최적화 적용] 통합된 Phase 2 커널: 1 Block = 1 VoxelBlock
+	template <typename VoxelType>
+	__global__ void Kernel_IntegrateDirectional_Phase2_Optimized(
+		VoxelDataBase<DirectionalVoxel<VoxelType>> db,
+		uint32_t* dirtySlots,
+		uint32_t dirtyCount)
 	{
-		uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-
-		uint32_t slotIdx = tid / VoxelBlock<DirectionalVoxel<DummyVoxel>>::VOXELS_PER_BLOCK;
-		uint32_t voxelIdx = tid % VoxelBlock<DirectionalVoxel<DummyVoxel>>::VOXELS_PER_BLOCK;
-
-		if (slotIdx >= occupiedCount)
+		uint32_t slotIdx = blockIdx.x;
+		if (slotIdx >= dirtyCount)
 			return;
 
-		uint32_t slot = occupiedSlots[slotIdx];
-		DirectionalVoxel<DummyVoxel>& v = db.GetBlocks()[slot].voxels[voxelIdx];
+		uint32_t slot = dirtySlots[slotIdx];
+		uint32_t vIdx = threadIdx.z * 64 + threadIdx.y * 8 + threadIdx.x;
+
+		DirectionalVoxel<VoxelType>& v = db.GetBlocks()[slot].voxels[vIdx];
 
 		bool anyUpdated = false;
 
@@ -956,12 +882,12 @@ namespace Huvitz
 						out[outIdx].position = interpPos;
 						out[outIdx].weight = (float)v0.valueCount;
 
-						float vxp = GetVoxelValue<T>(db, { interpPos.x() + eps, interpPos.y(),       interpPos.z() });
-						float vxm = GetVoxelValue<T>(db, { interpPos.x() - eps, interpPos.y(),       interpPos.z() });
-						float vyp = GetVoxelValue<T>(db, { interpPos.x(),       interpPos.y() + eps, interpPos.z() });
-						float vym = GetVoxelValue<T>(db, { interpPos.x(),       interpPos.y() - eps, interpPos.z() });
-						float vzp = GetVoxelValue<T>(db, { interpPos.x(),       interpPos.y(),       interpPos.z() + eps });
-						float vzm = GetVoxelValue<T>(db, { interpPos.x(),       interpPos.y(),       interpPos.z() - eps });
+						float vxp = GetVoxelValue<T>(db, { interpPos.x() + eps, interpPos.y(),        interpPos.z() });
+						float vxm = GetVoxelValue<T>(db, { interpPos.x() - eps, interpPos.y(),        interpPos.z() });
+						float vyp = GetVoxelValue<T>(db, { interpPos.x(),        interpPos.y() + eps, interpPos.z() });
+						float vym = GetVoxelValue<T>(db, { interpPos.x(),        interpPos.y() - eps, interpPos.z() });
+						float vzp = GetVoxelValue<T>(db, { interpPos.x(),        interpPos.y(),        interpPos.z() + eps });
+						float vzm = GetVoxelValue<T>(db, { interpPos.x(),        interpPos.y(),        interpPos.z() - eps });
 
 						bool hasGrad = (vxp < FLT_MAX * 0.5f) && (vxm < FLT_MAX * 0.5f) &&
 							(vyp < FLT_MAX * 0.5f) && (vym < FLT_MAX * 0.5f) &&
@@ -998,7 +924,7 @@ namespace Huvitz
 	template <typename T>
 	__global__ void Kernel_ExtractIntraRegion(
 		VoxelDataBase<T> db, float blockSize,
-		VoxelDataBaseExtractionParameters::Mode mode,
+		typename VoxelDataBaseExtractionParameters::Mode mode,
 		Vector3f aabbMin, Vector3f aabbMax,
 		ExtractedVoxel* out, uint32_t* count, uint32_t maxOut)
 	{
@@ -1357,7 +1283,6 @@ namespace Huvitz
 		float rdz = dz * invRayLen;
 
 		float voxelSize = db.GetBlockSize() / 8.f;
-		// Tighter guard zone: only protect voxels very close to the actual surface
 		float truncDist = voxelSize * 1.5f;
 		float step = voxelSize * 0.8f;
 		float blockSize = db.GetBlockSize();
@@ -1368,8 +1293,6 @@ namespace Huvitz
 		if (tEnd <= step)
 			return;
 
-		// Weak voxels in free-space are likely noise: remove if below this count
-		// Strong voxels are confirmed surface from multiple frames: preserve
 		static constexpr uint16_t CARVE_THRESHOLD = 4;
 
 		VoxelBlock<T>* cachedBlock = nullptr;
@@ -1390,7 +1313,7 @@ namespace Huvitz
 
 			if (key != cachedBlockKey)
 			{
-				cachedBlock = db.GetVoxelBlock(samplePos); // read-only: no new block creation
+				cachedBlock = db.GetVoxelBlock(samplePos);
 				cachedBlockKey = key;
 				cachedCenter = bKey.ToPosition(blockSize);
 			}
@@ -1409,7 +1332,6 @@ namespace Huvitz
 			if (voxelPtr->valueCount == 0)
 				continue;
 
-			// Only carve weak voxels: strong voxels were confirmed from many frames
 			if (voxelPtr->valueCount < CARVE_THRESHOLD)
 				*voxelPtr = {};
 		}
@@ -1490,8 +1412,6 @@ namespace Huvitz
 			{
 				Vector3f p = transform.Transform(p_cam);
 
-				// Intra-block reduction via atomicCAS on shared memory
-				// shared memory atomicCAS is cheaper than global
 				atomicMinFloatCAS(&s_min[0], p.x());
 				atomicMinFloatCAS(&s_min[1], p.y());
 				atomicMinFloatCAS(&s_min[2], p.z());
@@ -1502,8 +1422,6 @@ namespace Huvitz
 		}
 		__syncthreads();
 
-		// One thread per block writes block result to global
-		// -> global atomic contention = num_blocks not num_pixels
 		if (threadIdx.x == 0)
 		{
 			atomicMinFloatCAS(&d_aabb->min.x, s_min[0]);
@@ -1527,6 +1445,7 @@ namespace Huvitz
 		cudaMalloc(&d_occupiedSlots, sizeof(uint32_t) * maxBlocks);
 		cudaMalloc(&d_dirtySlots, sizeof(uint32_t) * maxBlocks);
 		cudaMalloc(&d_dirtyCount, sizeof(uint32_t));
+		cudaMalloc(&d_dirtyMask, sizeof(uint32_t) * maxBlocks);
 
 		cudaMemset(d_blocks, 0, sizeof(VoxelBlock<T>) * maxBlocks);
 		cudaMemset(d_hashTable, 0, sizeof(uint64_t) * maxBlocks);
@@ -1534,6 +1453,7 @@ namespace Huvitz
 		cudaMemset(d_occupiedSlots, 0, sizeof(uint32_t) * maxBlocks);
 		cudaMemset(d_dirtySlots, 0, sizeof(uint32_t) * maxBlocks);
 		cudaMemset(d_dirtyCount, 0, sizeof(uint32_t));
+		cudaMemset(d_dirtyMask, 0, sizeof(uint32_t) * maxBlocks);
 
 		return true;
 	}
@@ -1547,6 +1467,7 @@ namespace Huvitz
 		if (d_occupiedSlots) cudaFree(d_occupiedSlots);
 		if (d_dirtySlots)    cudaFree(d_dirtySlots);
 		if (d_dirtyCount)    cudaFree(d_dirtyCount);
+		if (d_dirtyMask)     cudaFree(d_dirtyMask);
 
 		d_blocks = nullptr;
 		d_hashTable = nullptr;
@@ -1554,6 +1475,71 @@ namespace Huvitz
 		d_occupiedSlots = nullptr;
 		d_dirtySlots = nullptr;
 		d_dirtyCount = nullptr;
+		d_dirtyMask = nullptr;
+	}
+
+	template <typename T>
+	__device__ inline uint32_t VoxelDataBase<T>::FindBlockSlot(const Vector3f& position)
+	{
+		Morton64 blockKey = Morton64::FromPosition(position, blockSize);
+		uint64_t key = blockKey.code;
+		if (key == 0) key = 0xFFFFFFFFFFFFFFFFULL;
+
+		uint32_t slot = StrongHash(key, maxBlockCount);
+		uint32_t start = slot;
+
+		while (true)
+		{
+			uint64_t hKey = d_hashTable[slot];
+			if (hKey == key) return slot;
+			if (hKey == 0)   return INVALID_BLOCK;
+			slot = (slot + 1) % maxBlockCount;
+			if (slot == start) break;
+		}
+		return INVALID_BLOCK;
+	}
+
+	template <typename T>
+	__device__ inline uint32_t VoxelDataBase<T>::GetOrCreateBlockSlot(const Vector3f& position)
+	{
+		Morton64 blockKey = Morton64::FromPosition(position, blockSize);
+		uint64_t key = blockKey.code;
+		if (key == 0) key = 0xFFFFFFFFFFFFFFFFULL;
+
+		uint32_t slot = StrongHash(key, maxBlockCount);
+		uint32_t start = slot;
+
+		while (true)
+		{
+			unsigned long long* slotPtr = (unsigned long long*) & d_hashTable[slot];
+			unsigned long long  prev = atomicCAS(slotPtr, 0ULL, (unsigned long long)key);
+
+			if (prev == 0)
+			{
+				uint32_t idx = atomicAdd(d_blockCount, 1);
+				d_occupiedSlots[idx] = slot;
+
+				if (atomicExch(&d_dirtyMask[slot], 1) == 0)
+				{
+					uint32_t dirtyIdx = atomicAdd(d_dirtyCount, 1);
+					d_dirtySlots[dirtyIdx] = slot;
+				}
+				return slot;
+			}
+			if (prev == (unsigned long long)key)
+			{
+				if (atomicExch(&d_dirtyMask[slot], 1) == 0)
+				{
+					uint32_t dirtyIdx = atomicAdd(d_dirtyCount, 1);
+					d_dirtySlots[dirtyIdx] = slot;
+				}
+				return slot;
+			}
+
+			slot = (slot + 1) % maxBlockCount;
+			if (slot == start) break;
+		}
+		return INVALID_BLOCK;
 	}
 
 	template <typename T>
@@ -1614,67 +1600,6 @@ namespace Huvitz
 	}
 
 	template <typename T>
-	__device__ inline uint32_t VoxelDataBase<T>::FindBlockSlot(const Vector3f& position)
-	{
-		Morton64 blockKey = Morton64::FromPosition(position, blockSize);
-		uint64_t key = blockKey.code;
-		if (key == 0) key = 0xFFFFFFFFFFFFFFFFULL;
-
-		uint32_t slot = StrongHash(key, maxBlockCount);
-		uint32_t start = slot;
-
-		while (true)
-		{
-			uint64_t hKey = d_hashTable[slot];
-			if (hKey == key) return slot;
-			if (hKey == 0)   return INVALID_BLOCK;
-			slot = (slot + 1) % maxBlockCount;
-			if (slot == start) break;
-		}
-		return INVALID_BLOCK;
-	}
-
-	template <typename T>
-	__device__ inline uint32_t VoxelDataBase<T>::GetOrCreateBlockSlot(const Vector3f& position)
-	{
-		Morton64 blockKey = Morton64::FromPosition(position, blockSize);
-		uint64_t key = blockKey.code;
-		if (key == 0) key = 0xFFFFFFFFFFFFFFFFULL;
-
-		uint32_t slot = StrongHash(key, maxBlockCount);
-		uint32_t start = slot;
-
-		while (true)
-		{
-			unsigned long long* slotPtr = (unsigned long long*) & d_hashTable[slot];
-			unsigned long long  prev = atomicCAS(slotPtr, 0ULL, (unsigned long long)key);
-
-			if (prev == 0)
-			{
-				// 신규 블록
-				uint32_t idx = atomicAdd(d_blockCount, 1);
-				d_occupiedSlots[idx] = slot;
-
-				// dirty 목록에도 기록
-				uint32_t dirtyIdx = atomicAdd(d_dirtyCount, 1);
-				d_dirtySlots[dirtyIdx] = slot;
-				return slot;
-			}
-			if (prev == (unsigned long long)key)
-			{
-				// 기존 블록 — dirty 목록에만 기록 (중복 허용, Phase 2에서 idempotent)
-				uint32_t dirtyIdx = atomicAdd(d_dirtyCount, 1);
-				d_dirtySlots[dirtyIdx] = slot;
-				return slot;
-			}
-
-			slot = (slot + 1) % maxBlockCount;
-			if (slot == start) break;
-		}
-		return INVALID_BLOCK;
-	}
-
-	template <typename T>
 	void VoxelDataBase<T>::Integrate(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream)
 	{
 #ifdef __CUDACC__
@@ -1725,34 +1650,29 @@ namespace Huvitz
 
 			auto& self = reinterpret_cast<VoxelDataBase<DirectionalVoxel<DummyVoxel>>&>(*this);
 
-			// --- 프레임 시작: dirty 카운터 리셋 ---
 			cudaMemsetAsync(d_dirtyCount, 0, sizeof(uint32_t), stream);
+			cudaMemsetAsync(d_dirtyMask, 0, sizeof(uint32_t) * maxBlockCount, stream);
 
 			const int threads = 256;
 			const int pixBlocks =
 				(params->mapWidth * params->mapHeight + threads - 1) / threads;
 
-			// Phase 1
 			nvtxRangePushA("IntegrateDirectional_Phase1");
 			Kernel_IntegrateDirectional_Phase1 << <pixBlocks, threads, 0, stream >> > (self, *params);
 			cudaStreamSynchronize(stream);
 			nvtxRangePop();
 
-			// Phase 2: 이번 프레임에 실제로 터치된 슬롯만 처리
 			uint32_t dirtyCount = 0;
-			cudaMemcpy(&dirtyCount, d_dirtyCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+			cudaMemcpyAsync(&dirtyCount, d_dirtyCount, sizeof(uint32_t), cudaMemcpyDeviceToHost, stream);
+			cudaStreamSynchronize(stream);
 
 			if (dirtyCount > 0)
 			{
-				constexpr uint32_t VPB =
-					VoxelBlock<DirectionalVoxel<DummyVoxel>>::VOXELS_PER_BLOCK;
-
-				// dirty 슬롯에 중복이 있어도 총 스레드 수는 프레임당 터치 블록 수에 비례
-				uint32_t totalThreads = dirtyCount * VPB;
-				int volBlocks = (totalThreads + threads - 1) / threads;
+				dim3 blockDim(8, 8, 8);
+				dim3 gridDim(dirtyCount);
 
 				nvtxRangePushA("IntegrateDirectional_Phase2");
-				Kernel_IntegrateDirectional_Phase2_DummyVoxel << <volBlocks, threads, 0, stream >> > (
+				Kernel_IntegrateDirectional_Phase2_Optimized<DummyVoxel> << <gridDim, blockDim, 0, stream >> > (
 					self, d_dirtySlots, dirtyCount);
 				cudaStreamSynchronize(stream);
 				nvtxRangePop();
@@ -1760,7 +1680,6 @@ namespace Huvitz
 		}
 		else if constexpr (std::is_same_v<T, DirectionalVoxel<Voxel>>)
 		{
-			// Voxel 버전도 동일 패턴으로 수정
 			VoxelDataBaseIntegrationParameters* params =
 				dynamic_cast<VoxelDataBaseIntegrationParameters*>(parameters);
 			if (nullptr == params) return;
@@ -1768,6 +1687,7 @@ namespace Huvitz
 			auto& self = reinterpret_cast<VoxelDataBase<DirectionalVoxel<Voxel>>&>(*this);
 
 			cudaMemsetAsync(d_dirtyCount, 0, sizeof(uint32_t), stream);
+			cudaMemsetAsync(d_dirtyMask, 0, sizeof(uint32_t) * maxBlockCount, stream);
 
 			const int threads = 256;
 			const int pixBlocks =
@@ -1779,17 +1699,16 @@ namespace Huvitz
 			nvtxRangePop();
 
 			uint32_t dirtyCount = 0;
-			cudaMemcpy(&dirtyCount, d_dirtyCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+			cudaMemcpyAsync(&dirtyCount, d_dirtyCount, sizeof(uint32_t), cudaMemcpyDeviceToHost, stream);
+			cudaStreamSynchronize(stream);
 
 			if (dirtyCount > 0)
 			{
-				constexpr uint32_t VPB =
-					VoxelBlock<DirectionalVoxel<Voxel>>::VOXELS_PER_BLOCK;
-				uint32_t totalThreads = dirtyCount * VPB;
-				int volBlocks = (totalThreads + threads - 1) / threads;
+				dim3 blockDim(8, 8, 8);
+				dim3 gridDim(dirtyCount);
 
 				nvtxRangePushA("IntegrateDirectional_Phase2");
-				Kernel_IntegrateDirectional_Phase2_Voxel << <volBlocks, threads, 0, stream >> > (
+				Kernel_IntegrateDirectional_Phase2_Optimized<Voxel> << <gridDim, blockDim, 0, stream >> > (
 					self, d_dirtySlots, dirtyCount);
 				cudaStreamSynchronize(stream);
 				nvtxRangePop();

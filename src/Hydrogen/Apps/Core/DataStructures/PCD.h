@@ -6,6 +6,8 @@
 #include <Core/Common/DevicePrimitiveTypes.h>
 #include <Core/DataStructures/SparseCells.h>
 #include <thrust/device_vector.h>
+#include <thrust/tuple.h>
+#include <thrust/transform_reduce.h>
 #include <vector>
 #include <string>
 
@@ -194,6 +196,8 @@ namespace Huvitz
 
         PCD  Downsample(float voxelSize) const;
         void Downsample(float voxelSize, PCD& out) const;
+
+        void CalculateICP(const PCD& target, int maxIterations, float tolerance, float* outTransform) const;
 
     protected:
         cuAABB aabb = {
