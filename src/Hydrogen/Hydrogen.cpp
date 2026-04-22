@@ -38,7 +38,7 @@ using VD = VisualDebugging;
 //const std::string  appName = "AppTSDF";
 //const std::string  appName = "AppTSDFDevice";
 //const std::string  appName = "AppVoxelDataBaseMemoryUsageCheck";
-//const std::string  appName = "AppClustering";
+const std::string  appName = "AppClustering";
 //const std::string  appName = "AppSDFFiltering";
 //const std::string  appName = "AppMorphology";
 //const std::string  appName = "AppMorphologyDebug";
@@ -49,9 +49,10 @@ using VD = VisualDebugging;
 //const std::string  appName = "AppVoxelStreaming";
 //const std::string  appName = "AppMergePointClouds";
 //const std::string  appName = "AppMergePointClouds_Local";
-const std::string  appName = "AppOperationPointCloudMerge";
+//const std::string  appName = "AppOperationPointCloudMerge";
 //const std::string  appName = "AppVoxelCache";
 //const std::string  appName = "AppICP";
+//const std::string  appName = "AppDataFrames";
 
 #define MAX_LOADSTRING 100
 

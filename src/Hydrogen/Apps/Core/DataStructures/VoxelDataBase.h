@@ -36,20 +36,26 @@ namespace Huvitz
 		uint8_t colorMap[4];
 	};
 
+#define DISABLE_OLD_COLOR true
 	struct Voxel {
 		voxel_value_t		value;
 		unsigned short		valueCount;
+		//Eigen::Vector3f		position; // 사용하지 않음
 		Eigen::Vector3f		normal;
 		Eigen::Vector3b		color;
 
+#if !DISABLE_OLD_COLOR
+		//	mscho	@20250806
 		Eigen::Vector3b		color_list[3];
 		uint8_t				color_score[3];
+#endif
 
+		//float				colorScore; // 사용하지 않음
 		char				segmentation;
 		VoxelExtraAttrib	extraAttrib;
 #ifdef USE_EXPERIMENTAL_COLOR_OPT2
 		ColorReconData		voxelColorReconData;
-#endif 
+#endif //USE_EXPERIMENTAL_COLOR_OPT2
 	};
 
 	struct DummyVoxel

@@ -1,6 +1,8 @@
 #include <Core/DataStructures/VoxelDataBase.h>
 #include <Core/Common/DeviceCommon.h>
 
+#include <DataFrameIO/DataFrameIO.hpp>
+
 namespace Huvitz
 {
 	template <typename T>
@@ -572,7 +574,6 @@ namespace Huvitz
 		}
 	}
 
-	// [최적화 적용] 통합된 Phase 2 커널: 1 Block = 1 VoxelBlock
 	template <typename VoxelType>
 	__global__ void Kernel_IntegrateDirectional_Phase2_Optimized(
 		VoxelDataBase<DirectionalVoxel<VoxelType>> db,
@@ -781,6 +782,8 @@ namespace Huvitz
 		uint64_t key = db.GetHashTable()[slot];
 		if (key == 0 || key == 0xFFFFFFFFFFFFFFFFULL)
 			return;
+
+		printf("threadid : %d\n", slot);
 
 		Morton64 bKey(key);
 		Vector3f bc = bKey.ToPosition(blockSize);

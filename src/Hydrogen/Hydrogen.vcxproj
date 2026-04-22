@@ -214,6 +214,7 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="Apps\AppDataFrames.cu" />
     <CudaCompile Include="Apps\AppICP.cu" />
     <CudaCompile Include="Apps\AppMergePointClouds.cu" />
     <CudaCompile Include="Apps\AppMergePointClouds_Local.cu" />

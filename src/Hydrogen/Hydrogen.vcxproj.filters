@@ -185,5 +185,8 @@
     <CudaCompile Include="Apps\AppICP.cu">
       <Filter>Apps</Filter>
     </CudaCompile>
+    <CudaCompile Include="Apps\AppDataFrames.cu">
+      <Filter>Apps</Filter>
+    </CudaCompile>
   </ItemGroup>
 </Project>
