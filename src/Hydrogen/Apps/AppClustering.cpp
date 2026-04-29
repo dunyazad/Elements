@@ -117,6 +117,63 @@ public:
 		}
 	}
 
+#if 0
+	// --------------------------------------------------------------------------
+	// Device Build
+	// --------------------------------------------------------------------------
+	void BuildDevice(const Eigen::Vector3f* d_points, size_t pointCount, float blockSize = 0.3f)
+	{
+		this->voxelSize = blockSize;
+		if (pointCount == 0)
+		{
+			blockKeys.clear();
+			d_blockKeys_vec.clear();
+			return;
+		}
+
+		float invVoxelSize = 1.0f / blockSize;
+
+		thrust::device_vector<uint64_t> d_keys(pointCount);
+		d_sortedIndices_vec.resize(pointCount);
+
+		auto count_iter = thrust::make_counting_iterator<unsigned int>(0);
+		thrust::copy(count_iter, count_iter + pointCount, d_sortedIndices_vec.begin());
+
+		PointToKeyFunctor keyFunc(d_points, invVoxelSize);
+		thrust::transform(count_iter, count_iter + pointCount, d_keys.begin(), keyFunc);
+
+		thrust::sort_by_key(d_keys.begin(), d_keys.end(), d_sortedIndices_vec.begin());
+
+		thrust::device_vector<unsigned int> d_ones(pointCount, 1);
+		d_blockKeys_vec.resize(pointCount);
+		d_blockCounts_vec.resize(pointCount);
+
+		auto new_end = thrust::reduce_by_key(
+			d_keys.begin(), d_keys.end(),
+			d_ones.begin(),
+			d_blockKeys_vec.begin(),
+			d_blockCounts_vec.begin()
+		);
+
+		size_t numBlocks = new_end.first - d_blockKeys_vec.begin();
+		d_blockKeys_vec.resize(numBlocks);
+		d_blockCounts_vec.resize(numBlocks);
+
+		d_blockOffsets_vec.resize(numBlocks);
+		thrust::exclusive_scan(d_blockCounts_vec.begin(), d_blockCounts_vec.end(), d_blockOffsets_vec.begin());
+
+		blockKeys.resize(numBlocks);
+		blockOffsets.resize(numBlocks);
+		blockCounts.resize(numBlocks);
+		sortedIndices.resize(pointCount);
+
+		thrust::copy(d_blockKeys_vec.begin(), d_blockKeys_vec.end(), blockKeys.begin());
+		thrust::copy(d_blockOffsets_vec.begin(), d_blockOffsets_vec.end(), blockOffsets.begin());
+		thrust::copy(d_blockCounts_vec.begin(), d_blockCounts_vec.end(), blockCounts.begin());
+		thrust::copy(d_sortedIndices_vec.begin(), d_sortedIndices_vec.end(), sortedIndices.begin());
+	}
+#endif // 0
+
 	std::vector<std::vector<unsigned int>> ExtractClusters(
 		const std::vector<Eigen::Vector3f>& points,
 		float distThreshold = 0.1f)
@@ -366,6 +423,179 @@ public:
 
 		return clusters;
 	}
+
+
+#if 0
+	// --------------------------------------------------------------------------
+// Device Extract (Points)
+// --------------------------------------------------------------------------
+	std::vector<std::vector<unsigned int>> ExtractClustersDevice(
+		const Eigen::Vector3f* d_points,
+		float distThreshold = 0.1f)
+	{
+		if (blockKeys.empty())
+		{
+			return {};
+		}
+
+		const float sqDistThreshold = distThreshold * distThreshold;
+		size_t numBlocks = blockKeys.size();
+
+		thrust::device_vector<int> d_adjMatrix(numBlocks * 27, -1);
+
+		int threads = 256;
+		int blocks = (numBlocks + threads - 1) / threads;
+
+		CheckAdjacencyKernel << <blocks, threads >> > (
+			numBlocks,
+			thrust::raw_pointer_cast(d_blockKeys_vec.data()),
+			thrust::raw_pointer_cast(d_blockOffsets_vec.data()),
+			thrust::raw_pointer_cast(d_blockCounts_vec.data()),
+			thrust::raw_pointer_cast(d_sortedIndices_vec.data()),
+			d_points,
+			sqDistThreshold,
+			thrust::raw_pointer_cast(d_adjMatrix.data())
+			);
+		cudaDeviceSynchronize();
+
+		std::vector<int> h_adjMatrix(numBlocks * 27);
+		thrust::copy(d_adjMatrix.begin(), d_adjMatrix.end(), h_adjMatrix.begin());
+
+		std::vector<std::vector<unsigned int>> clusters;
+		std::vector<bool> blockVisited(numBlocks, false);
+
+		for (size_t i = 0; i < numBlocks; ++i)
+		{
+			if (blockVisited[i]) continue;
+
+			std::vector<unsigned int> currentCluster;
+			std::deque<size_t> q;
+
+			q.push_back(i);
+			blockVisited[i] = true;
+
+			while (!q.empty())
+			{
+				size_t curr = q.front();
+				q.pop_front();
+
+				unsigned int offset = blockOffsets[curr];
+				unsigned int count = blockCounts[curr];
+				for (unsigned int p = 0; p < count; ++p)
+				{
+					currentCluster.push_back(sortedIndices[offset + p]);
+				}
+
+				int base_idx = curr * 27;
+				for (int n = 0; n < 27; ++n)
+				{
+					int neighbor = h_adjMatrix[base_idx + n];
+					if (neighbor == -1) break;
+
+					if (!blockVisited[neighbor])
+					{
+						blockVisited[neighbor] = true;
+						q.push_back(neighbor);
+					}
+				}
+			}
+
+			if (!currentCluster.empty())
+			{
+				clusters.push_back(std::move(currentCluster));
+			}
+		}
+
+		return clusters;
+	}
+
+	// --------------------------------------------------------------------------
+	// Device Extract (Points + Normals)
+	// --------------------------------------------------------------------------
+	std::vector<std::vector<unsigned int>> ExtractClustersDevice(
+		const Eigen::Vector3f* d_points,
+		const Eigen::Vector3f* d_normals,
+		float distThreshold = 0.1f,
+		float normalThreshold = 0.9f)
+	{
+		if (blockKeys.empty())
+		{
+			return {};
+		}
+
+		const float sqDistThreshold = distThreshold * distThreshold;
+		size_t numBlocks = blockKeys.size();
+
+		thrust::device_vector<int> d_adjMatrix(numBlocks * 27, -1);
+
+		int threads = 256;
+		int blocks = (numBlocks + threads - 1) / threads;
+
+		CheckAdjacencyNormalKernel << <blocks, threads >> > (
+			numBlocks,
+			thrust::raw_pointer_cast(d_blockKeys_vec.data()),
+			thrust::raw_pointer_cast(d_blockOffsets_vec.data()),
+			thrust::raw_pointer_cast(d_blockCounts_vec.data()),
+			thrust::raw_pointer_cast(d_sortedIndices_vec.data()),
+			d_points,
+			d_normals,
+			sqDistThreshold,
+			normalThreshold,
+			thrust::raw_pointer_cast(d_adjMatrix.data())
+			);
+		cudaDeviceSynchronize();
+
+		std::vector<int> h_adjMatrix(numBlocks * 27);
+		thrust::copy(d_adjMatrix.begin(), d_adjMatrix.end(), h_adjMatrix.begin());
+
+		std::vector<std::vector<unsigned int>> clusters;
+		std::vector<bool> blockVisited(numBlocks, false);
+
+		for (size_t i = 0; i < numBlocks; ++i)
+		{
+			if (blockVisited[i]) continue;
+
+			std::vector<unsigned int> currentCluster;
+			std::deque<size_t> q;
+
+			q.push_back(i);
+			blockVisited[i] = true;
+
+			while (!q.empty())
+			{
+				size_t curr = q.front();
+				q.pop_front();
+
+				unsigned int offset = blockOffsets[curr];
+				unsigned int count = blockCounts[curr];
+				for (unsigned int p = 0; p < count; ++p)
+				{
+					currentCluster.push_back(sortedIndices[offset + p]);
+				}
+
+				int base_idx = curr * 27;
+				for (int n = 0; n < 27; ++n)
+				{
+					int neighbor = h_adjMatrix[base_idx + n];
+					if (neighbor == -1) break;
+
+					if (!blockVisited[neighbor])
+					{
+						blockVisited[neighbor] = true;
+						q.push_back(neighbor);
+					}
+				}
+			}
+
+			if (!currentCluster.empty())
+			{
+				clusters.push_back(std::move(currentCluster));
+			}
+		}
+
+		return clusters;
+	}
+#endif // 0
 
 private:
 	float voxelSize = 0.1f;

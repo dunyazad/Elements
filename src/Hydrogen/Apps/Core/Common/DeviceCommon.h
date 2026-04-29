@@ -204,6 +204,9 @@ inline bool ForceGPUPerformance()
     return true;
 }
 
+static double lastUsedMemory = 0.0;
+static double lastTotalMemory = 0.0;
+
 inline std::tuple<double, double> CheckDeviceMemory(const char* tag = nullptr)
 {
     size_t free_byte = 0;
@@ -228,11 +231,21 @@ inline std::tuple<double, double> CheckDeviceMemory(const char* tag = nullptr)
             total_db / (1024.0 * 1024.0 * 1024.0),
             (used_db / total_db) * 100.0);
 
+        printf("[%s] delta : %.4f GB / Total %.4f GB (%.2f%%)\n",
+            tag,
+            (used_db - lastUsedMemory) / (1024.0 * 1024.0 * 1024.0),
+            total_db / (1024.0 * 1024.0 * 1024.0),
+			((used_db - lastUsedMemory) / total_db) * 100.0);
+
         //printf("[%s] using: %.4f MB / Total %.4f MB (%.2f%%)\n",
         //    tag,
         //    used_db / (1024.0 * 1024.0),
         //    total_db / (1024.0 * 1024.0),
         //    (used_db / total_db) * 100.0);
     }
+
+    lastUsedMemory = used_db;
+	lastTotalMemory = total_db;
+
     return { used_db, total_db };
 }

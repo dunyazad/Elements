@@ -119,7 +119,7 @@
     <ClCompile Include="Apps\AppMorphologyDebug.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
-    <ClCompile Include="Apps\AppClusteringDevice.cpp">
+    <ClCompile Include="Apps\AppClusteringDevice_OLD.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
     <ClCompile Include="Apps\AppICP.cpp">
@@ -186,6 +186,9 @@
       <Filter>Apps</Filter>
     </CudaCompile>
     <CudaCompile Include="Apps\AppDataFrames.cu">
+      <Filter>Apps</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppClusteringDevice.cu">
       <Filter>Apps</Filter>
     </CudaCompile>
   </ItemGroup>

@@ -194,7 +194,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Apps\AppClustering.cpp" />
-    <ClCompile Include="Apps\AppClusteringDevice.cpp" />
+    <ClCompile Include="Apps\AppClusteringDevice_OLD.cpp" />
     <ClCompile Include="Apps\AppDensityAnalyzing.cpp" />
     <ClCompile Include="Apps\AppICP.cpp" />
     <ClCompile Include="Apps\AppMorphology.cpp" />
@@ -214,6 +214,7 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="Apps\AppClusteringDevice.cu" />
     <CudaCompile Include="Apps\AppDataFrames.cu" />
     <CudaCompile Include="Apps\AppICP.cu" />
     <CudaCompile Include="Apps\AppMergePointClouds.cu" />

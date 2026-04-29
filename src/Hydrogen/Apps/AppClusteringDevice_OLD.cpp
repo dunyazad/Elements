@@ -15,7 +15,7 @@
 #include <Helium/VisualDebugging.h>
 using VD = VisualDebugging;
 
-class AppClusteringDevice : public App
+class AppClusteringDevice_OLD : public App
 {
 public:
     virtual void Execute_NotSorted() 
@@ -119,7 +119,7 @@ public:
         CuPointCloud cloud;
 
         PLYFormat ply;
-        if (!ply.Deserialize("D:\\Resources\\Default\\ExtractedSurfacePoints.ply"))
+        if (!ply.Deserialize("D:\\Debug\\original_points.ply"))
         {
             printf("[Error] Failed to load PLY file.\n");
             return;
@@ -262,4 +262,4 @@ public:
     }
 };
 
-REGISTER_APP(AppClusteringDevice, "AppClusteringDevice");
+REGISTER_APP(AppClusteringDevice_OLD, "AppClusteringDevice_OLD");
