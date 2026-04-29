@@ -6,12 +6,12 @@
 #include <Core/Common/DevicePrimitiveTypes.h>
 #include <Core/DataStructures/SparseCells.h>
 #include <thrust/device_vector.h>
-#include <thrust/tuple.h>
-#include <thrust/transform_reduce.h>
 #include <vector>
 #include <string>
 
 struct cached_allocator;
+
+using namespace Huvitz::Core;
 
 namespace Huvitz
 {
@@ -101,7 +101,7 @@ namespace Huvitz
             const float3* d_normals,
             const uchar3* d_colors,
             size_t numberOfPositions,
-            const cuAABB& localAABB,
+            const  Huvitz::Core::cuAABB& localAABB,
             const float* inverseRT,
             CUstream_st* stream,
             cached_allocator* alloc);
@@ -119,8 +119,8 @@ namespace Huvitz
         inline size_t GetNumberOfPositions() const { return numberOfPositions; }
         inline void SetNumberOfPositions(size_t n) { numberOfPositions = n; }
 
-        inline cuAABB& GetAABB() { return aabb; }
-        inline const cuAABB& GetAABB() const { return aabb; }
+        inline Huvitz::Core::cuAABB& GetAABB() { return aabb; }
+        inline const Huvitz::Core::cuAABB& GetAABB() const { return aabb; }
 
         inline float3* GetPositions() { return positions.data().get(); }
         inline const float3* GetPositions() const { return positions.data().get(); }
@@ -136,10 +136,10 @@ namespace Huvitz
         inline unsigned int* GetSubLabels() { return subLabels.data().get(); }
         inline const unsigned int* GetSubLabels() const { return subLabels.data().get(); }
 
-        PCD ExtractByAABB(const cuAABB& region) const;
+        PCD ExtractByAABB(const Huvitz::Core::cuAABB& region) const;
         PCD ExtractByAABB(const float3& regionMin, const float3& regionMax) const;
 
-        void ExtractByAABB(const cuAABB& region, PCD& out) const;
+        void ExtractByAABB(const Huvitz::Core::cuAABB& region, PCD& out) const;
         void ExtractByAABB(const float3& regionMin, const float3& regionMax, PCD& out) const;
 
         void RebuildAABB();
@@ -157,7 +157,7 @@ namespace Huvitz
 
         void CropUsingLocalRTandAABB(
             const float* inverseRT,
-            const cuAABB& localAABB,
+            const Huvitz::Core::cuAABB& localAABB,
             PCD& out,
             cached_allocator* alloc,
             CUstream_st* stream);
@@ -197,10 +197,8 @@ namespace Huvitz
         PCD  Downsample(float voxelSize) const;
         void Downsample(float voxelSize, PCD& out) const;
 
-        void CalculateICP(const PCD& target, int maxIterations, float tolerance, float* outTransform) const;
-
     protected:
-        cuAABB aabb = {
+        Huvitz::Core::cuAABB aabb = {
             make_float3(FLT_MAX,  FLT_MAX,  FLT_MAX),
             make_float3(-FLT_MAX, -FLT_MAX, -FLT_MAX)
         };

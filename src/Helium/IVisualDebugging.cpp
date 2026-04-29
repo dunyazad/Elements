@@ -78,7 +78,7 @@ void IVisualDebugging::AddTriangle(
 
 void IVisualDebugging::AddBox(
 	const std::string& tag,
-	const cuAABB& aabb,
+	const ::cuAABB& aabb,
 	const float4& color)
 {
 	VD::AddBox(tag, { {XYZ(aabb.min)}, {XYZ(aabb.max)} }, { XYZW(color) });
@@ -105,7 +105,7 @@ void IVisualDebugging::AddBox(
 
 void IVisualDebugging::AddWiredBox(
 	const std::string& tag,
-	const cuAABB& aabb,
+	const ::cuAABB& aabb,
 	const float4& color)
 {
 	VD::AddWiredBox(tag, {{XYZ(aabb.min)}, {XYZ(aabb.max)}}, { XYZW(color) });

@@ -125,7 +125,9 @@ class HSerializable
 public:
 	virtual ~HSerializable() = default;
 	virtual bool Serialize(const std::string& filename) = 0;
+	virtual bool Serialize(const std::wstring& filename) = 0;
 	virtual bool Deserialize(const std::string& filename) = 0;
+	virtual bool Deserialize(const std::wstring& filename) = 0;
 
 	virtual inline void AddPoint(float x, float y, float z)
 	{
@@ -615,6 +617,17 @@ public:
 	virtual bool Serialize(const std::string& filename) override
 	{
 		std::ofstream ofs(filename, std::ios::out | std::ios::binary);
+		return Serialize(ofs);
+	}
+
+	virtual bool Serialize(const std::wstring& filename) override
+	{
+		std::ofstream ofs(filename, std::ios::out | std::ios::binary);
+		return Serialize(ofs);
+	}
+
+	bool Serialize(std::ofstream& ofs)
+	{
 		if (!ofs.is_open()) return false;
 
 		std::stringstream ssHeader;
@@ -798,6 +811,17 @@ public:
 	virtual bool Deserialize(const std::string& filename) override
 	{
 		std::ifstream ifs(filename, std::ios::in | std::ios::binary);
+		return Deserialize(ifs);
+	}
+
+	virtual bool Deserialize(const std::wstring& filename) override
+	{
+		std::ifstream ifs(filename, std::ios::in | std::ios::binary);
+		return Deserialize(ifs);
+	}
+
+	virtual bool Deserialize(std::ifstream& ifs)
+	{
 		if (!ifs.is_open()) return false;
 
 		std::string line;

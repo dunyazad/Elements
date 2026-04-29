@@ -418,7 +418,7 @@ public:
 
 		for (size_t i = 0; i < clusters.size(); ++i)
 		{
-			if (clusters[i].size() < 10) continue;
+			//if (clusters[i].size() < 10) continue;
 
 			Eigen::Vector4f randomColor = colors[i % colors.size()];
 			std::vector<Eigen::Vector3f> clusterPoints;

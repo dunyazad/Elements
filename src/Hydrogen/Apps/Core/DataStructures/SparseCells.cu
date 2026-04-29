@@ -4,8 +4,8 @@
 
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include <device_functions.h>
-#include <math_functions.h>
+// #include <device_functions.h> // CUDA 12+ 에서는 직접 include 금지
+// #include <math_functions.h>   // CUDA 12+ 에서는 직접 include 금지
 
 namespace Huvitz
 {
@@ -351,6 +351,29 @@ namespace Huvitz
         if (nextPoint)
         {
             cudaFree(nextPoint);
+        }
+    }
+
+    void SparseCells::Reserve(size_t maxCells, size_t maxPoints)
+    {
+        if (maxCells > hashTableCapacity)
+        {
+            if (hashTable)
+            {
+                cudaFree(hashTable);
+            }
+            hashTableCapacity = maxCells;
+            cudaMalloc(&hashTable, sizeof(int) * hashTableCapacity);
+        }
+
+        if (maxPoints > nextPointCapacity)
+        {
+            if (nextPoint)
+            {
+                cudaFree(nextPoint);
+            }
+            nextPointCapacity = maxPoints;
+            cudaMalloc(&nextPoint, sizeof(int) * nextPointCapacity);
         }
     }
 

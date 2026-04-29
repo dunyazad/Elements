@@ -8,36 +8,39 @@ struct cached_allocator;
 
 namespace Huvitz
 {
-	class IntegrationParameters
+	namespace Core
 	{
-	public:
-		virtual ~IntegrationParameters()
+		class IntegrationParameters
 		{
-		}
+		public:
+			virtual ~IntegrationParameters()
+			{
+			}
 
-		//float blockSize = 0.8f;
-		//float truncationDistance = 1.0f;
-		//float maxWeight = 100.0f;
-	};
+			//float blockSize = 0.8f;
+			//float truncationDistance = 1.0f;
+			//float maxWeight = 100.0f;
+		};
 
-	class ExtractionParameters
-	{
-	public:
-		virtual ~ExtractionParameters()
+		class ExtractionParameters
 		{
-		}
-		//float blockSize = 0.8f;
-		//float truncationDistance = 1.0f;
-	};
+		public:
+			virtual ~ExtractionParameters()
+			{
+			}
+			//float blockSize = 0.8f;
+			//float truncationDistance = 1.0f;
+		};
 
-	class VolumeBase
-	{
-	public:
-		VolumeBase() {}
-		virtual ~VolumeBase() {}
-		virtual void Clear(cached_allocator* allocator, CUstream_st* stream) = 0;
+		class VolumeBase
+		{
+		public:
+			VolumeBase() {}
+			virtual ~VolumeBase() {}
+			virtual void Clear(cached_allocator* allocator, CUstream_st* stream) = 0;
 
-		virtual void Integrate(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream) = 0;
-		virtual void Extract(ExtractionParameters* parameters, cached_allocator* allocator, CUstream_st* stream) = 0;
-	};
+			virtual void Integrate(IntegrationParameters* parameters, cached_allocator* allocator, CUstream_st* stream) = 0;
+			virtual void Extract(ExtractionParameters* parameters, cached_allocator* allocator, CUstream_st* stream) = 0;
+		};
+	}
 }

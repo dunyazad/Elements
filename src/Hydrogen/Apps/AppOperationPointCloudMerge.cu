@@ -45,7 +45,7 @@ using namespace Huvitz;
 
 namespace fs = std::filesystem;
 
-using Morton64 = Huvitz::Morton64;
+using Morton64 = Huvitz::Core::Morton64;
 
 //struct Point
 //{

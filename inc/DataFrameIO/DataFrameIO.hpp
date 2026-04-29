@@ -1,28 +1,53 @@
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
-#include <cstdint>
-#include <cstring>
-#include <fstream>
-#include <functional>
-#include <mutex>
-#include <optional>
-#include <queue>
-#include <stdexcept>
+#include <cuda_runtime.h>
+#include <iostream>
+#include <vector>
 #include <string>
 #include <thread>
-#include <vector>
+#include <mutex>
+#include <queue>
+#include <condition_variable>
+#include <fstream>
+#include <memory>
+#include <algorithm>
+#include <cstdint>
+#include <optional>
+#include <cstring>
+#include <atomic>
+#include <stdexcept>
+#include <functional>
 
+// ---------------------------------------------------------------------------
+// Blob 및 레이아웃 정의
+// ---------------------------------------------------------------------------
+#ifndef BLOB_DEFINED
+#define BLOB_DEFINED
 using Blob = std::vector<uint8_t>;
+#endif
 
-// ===========================================================================
+#pragma pack(push, 1)
+struct FrameHeader
+{
+    uint32_t magic;        // 0x44464D00 'DFM\0'
+    uint32_t frameIndex;
+    uint32_t tag;          // 데이터 뭉치 대표 태그 (성능을 위해 통합 저장 시 0 사용)
+    uint64_t payloadBytes;
+};
+#pragma pack(pop)
+
+static constexpr uint32_t DATAFRAME_MAGIC = 0x44464D00;
+
+struct DataFrame
+{
+    uint32_t frameIndex;
+    uint32_t tag;
+    Blob data;
+};
+
+// ---------------------------------------------------------------------------
 // AsyncFileWriter
-//
-// Writes Blob data to a file on a background thread.
-// push() is thread-safe and returns immediately.
-// flush() blocks until the queue is fully drained to disk.
-// ===========================================================================
+// ---------------------------------------------------------------------------
 class AsyncFileWriter
 {
 public:
@@ -30,18 +55,23 @@ public:
 
     AsyncFileWriter(
         const std::string& filepath,
-        OpenMode                         mode = OpenMode::Truncate,
+        OpenMode mode = OpenMode::Truncate,
         std::function<void(std::string)> on_error = nullptr)
         : on_error(std::move(on_error))
     {
         auto ios_mode = std::ios::out | std::ios::binary;
         if (mode == OpenMode::Append)
+        {
             ios_mode |= std::ios::app;
+        }
 
         file.open(filepath, ios_mode);
         if (!file.is_open())
         {
-            if (on_error) on_error("Failed to open file: " + filepath);
+            if (this->on_error)
+            {
+                this->on_error("Failed to open file: " + filepath);
+            }
             return;
         }
         thread = std::thread(&AsyncFileWriter::worker_loop, this);
@@ -54,19 +84,29 @@ public:
             stop.store(true, std::memory_order_relaxed);
         }
         cv.notify_one();
-        if (thread.joinable()) thread.join();
-        if (file.is_open())   file.flush();
+        if (thread.joinable())
+        {
+            thread.join();
+        }
+        if (file.is_open())
+        {
+            file.flush();
+        }
     }
 
     AsyncFileWriter(const AsyncFileWriter&) = delete;
     AsyncFileWriter& operator=(const AsyncFileWriter&) = delete;
-    AsyncFileWriter(AsyncFileWriter&&) = delete;
-    AsyncFileWriter& operator=(AsyncFileWriter&&) = delete;
 
     bool push(Blob blob)
     {
-        if (stop.load(std::memory_order_relaxed)) return false;
-        { std::lock_guard<std::mutex> lock(mutex); io_queue.push(std::move(blob)); }
+        if (stop.load(std::memory_order_relaxed))
+        {
+            return false;
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            io_queue.push(std::move(blob));
+        }
         cv.notify_one();
         return true;
     }
@@ -77,8 +117,10 @@ public:
         cv_empty.wait(lock, [this] { return io_queue.empty(); });
     }
 
-    bool   is_open() const { return file.is_open(); }
-    size_t pending() const { std::lock_guard<std::mutex> l(mutex); return io_queue.size(); }
+    bool is_open() const
+    {
+        return file.is_open();
+    }
 
 private:
     void worker_loop()
@@ -90,7 +132,10 @@ private:
                 return !io_queue.empty() || stop.load(std::memory_order_relaxed);
                 });
             drain(lock);
-            if (stop.load(std::memory_order_relaxed)) break;
+            if (stop.load(std::memory_order_relaxed))
+            {
+                break;
+            }
         }
     }
 
@@ -100,77 +145,34 @@ private:
         {
             Blob item = std::move(io_queue.front());
             io_queue.pop();
-            if (io_queue.empty()) cv_empty.notify_all();
+            if (io_queue.empty())
+            {
+                cv_empty.notify_all();
+            }
 
             lock.unlock();
             if (file.is_open())
             {
                 file.write(reinterpret_cast<const char*>(item.data()),
                     static_cast<std::streamsize>(item.size()));
-                if (!file.good() && on_error) on_error("Write failed");
             }
             lock.lock();
         }
-        if (file.is_open()) file.flush();
     }
 
-    mutable std::mutex           mutex;
-    std::condition_variable      cv;
-    std::condition_variable      cv_empty;
-    std::queue<Blob>             io_queue;
-    std::ofstream                file;
+    mutable std::mutex mutex;
+    std::condition_variable cv;
+    std::condition_variable cv_empty;
+    std::queue<Blob> io_queue;
+    std::ofstream file;
     std::function<void(std::string)> on_error;
-    std::atomic<bool>            stop{ false };
-    std::thread                  thread;
+    std::atomic<bool> stop{ false };
+    std::thread thread;
 };
 
-// ===========================================================================
-// On-disk layout per frame:
-//
-//   [FrameHeader]
-//   [raw payload bytes]
-// ===========================================================================
-#pragma pack(push, 1)
-struct FrameHeader
-{
-    uint32_t magic;        // 0x44464D00  'DFM\0'
-    uint32_t frameIndex;
-    uint64_t payloadBytes;
-};
-#pragma pack(pop)
-
-static constexpr uint32_t DATAFRAME_MAGIC = 0x44464D00;
-
-// ===========================================================================
-// DataFrame  (host-side decoded frame)
-// ===========================================================================
-struct DataFrame
-{
-    uint32_t frameIndex;
-    Blob     data;  // raw payload bytes; cast as needed
-};
-
-// ===========================================================================
-// DataFrameRecorder<T>
-//
-// Pass one serializer lambda: (const T&) -> Blob
-// The lambda owns all conversion logic (cudaMemcpy, casting, layout).
-//
-//   std::string ->
-//       [](const std::string& s) -> Blob {
-//           return Blob(s.begin(), s.end()); }
-//
-//   vector<int> ->
-//       [](const std::vector<int>& v) -> Blob {
-//           const auto* p = reinterpret_cast<const uint8_t*>(v.data());
-//           return Blob(p, p + v.size() * sizeof(int)); }
-//
-//   CUDA params ->
-//       [](const MyParams& p) -> Blob {
-//           Blob buf(N * sizeof(float));
-//           cudaMemcpy(buf.data(), p.d_depth, buf.size(), cudaMemcpyDeviceToHost);
-//           return buf; }
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// DataFrameRecorder
+// ---------------------------------------------------------------------------
 template<typename T>
 class DataFrameRecorder
 {
@@ -181,26 +183,17 @@ public:
         const std::string& filepath,
         Serializer serializer,
         std::function<void(std::string)> on_error = nullptr)
-        : writer(filepath, AsyncFileWriter::OpenMode::Truncate, std::move(on_error))
-        , serializer(std::move(serializer))
+        : writer(filepath, AsyncFileWriter::OpenMode::Truncate, std::move(on_error)),
+        serializer(std::move(serializer))
     {
     }
 
-    ~DataFrameRecorder() = default;
-
-    DataFrameRecorder(const DataFrameRecorder&) = delete;
-    DataFrameRecorder& operator=(const DataFrameRecorder&) = delete;
-
-    void record(const T& value)
-    {
-        record(serializer(value));
-    }
-
-    void record(const Blob& payload)
+    void record_raw(const Blob& payload, uint32_t tag, uint32_t frame_idx)
     {
         FrameHeader hdr{};
         hdr.magic = DATAFRAME_MAGIC;
-        hdr.frameIndex = frameIndex;
+        hdr.frameIndex = frame_idx;
+        hdr.tag = tag;
         hdr.payloadBytes = static_cast<uint64_t>(payload.size());
 
         Blob blob(sizeof(FrameHeader) + payload.size());
@@ -208,30 +201,21 @@ public:
         std::memcpy(blob.data() + sizeof(hdr), payload.data(), payload.size());
 
         writer.push(std::move(blob));
-        ++frameIndex;
     }
 
-    void record_device(const T& value)
+    void flush()
     {
-        record(serializer(value));
-	}
-
-    void     flush() { writer.flush(); }
-    bool     is_open()     const { return writer.is_open(); }
-    uint32_t frame_count() const { return frameIndex; }
+        writer.flush();
+    }
 
 private:
     AsyncFileWriter writer;
-    Serializer      serializer;
-    uint32_t        frameIndex{ 0 };
+    Serializer serializer;
 };
 
-// ===========================================================================
+// ---------------------------------------------------------------------------
 // DataFrameReader
-//
-// Not templated. Returns raw bytes per frame.
-// Interpret frame.data with the same layout the serializer produced.
-// ===========================================================================
+// ---------------------------------------------------------------------------
 class DataFrameReader
 {
 public:
@@ -239,58 +223,53 @@ public:
     {
         file.open(filepath, std::ios::in | std::ios::binary);
         if (!file.is_open())
-            throw std::runtime_error(
-                "DataFrameReader: cannot open file: " + filepath);
+        {
+            throw std::runtime_error("DataFrameReader: cannot open file: " + filepath);
+        }
         index_file();
     }
 
-    ~DataFrameReader() = default;
+    ~DataFrameReader()
+    {
+        if (file.is_open())
+        {
+            file.close();
+        }
+    }
 
-    DataFrameReader(const DataFrameReader&) = delete;
-    DataFrameReader& operator=(const DataFrameReader&) = delete;
+    bool is_open() const
+    {
+        return file.is_open();
+    }
 
-    bool   is_open()     const { return file.is_open(); }
-    bool   at_end()      const { return !file.good() || file.eof(); }
-    size_t frame_count() const { return offsets.size(); }
+    bool at_end() const
+    {
+        return cursor >= offsets.size();
+    }
 
     std::optional<DataFrame> next()
     {
-        if (cursor >= offsets.size()) return std::nullopt;
-        file.seekg(offsets[cursor]);
-        if (!file.good()) return std::nullopt;
-        auto frame = read_one();
-        if (frame) ++cursor;
-        return frame;
-    }
-
-    std::optional<DataFrame> read_at(size_t frameIndex)
-    {
-        if (frameIndex >= offsets.size())
+        if (cursor >= offsets.size())
         {
-            throw std::out_of_range(
-                "DataFrameReader::read_at - index " + std::to_string(frameIndex)
-                + " out of range (total " + std::to_string(offsets.size()) + ")");
+            return std::nullopt;
         }
-        seek(frameIndex);
-        return next();
-    }
-
-    void seek(size_t frameIndex)
-    {
-        if (frameIndex >= offsets.size())
-            throw std::out_of_range(
-                "DataFrameReader::seek - index " + std::to_string(frameIndex)
-                + " out of range (total " + std::to_string(offsets.size()) + ")");
-        cursor = frameIndex;
-        file.clear();
-        file.seekg(offsets[frameIndex]);
+        file.seekg(offsets[cursor]);
+        auto frame = read_one();
+        if (frame)
+        {
+            ++cursor;
+        }
+        return frame;
     }
 
     void rewind()
     {
         cursor = 0;
         file.clear();
-        if (!offsets.empty()) file.seekg(offsets[0]);
+        if (!offsets.empty())
+        {
+            file.seekg(offsets[0]);
+        }
     }
 
 private:
@@ -298,42 +277,250 @@ private:
     {
         file.seekg(0, std::ios::beg);
         offsets.clear();
-
         FrameHeader hdr{};
         while (file.read(reinterpret_cast<char*>(&hdr), sizeof(hdr)))
         {
-            if (hdr.magic != DATAFRAME_MAGIC) break;
-            offsets.push_back(
-                static_cast<std::streamoff>(file.tellg())
-                - static_cast<std::streamoff>(sizeof(hdr)));
+            if (hdr.magic != DATAFRAME_MAGIC)
+            {
+                break;
+            }
+            offsets.push_back(static_cast<std::streamoff>(file.tellg()) - static_cast<std::streamoff>(sizeof(hdr)));
             file.seekg(static_cast<std::streamoff>(hdr.payloadBytes), std::ios::cur);
-            if (!file.good()) break;
         }
-
         file.clear();
-        file.seekg(offsets.empty() ? 0 : offsets[0]);
-        cursor = 0;
+        rewind();
     }
 
     std::optional<DataFrame> read_one()
     {
         FrameHeader hdr{};
-        if (!file.read(reinterpret_cast<char*>(&hdr), sizeof(hdr))) return std::nullopt;
-        if (hdr.magic != DATAFRAME_MAGIC) return std::nullopt;
-
+        if (!file.read(reinterpret_cast<char*>(&hdr), sizeof(hdr)))
+        {
+            return std::nullopt;
+        }
         DataFrame frame;
         frame.frameIndex = hdr.frameIndex;
+        frame.tag = hdr.tag;
         frame.data.resize(static_cast<size_t>(hdr.payloadBytes));
-
-        if (hdr.payloadBytes > 0 &&
-            !file.read(reinterpret_cast<char*>(frame.data.data()),
-                static_cast<std::streamsize>(hdr.payloadBytes)))
-            return std::nullopt;
-
+        file.read(reinterpret_cast<char*>(frame.data.data()), hdr.payloadBytes);
         return frame;
     }
 
-    std::ifstream               file;
+    std::ifstream file;
     std::vector<std::streamoff> offsets;
-    size_t                      cursor{ 0 };
+    size_t cursor{ 0 };
+};
+
+// ---------------------------------------------------------------------------
+// BackgroundDataWriter
+// ---------------------------------------------------------------------------
+struct DataFrameDeviceView
+{
+    unsigned int capacity;
+    unsigned int* size_ptr;
+    float3* positions;
+    float3* normals;
+    uchar3* colors;
+    unsigned int* labels;
+    unsigned int* tags;
+
+#if defined(__CUDACC__)
+    __device__ void AddPointWarpOptimized(bool keep, const float3& p, const float3& n, const uchar3& c, unsigned int label, unsigned int tag) const
+    {
+        unsigned int mask = __ballot_sync(0xFFFFFFFF, keep);
+        int warp_count = __popc(mask);
+        int lane_id = threadIdx.x % 32;
+        int warp_offset = 0;
+
+        if (lane_id == 0 && warp_count > 0)
+        {
+            warp_offset = atomicAdd(size_ptr, warp_count);
+        }
+        warp_offset = __shfl_sync(0xFFFFFFFF, warp_offset, 0);
+
+        if (keep)
+        {
+            int prefix = __popc(mask & ((1 << lane_id) - 1));
+            unsigned int idx = warp_offset + prefix;
+            if (idx < capacity)
+            {
+                positions[idx] = p;
+                normals[idx] = n;
+                colors[idx] = c;
+                labels[idx] = label;
+                tags[idx] = tag;
+            }
+        }
+    }
+#endif
+};
+
+class BackgroundDataWriter
+{
+public:
+    BackgroundDataWriter(unsigned int initial_capacity, const std::string& filepath)
+        : capacity(0), stream(nullptr), sync_event(nullptr), device_size(nullptr), pinned_size(nullptr),
+        device_positions(nullptr), pinned_positions(nullptr), device_normals(nullptr), pinned_normals(nullptr),
+        device_colors(nullptr), pinned_colors(nullptr), device_labels(nullptr), pinned_labels(nullptr),
+        device_tags(nullptr), pinned_tags(nullptr)
+    {
+        cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking);
+        cudaEventCreateWithFlags(&sync_event, cudaEventDisableTiming);
+        AllocateMemory(initial_capacity);
+        recorder = std::make_unique<DataFrameRecorder<Blob>>(filepath, [](const Blob& b) { return b; });
+    }
+
+    ~BackgroundDataWriter()
+    {
+        if (stream)
+        {
+            cudaStreamSynchronize(stream);
+        }
+        FreeMemory();
+        if (stream)
+        {
+            cudaStreamDestroy(stream);
+        }
+        if (sync_event)
+        {
+            cudaEventDestroy(sync_event);
+        }
+    }
+
+    void AsyncSaveFrame(int frame_index, uint32_t group_tag = 0)
+    {
+        bool needs_resize = false;
+        unsigned int count = FetchToPinned(needs_resize);
+
+        if (needs_resize)
+        {
+            Resize(static_cast<unsigned int>(count * 1.2f));
+            return;
+        }
+
+        if (count > 0 && recorder)
+        {
+            size_t p_size = count * sizeof(float3);
+            size_t n_size = count * sizeof(float3);
+            size_t c_size = count * sizeof(uchar3);
+            size_t l_size = count * sizeof(unsigned int);
+            size_t t_size = count * sizeof(unsigned int);
+
+            Blob payload(p_size + n_size + c_size + l_size + t_size);
+            uint8_t* ptr = payload.data();
+
+            std::memcpy(ptr, pinned_positions, p_size); ptr += p_size;
+            std::memcpy(ptr, pinned_normals, n_size);   ptr += n_size;
+            std::memcpy(ptr, pinned_colors, c_size);    ptr += c_size;
+            std::memcpy(ptr, pinned_labels, l_size);    ptr += l_size;
+            std::memcpy(ptr, pinned_tags, t_size);
+
+            recorder->record_raw(payload, group_tag, frame_index);
+        }
+    }
+
+    DataFrameDeviceView GetView() const
+    {
+        DataFrameDeviceView view;
+        view.capacity = capacity;
+        view.size_ptr = device_size;
+        view.positions = device_positions;
+        view.normals = device_normals;
+        view.colors = device_colors;
+        view.labels = device_labels;
+        view.tags = device_tags;
+        return view;
+    }
+
+    void PrepareNextFrame()
+    {
+        if (device_size)
+        {
+            cudaMemsetAsync(device_size, 0, sizeof(unsigned int), stream);
+        }
+    }
+
+    void Resize(unsigned int new_capacity)
+    {
+        cudaStreamSynchronize(stream);
+        FreeMemory();
+        AllocateMemory(new_capacity);
+    }
+
+private:
+    unsigned int FetchToPinned(bool& needs_resize)
+    {
+        cudaMemcpyAsync(pinned_size, device_size, sizeof(unsigned int), cudaMemcpyDeviceToHost, stream);
+        cudaEventRecord(sync_event, stream);
+        while (cudaEventQuery(sync_event) == cudaErrorNotReady)
+        {
+            std::this_thread::yield();
+        }
+
+        unsigned int count = *pinned_size;
+        if (count > capacity)
+        {
+            needs_resize = true;
+            return count;
+        }
+
+        if (count > 0)
+        {
+            cudaMemcpyAsync(pinned_positions, device_positions, count * sizeof(float3), cudaMemcpyDeviceToHost, stream);
+            cudaMemcpyAsync(pinned_normals, device_normals, count * sizeof(float3), cudaMemcpyDeviceToHost, stream);
+            cudaMemcpyAsync(pinned_colors, device_colors, count * sizeof(uchar3), cudaMemcpyDeviceToHost, stream);
+            cudaMemcpyAsync(pinned_labels, device_labels, count * sizeof(unsigned int), cudaMemcpyDeviceToHost, stream);
+            cudaMemcpyAsync(pinned_tags, device_tags, count * sizeof(unsigned int), cudaMemcpyDeviceToHost, stream);
+            cudaEventRecord(sync_event, stream);
+            while (cudaEventQuery(sync_event) == cudaErrorNotReady)
+            {
+                std::this_thread::yield();
+            }
+        }
+        needs_resize = false;
+        return count;
+    }
+
+    void AllocateMemory(unsigned int new_capacity)
+    {
+        capacity = new_capacity;
+        cudaMalloc(&device_size, sizeof(unsigned int));
+        cudaMalloc(&device_positions, sizeof(float3) * capacity);
+        cudaMalloc(&device_normals, sizeof(float3) * capacity);
+        cudaMalloc(&device_colors, sizeof(uchar3) * capacity);
+        cudaMalloc(&device_labels, sizeof(unsigned int) * capacity);
+        cudaMalloc(&device_tags, sizeof(unsigned int) * capacity);
+
+        cudaHostAlloc(&pinned_size, sizeof(unsigned int), cudaHostAllocDefault);
+        cudaHostAlloc(&pinned_positions, sizeof(float3) * capacity, cudaHostAllocDefault);
+        cudaHostAlloc(&pinned_normals, sizeof(float3) * capacity, cudaHostAllocDefault);
+        cudaHostAlloc(&pinned_colors, sizeof(uchar3) * capacity, cudaHostAllocDefault);
+        cudaHostAlloc(&pinned_labels, sizeof(unsigned int) * capacity, cudaHostAllocDefault);
+        cudaHostAlloc(&pinned_tags, sizeof(unsigned int) * capacity, cudaHostAllocDefault);
+    }
+
+    void FreeMemory()
+    {
+        if (device_size)
+        {
+            cudaFree(device_size); cudaFree(device_positions); cudaFree(device_normals);
+            cudaFree(device_colors); cudaFree(device_labels); cudaFree(device_tags);
+            device_size = nullptr;
+        }
+        if (pinned_size)
+        {
+            cudaFreeHost(pinned_size); cudaFreeHost(pinned_positions); cudaFreeHost(pinned_normals);
+            cudaFreeHost(pinned_colors); cudaFreeHost(pinned_labels); cudaFreeHost(pinned_tags);
+            pinned_size = nullptr;
+        }
+    }
+
+    unsigned int capacity;
+    cudaStream_t stream;
+    cudaEvent_t sync_event;
+    unsigned int* device_size, * pinned_size;
+    float3* device_positions, * pinned_positions, * device_normals, * pinned_normals;
+    uchar3* device_colors, * pinned_colors;
+    unsigned int* device_labels, * pinned_labels, * device_tags, * pinned_tags;
+    std::unique_ptr<DataFrameRecorder<Blob>> recorder;
 };

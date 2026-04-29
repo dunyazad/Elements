@@ -72,7 +72,7 @@ public:
 
 	static void AddBox(
 		const std::string& tag,
-		const cuAABB& aabb,
+		const ::cuAABB& aabb,
 		const float4& color);
 
 	static void AddBox(
@@ -90,7 +90,7 @@ public:
 
 	static void AddWiredBox(
 		const std::string& tag,
-		const cuAABB& aabb,
+		const ::cuAABB& aabb,
 		const float4& color);
 
 	static void AddWiredBox(

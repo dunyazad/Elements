@@ -3,12 +3,46 @@
 
 namespace Huvitz
 {
+    struct NoiseFilterCachingAllocator
+    {
+        typedef char value_type;
+        std::unordered_multimap<size_t, void*> cache;
+        cudaStream_t stream = nullptr;
+
+        ~NoiseFilterCachingAllocator()
+        {
+            for (auto& pair : cache)
+                cudaFree(pair.second);
+        }
+
+        char* allocate(std::ptrdiff_t n)
+        {
+            auto it = cache.find(n);
+            if (it != cache.end())
+            {
+                void* ptr = it->second;
+                cache.erase(it);
+                return (char*)ptr;
+            }
+            void* ptr;
+            cudaMallocAsync(&ptr, n, stream);
+            return (char*)ptr;
+        }
+
+        void deallocate(char* ptr, size_t n)
+        {
+            cache.emplace(n, ptr);
+        }
+    };
+
     class PCD;
     class SparseCells
     {
     public:
         SparseCells();
         ~SparseCells();
+
+        void Reserve(size_t maxCells, size_t maxPoints);
 
         void Build(PCD* cloud, float cellSize, CUstream_st* stream = nullptr);
         void Build(float3* points, size_t numberOfPoints, float cellSize, CUstream_st* stream = nullptr);
@@ -21,10 +55,6 @@ namespace Huvitz
         inline float3 GetWorldOrigin() const { return worldOrigin; }
         inline int3 GetGridSize() const { return gridSize; }
         inline float GetCellSize() const { return cellSize; }
-
-        inline const int* GetHashTable() const { return hashTable; }
-        inline const int* GetNextPoint() const { return nextPoint; }
-        inline int GetTableMask() const { return tableMask; }
 
     private:
         int3 gridSize = { 0, 0, 0 };

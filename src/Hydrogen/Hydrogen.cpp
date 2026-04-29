@@ -101,7 +101,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		AllocConsole();
 		freopen("CONOUT$", "w", stdout);
 		MaximizeConsoleWindowOnMonitor(3);
-		MaximizeWindowOnMonitor(hWnd, 2);
+		MaximizeWindowOnMonitor(hWnd, 1);
 	}
 	else
 	{
