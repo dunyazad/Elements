@@ -10,9 +10,15 @@
 
 #include <robin_hood/robin_hood.h>
 
+#include <device_functions.h>
+
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 #include <thrust/sort.h>
+#include <thrust/sequence.h>
+#include <thrust/execution_policy.h>
+
+#include <nvtx3/nvToolsExt.h>
 
 #include <Helium/Color.hpp>
 #include <Helium/Serialization.hpp>
@@ -258,7 +264,8 @@ __global__ void CheckAdjacencyNormalKernel(
 
 #pragma region FlatClustering
 __global__ void UnionBlocksKernel(
-	size_t numBlocks,
+	size_t numTotalBlocks,
+	size_t offset,
 	const uint64_t* blockKeys,
 	const unsigned int* blockOffsets,
 	const unsigned int* blockCounts,
@@ -267,8 +274,9 @@ __global__ void UnionBlocksKernel(
 	float sqDistThreshold,
 	int* parent)
 {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i >= numBlocks) return;
+	// 현재 호출된 청크 내에서의 인덱스 + 시작 offset
+	int i = blockIdx.x * blockDim.x + threadIdx.x + (int)offset;
+	if (i >= numTotalBlocks) return;
 
 	uint64_t key = blockKeys[i];
 	unsigned int curOffset = blockOffsets[i];
@@ -278,21 +286,21 @@ __global__ void UnionBlocksKernel(
 	int64_t yi = (int64_t)((key >> 21) & 0x1FFFFF); if (yi & 0x100000) yi |= ~0x1FFFFF;
 	int64_t zi = (int64_t)(key & 0x1FFFFF); if (zi & 0x100000) zi |= ~0x1FFFFF;
 
+	float distThreshold = sqrtf(sqDistThreshold);
+
 	for (int64_t dz = -1; dz <= 1; ++dz)
 	{
 		for (int64_t dy = -1; dy <= 1; ++dy)
 		{
 			for (int64_t dx = -1; dx <= 1; ++dx)
 			{
-				if (dx == 0 && dy == 0 && dz == 0) continue;
+				uint64_t nKey = DeviceGetKeyFromIndices(xi + dx, yi + dy, zi + dz);
+				if (nKey == key) continue;
 
-				uint64_t nKey = ((uint64_t)((xi + dx) & 0x1FFFFF) << 42) |
-					((uint64_t)((yi + dy) & 0x1FFFFF) << 21) |
-					((uint64_t)((zi + dz) & 0x1FFFFF));
-
-				// Binary Search로 이웃 블록 인덱스 찾기
+				int left = 0;
+				int right = (int)numTotalBlocks - 1;
 				int found_ni = -1;
-				int left = 0, right = (int)numBlocks - 1;
+
 				while (left <= right)
 				{
 					int mid = left + (right - left) / 2;
@@ -301,7 +309,7 @@ __global__ void UnionBlocksKernel(
 					else right = mid - 1;
 				}
 
-				if (found_ni != -1 && i < found_ni) // 중복 검사 방지
+				if (found_ni != -1 && i < found_ni)
 				{
 					unsigned int nOffset = blockOffsets[found_ni];
 					unsigned int nCount = blockCounts[found_ni];
@@ -313,10 +321,15 @@ __global__ void UnionBlocksKernel(
 						for (unsigned int p2 = 0; p2 < nCount; ++p2)
 						{
 							Eigen::Vector3f pt2 = points[sortedIndices[nOffset + p2]];
-							float dxf = pt1.x() - pt2.x();
-							float dyf = pt1.y() - pt2.y();
-							float dzf = pt1.z() - pt2.z();
-							if (dxf * dxf + dyf * dyf + dzf * dzf <= sqDistThreshold)
+
+							if (fabsf(pt1.x() - pt2.x()) > distThreshold) continue;
+							if (fabsf(pt1.y() - pt2.y()) > distThreshold) continue;
+							if (fabsf(pt1.z() - pt2.z()) > distThreshold) continue;
+
+							float dx_f = pt1.x() - pt2.x();
+							float dy_f = pt1.y() - pt2.y();
+							float dz_f = pt1.z() - pt2.z();
+							if (dx_f * dx_f + dy_f * dy_f + dz_f * dz_f <= sqDistThreshold)
 							{
 								isConnected = true;
 								break;
@@ -327,7 +340,6 @@ __global__ void UnionBlocksKernel(
 
 					if (isConnected)
 					{
-						// Union 연산 (Atomic 기반)
 						int root1 = i;
 						int root2 = found_ni;
 						while (parent[root1] != root1) root1 = parent[root1];
@@ -335,9 +347,8 @@ __global__ void UnionBlocksKernel(
 
 						if (root1 != root2)
 						{
-							int high = root1 > root2 ? root1 : root2;
-							int low = root1 > root2 ? root2 : root1;
-							atomicMin(&parent[high], low);
+							if (root1 < root2) atomicMin(&parent[root2], root1);
+							else atomicMin(&parent[root1], root2);
 						}
 					}
 				}
@@ -386,20 +397,30 @@ class DeviceMemoryPool
 public:
 	DeviceMemoryPool(size_t capacity)
 	{
-		totalSize = capacity;
-		offset = 0;
-		if (cudaMalloc(&basePointer, totalSize) != cudaSuccess)
-		{
-			throw std::runtime_error("Failed to allocate GPU memory pool");
-		}
+		AllocateInternal(capacity);
 	}
 
 	~DeviceMemoryPool()
 	{
-		if (basePointer)
+		FreeInternal();
+	}
+
+	void EnsureCapacity(size_t requestedCapacity)
+	{
+		if (requestedCapacity > totalSize)
 		{
-			cudaFree(basePointer);
+			FreeInternal();
+			AllocateInternal(requestedCapacity);
 		}
+		else
+		{
+			Clear();
+		}
+	}
+
+	void Clear()
+	{
+		offset = 0;
 	}
 
 	void* Allocate(size_t bytes)
@@ -414,27 +435,50 @@ public:
 		return ptr;
 	}
 
-	void Reset()
+private:
+	void AllocateInternal(size_t capacity)
 	{
+		totalSize = capacity;
 		offset = 0;
+		if (cudaMalloc(&basePointer, totalSize) != cudaSuccess)
+		{
+			basePointer = nullptr;
+			totalSize = 0;
+			throw std::runtime_error("Failed to allocate GPU memory pool");
+		}
 	}
 
-private:
+	void FreeInternal()
+	{
+		if (basePointer)
+		{
+			cudaFree(basePointer);
+			basePointer = nullptr;
+		}
+	}
+
 	void* basePointer = nullptr;
 	size_t offset = 0;
 	size_t totalSize = 0;
 };
 
 template <typename T>
-struct FastAllocator
+struct FlatClusteringAllocator
 {
 	typedef T value_type;
 	typedef thrust::device_ptr<T> pointer;
+	typedef thrust::device_ptr<const T> const_pointer;
+	typedef thrust::device_reference<T> reference;
+	typedef thrust::device_reference<const T> const_reference;
+	typedef std::size_t size_type;
+	typedef std::ptrdiff_t difference_type;
+
 	DeviceMemoryPool* pool;
 
-	FastAllocator(DeviceMemoryPool* p) : pool(p) {}
+	FlatClusteringAllocator(DeviceMemoryPool* p) : pool(p) {}
+
 	template <typename U>
-	FastAllocator(const FastAllocator<U>& other) : pool(other.pool) {}
+	FlatClusteringAllocator(const FlatClusteringAllocator<U>& other) : pool(other.pool) {}
 
 	pointer allocate(std::size_t n)
 	{
@@ -442,27 +486,28 @@ struct FastAllocator
 		{
 			return pointer(nullptr);
 		}
+
 		void* ptr = pool->Allocate(n * sizeof(T));
 		if (!ptr)
 		{
 			throw std::bad_alloc();
 		}
-		return pointer(static_cast<T*>(ptr));
+
+		return thrust::device_pointer_cast(static_cast<T*>(ptr));
 	}
 
 	void deallocate(pointer ptr, std::size_t n)
 	{
 	}
 
-	bool operator==(const FastAllocator& other) const
+	template <typename U>
+	struct rebind
 	{
-		return pool == other.pool;
-	}
+		typedef FlatClusteringAllocator<U> other;
+	};
 
-	bool operator!=(const FastAllocator& other) const
-	{
-		return pool != other.pool;
-	}
+	bool operator==(const FlatClusteringAllocator& other) const { return pool == other.pool; }
+	bool operator!=(const FlatClusteringAllocator& other) const { return pool != other.pool; }
 };
 
 class FlatClustering
@@ -470,30 +515,52 @@ class FlatClustering
 public:
 	FlatClustering(size_t poolSize = 200ULL * 1024 * 1024)
 		: memoryPool(poolSize),
-		deviceBlockKeys(FastAllocator<uint64_t>(&memoryPool)),
-		deviceBlockOffsets(FastAllocator<unsigned int>(&memoryPool)),
-		deviceBlockCounts(FastAllocator<unsigned int>(&memoryPool)),
-		deviceSortedIndices(FastAllocator<unsigned int>(&memoryPool))
+		deviceBlockKeys(FlatClusteringAllocator<uint64_t>(&memoryPool)),
+		deviceBlockOffsets(FlatClusteringAllocator<unsigned int>(&memoryPool)),
+		deviceBlockCounts(FlatClusteringAllocator<unsigned int>(&memoryPool)),
+		deviceSortedIndices(FlatClusteringAllocator<unsigned int>(&memoryPool)),
+		deviceParent(FlatClusteringAllocator<int>(&memoryPool))
 	{
 	}
 
-	void BuildDevice(const Eigen::Vector3f* points, size_t pointCount, float blockSize = 0.3f)
+	template <typename T>
+	auto GetPolicy(FlatClusteringAllocator<T>& alloc, cudaStream_t stream)
 	{
-		memoryPool.Reset();
+		return thrust::cuda::par(alloc).on(stream);
+	}
+
+	void BuildDevice(const Eigen::Vector3f* points, size_t pointCount, float blockSize, cudaStream_t stream = 0)
+	{
+		if (pointCount == 0) return;
+
+		if (stream == 0) cudaDeviceSynchronize();
+		else cudaStreamSynchronize(stream);
+
+		deviceBlockKeys.clear();     deviceBlockKeys.shrink_to_fit();
+		deviceBlockOffsets.clear();  deviceBlockOffsets.shrink_to_fit();
+		deviceBlockCounts.clear();   deviceBlockCounts.shrink_to_fit();
+		deviceSortedIndices.clear(); deviceSortedIndices.shrink_to_fit();
+		deviceParent.clear();        deviceParent.shrink_to_fit();
+
+		size_t bytesPerPoint = 80;
+		size_t estimatedRequired = pointCount * bytesPerPoint;
+		memoryPool.EnsureCapacity(std::max(200ULL * 1024 * 1024, estimatedRequired));
+
 		this->voxelSize = blockSize;
-		if (pointCount == 0)
-		{
-			return;
-		}
+
+		FlatClusteringAllocator<uint8_t> poolAlloc(&memoryPool);
+		auto policy = GetPolicy(poolAlloc, stream);
+
+		deviceSortedIndices.resize(pointCount);
+		deviceParent.resize(pointCount);
 
 		float invVoxelSize = 1.0f / blockSize;
-		thrust::device_vector<uint64_t, FastAllocator<uint64_t>> deviceKeys(pointCount, FastAllocator<uint64_t>(&memoryPool));
-		deviceSortedIndices.resize(pointCount);
 
+		thrust::device_vector<uint64_t, FlatClusteringAllocator<uint64_t>> deviceKeys(pointCount, FlatClusteringAllocator<uint64_t>(&memoryPool));
 		auto countIter = thrust::make_counting_iterator<unsigned int>(0);
-		thrust::copy(thrust::device, countIter, countIter + pointCount, deviceSortedIndices.begin());
 
-		thrust::transform(thrust::device, countIter, countIter + pointCount, deviceKeys.begin(),
+		thrust::copy(policy, countIter, countIter + pointCount, deviceSortedIndices.begin());
+		thrust::transform(policy, countIter, countIter + pointCount, deviceKeys.begin(),
 			[points, invVoxelSize] __device__(unsigned int i) {
 			const Eigen::Vector3f& pt = points[i];
 			int64_t xi = static_cast<int64_t>(floorf(pt.x() * invVoxelSize));
@@ -502,51 +569,63 @@ public:
 			return ((uint64_t)(xi & 0x1FFFFF) << 42) | ((uint64_t)(yi & 0x1FFFFF) << 21) | ((uint64_t)(zi & 0x1FFFFF));
 		});
 
-		thrust::sort_by_key(thrust::device, deviceKeys.begin(), deviceKeys.end(), deviceSortedIndices.begin());
+		thrust::sort_by_key(policy, deviceKeys.begin(), deviceKeys.end(), deviceSortedIndices.begin());
 
-		thrust::device_vector<unsigned int, FastAllocator<unsigned int>> deviceOnes(pointCount, 1, FastAllocator<unsigned int>(&memoryPool));
+		thrust::device_vector<unsigned int, FlatClusteringAllocator<unsigned int>> deviceOnes(pointCount, 1, FlatClusteringAllocator<unsigned int>(&memoryPool));
 		deviceBlockKeys.resize(pointCount);
 		deviceBlockCounts.resize(pointCount);
 
-		auto newEnd = thrust::reduce_by_key(thrust::device, deviceKeys.begin(), deviceKeys.end(), deviceOnes.begin(), deviceBlockKeys.begin(), deviceBlockCounts.begin());
+		auto newEnd = thrust::reduce_by_key(policy, deviceKeys.begin(), deviceKeys.end(), deviceOnes.begin(), deviceBlockKeys.begin(), deviceBlockCounts.begin());
 		size_t numBlocks = newEnd.first - deviceBlockKeys.begin();
+
 		deviceBlockKeys.resize(numBlocks);
 		deviceBlockCounts.resize(numBlocks);
-
 		deviceBlockOffsets.resize(numBlocks);
-		thrust::exclusive_scan(thrust::device, deviceBlockCounts.begin(), deviceBlockCounts.end(), deviceBlockOffsets.begin());
+		thrust::exclusive_scan(policy, deviceBlockCounts.begin(), deviceBlockCounts.end(), deviceBlockOffsets.begin());
+
+		deviceParent.resize(numBlocks);
 	}
 
-	void ExtractClusterLabelsDevice(const Eigen::Vector3f* points, unsigned int* labels, float distThreshold = 0.1f)
+	void ExtractClusterLabelsDevice(const Eigen::Vector3f* points, unsigned int* labels, float distThreshold, cudaStream_t stream = 0)
 	{
-		if (deviceBlockKeys.empty())
+		if (deviceBlockKeys.empty()) return;
+
+		FlatClusteringAllocator<uint8_t> poolAlloc(&memoryPool);
+		auto policy = GetPolicy(poolAlloc, stream);
+		size_t numBlocks = deviceBlockKeys.size();
+
+		thrust::sequence(policy, deviceParent.begin(), deviceParent.end());
+
+		const size_t chunkSize = 10000;
+		int threads = 256;
+
+		for (size_t offset = 0; offset < numBlocks; offset += chunkSize)
 		{
-			return;
+			size_t currentBatchSize = (numBlocks - offset < chunkSize) ? (numBlocks - offset) : chunkSize;
+			int blocks = (int)((currentBatchSize + threads - 1) / threads);
+
+			UnionBlocksKernel << <blocks, threads, 0, stream >> > (
+				numBlocks,
+				offset,
+				thrust::raw_pointer_cast(deviceBlockKeys.data()),
+				thrust::raw_pointer_cast(deviceBlockOffsets.data()),
+				thrust::raw_pointer_cast(deviceBlockCounts.data()),
+				thrust::raw_pointer_cast(deviceSortedIndices.data()),
+				points,
+				distThreshold * distThreshold,
+				thrust::raw_pointer_cast(deviceParent.data())
+				);
+
+			if ((offset / chunkSize) % 4 == 0)
+			{
+				std::this_thread::yield();
+			}
 		}
 
-		size_t numBlocks = deviceBlockKeys.size();
-		thrust::device_vector<int, FastAllocator<int>> deviceParent(numBlocks, FastAllocator<int>(&memoryPool));
-		thrust::sequence(thrust::device, deviceParent.begin(), deviceParent.end());
+		int totalBlocks = (int)((numBlocks + threads - 1) / threads);
+		FlattenParentKernel << <totalBlocks, threads, 0, stream >> > ((int)numBlocks, thrust::raw_pointer_cast(deviceParent.data()));
 
-		int threads = 256;
-		int blocks = (int)((numBlocks + threads - 1) / threads);
-
-		UnionBlocksKernel << <blocks, threads >> > (
-			numBlocks,
-			thrust::raw_pointer_cast(deviceBlockKeys.data()),
-			thrust::raw_pointer_cast(deviceBlockOffsets.data()),
-			thrust::raw_pointer_cast(deviceBlockCounts.data()),
-			thrust::raw_pointer_cast(deviceSortedIndices.data()),
-			points,
-			distThreshold * distThreshold,
-			thrust::raw_pointer_cast(deviceParent.data())
-			);
-		cudaDeviceSynchronize();
-
-		FlattenParentKernel << <blocks, threads >> > (numBlocks, thrust::raw_pointer_cast(deviceParent.data()));
-		cudaDeviceSynchronize();
-
-		LabelPointsKernel << <blocks, threads >> > (
+		LabelPointsKernel << <totalBlocks, threads, 0, stream >> > (
 			numBlocks,
 			thrust::raw_pointer_cast(deviceBlockOffsets.data()),
 			thrust::raw_pointer_cast(deviceBlockCounts.data()),
@@ -554,16 +633,16 @@ public:
 			thrust::raw_pointer_cast(deviceParent.data()),
 			labels
 			);
-		cudaDeviceSynchronize();
 	}
 
 private:
 	float voxelSize = 0.1f;
 	DeviceMemoryPool memoryPool;
-	thrust::device_vector<uint64_t, FastAllocator<uint64_t>> deviceBlockKeys;
-	thrust::device_vector<unsigned int, FastAllocator<unsigned int>> deviceBlockOffsets;
-	thrust::device_vector<unsigned int, FastAllocator<unsigned int>> deviceBlockCounts;
-	thrust::device_vector<unsigned int, FastAllocator<unsigned int>> deviceSortedIndices;
+	thrust::device_vector<uint64_t, FlatClusteringAllocator<uint64_t>> deviceBlockKeys;
+	thrust::device_vector<unsigned int, FlatClusteringAllocator<unsigned int>> deviceBlockOffsets;
+	thrust::device_vector<unsigned int, FlatClusteringAllocator<unsigned int>> deviceBlockCounts;
+	thrust::device_vector<unsigned int, FlatClusteringAllocator<unsigned int>> deviceSortedIndices;
+	thrust::device_vector<int, FlatClusteringAllocator<int>> deviceParent;
 };
 #pragma endregion
 
@@ -577,8 +656,6 @@ public:
 
 		PLYFormat ply;
 		ply.Deserialize("D:\\Debug\\Compound_Full.ply");
-		//ply.SetDataType(PLYFormat::PLYDataType::BINARY);
-		//ply.Serialize("D:\\Debug\\Compound_Full.ply");
 		if (ply.GetPoints().empty())
 		{
 			printf("Failed to load point cloud.\n");
@@ -587,10 +664,8 @@ public:
 
 		nvtxRangePushA("Copying points to device");
 
-		// 포인트 데이터 복사
 		thrust::device_vector<Eigen::Vector3f> d_points(ply.GetPoints().begin(), ply.GetPoints().end());
 
-		// [CORRECTION]: d_labels는 포인트 값으로 초기화하는 것이 아니라, 개수만큼 할당만 해야 합니다.
 		thrust::device_vector<unsigned int> d_labels(ply.GetPoints().size());
 
 		CheckDeviceMemory("After copying points to device");
@@ -608,28 +683,31 @@ public:
 
 		nvtxRangePop();
 
-		nvtxRangePushA("building clusters");
+		for (size_t i = 0; i < 10; i++)
+		{
+			nvtxRangePushA("building clusters");
 
-		CUDA_TS(Build);
-		clustering.BuildDevice(thrust::raw_pointer_cast(d_points.data()), d_points.size(), 0.1f);
-		CUDA_TE(Build);
+			CUDA_TS(Build);
+			clustering.BuildDevice(thrust::raw_pointer_cast(d_points.data()), d_points.size(), 0.1f);
+			CUDA_TE(Build);
 
-		CheckDeviceMemory("After building clusters");
+			CheckDeviceMemory("After building clusters");
 
-		nvtxRangePop();
+			nvtxRangePop();
 
-		nvtxRangePushA("Extracting clusters");
+			nvtxRangePushA("Extracting clusters");
 
-		CUDA_TS(Extract);
-		clustering.ExtractClusterLabelsDevice(
-			thrust::raw_pointer_cast(d_points.data()),
-			thrust::raw_pointer_cast(d_labels.data()),
-			0.175f);
-		CUDA_TE(Extract);
+			CUDA_TS(Extract);
+			clustering.ExtractClusterLabelsDevice(
+				thrust::raw_pointer_cast(d_points.data()),
+				thrust::raw_pointer_cast(d_labels.data()),
+				0.175f);
+			CUDA_TE(Extract);
 
-		CheckDeviceMemory("After extracting clusters");
+			CheckDeviceMemory("After extracting clusters");
 
-		nvtxRangePop();
+			nvtxRangePop();
+		}
 
 		CUDA_TE(Total);
 
@@ -648,59 +726,104 @@ public:
 		}
 		CUDA_TE(ClusterSizeCounting);
 
+		CUDA_TS(Sorting);
+		std::vector<std::pair<unsigned int, unsigned int>> sortedClusters;
+		sortedClusters.reserve(clusterSizes.size());
+		for (const auto& [label, size] : clusterSizes)
+		{
+			sortedClusters.push_back({ label, size });
+		}
+
+		std::sort(sortedClusters.begin(), sortedClusters.end(),
+			[](const std::pair<unsigned int, unsigned int>& a, const std::pair<unsigned int, unsigned int>& b)
+			{
+				return a.second > b.second;
+			});
+		CUDA_TE(Sorting);
+
 		CUDA_TS(Visualizing);
 		auto colors = Color::GetContrastingColorsWithoutBWRGB(128);
 
-		for (size_t i = 0; i < ply.GetPoints().size(); i++)
+		// 최대 라벨 값을 찾아 배열(Vector) 기반의 빠른 룩업 테이블 생성
+		unsigned int maxLabel = 0;
+		for (const auto& [label, size] : clusterSizes)
 		{
-			auto& p = ply.GetPoints()[i];
-			auto& n = ply.GetNormals()[i];
-			auto label = h_labels[i];
-
-			if (10 > clusterSizes[label])
+			if (label > maxLabel)
 			{
-				VD::AddSphere("Points", { XYZ_(p) }, { XYZ_(n) }, 0.5f, { 1.0f, 0.0f, 0.0f, 1.0f });
+				maxLabel = label;
+			}
+		}
+
+		std::vector<Eigen::Vector4f> colorLookup(maxLabel + 1, { 1.0f, 1.0f, 1.0f, 1.0f });
+		std::vector<unsigned int> sizeLookup(maxLabel + 1, 0);
+
+		for (size_t i = 0; i < sortedClusters.size(); ++i)
+		{
+			unsigned int label = sortedClusters[i].first;
+			colorLookup[label] = colors[i % colors.size()];
+			sizeLookup[label] = sortedClusters[i].second;
+		}
+
+		size_t pointCount = ply.GetPoints().size();
+		const auto& points = ply.GetPoints();
+		const auto& normals = ply.GetNormals();
+
+		// Batch 처리를 위한 버퍼 준비
+		std::vector<float3> smallCenters;
+		std::vector<float3> smallNormals;
+		std::vector<float4> smallColors;
+
+		std::vector<float3> largeCenters;
+		std::vector<float3> largeNormals;
+		std::vector<float4> largeColors;
+
+		// 재할당 오버헤드 방지를 위한 메모리 예약
+		smallCenters.reserve(pointCount);
+		smallNormals.reserve(pointCount);
+		smallColors.reserve(pointCount);
+		largeCenters.reserve(pointCount);
+		largeNormals.reserve(pointCount);
+		largeColors.reserve(pointCount);
+
+		// 포인트들을 크기 조건에 따라 두 그룹으로 분류
+		for (size_t i = 0; i < pointCount; i++)
+		{
+			const auto& p = points[i];
+			const auto& n = normals[i];
+			unsigned int label = h_labels[i];
+
+			const auto& c = colorLookup[label];
+			unsigned int cSize = sizeLookup[label];
+
+			float3 pos = { XYZ_(p) };
+			float3 norm = { XYZ_(n) };
+			float4 col = { XYZW_(c) };
+
+			if (10 > cSize)
+			{
+				smallCenters.push_back(pos);
+				smallNormals.push_back(norm);
+				smallColors.push_back(col);
 			}
 			else
 			{
-				VD::AddSphere("Points", { XYZ_(p) }, { XYZ_(n) }, 0.05f, { 1.0f, 1.0f, 1.0f, 1.0f });
+				largeCenters.push_back(pos);
+				largeNormals.push_back(norm);
+				largeColors.push_back(col);
 			}
 		}
+
+		// 단 2번의 호출로 모든 포인트 클라우드 일괄 렌더링
+		if (!smallCenters.empty())
+		{
+			VD::AddSphereBatch("Points_Small", smallCenters, smallNormals, 0.1f, smallColors);
+		}
+		if (!largeCenters.empty())
+		{
+			VD::AddSphereBatch("Points_Large", largeCenters, largeNormals, 0.05f, largeColors);
+		}
+
 		CUDA_TE(Visualizing);
-
-		//CheckDeviceMemory("After extracting clusters");
-
-		//nvtxRangePop();
-
-		//CUDA_TE(Total);
-
-		//nvtxRangePop();
-
-		//std::map<unsigned int, unsigned int> clusterSizes;
-		//for (size_t i = 0; i < d_labels.size(); ++i)
-		//{
-		//	clusterSizes[d_labels[i]]++;
-		//}
-
-		//thrust::host_vector<unsigned int> h_labels = d_labels;
-
-		//auto colors = Color::GetContrastingColorsWithoutBWRGB(128);
-
-		//for (size_t i = 0; i < ply.GetPoints().size(); i++)
-		//{
-		//	auto& p = ply.GetPoints()[i];
-		//	auto& n = ply.GetNormals()[i];
-		//	auto label = h_labels[i];
-
-		//	if(10 > clusterSizes[label])
-		//	{
-		//		VD::AddSphere("Cluster_" + std::to_string(label), { XYZ_(p) }, { XYZ_(n) }, 0.5f, { 1.0f, 0.0f, 0.0f, 1.0f });
-		//	}
-		//	else
-		//	{
-		//		VD::AddSphere("Cluster_" + std::to_string(label), { XYZ_(p) }, { XYZ_(n) }, 0.05f, { 1.0f, 1.0f, 1.0f, 1.0f });
-		//	}
-		//}
 	}
 };
 
