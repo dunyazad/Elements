@@ -131,7 +131,30 @@ void Renderable::Draw()
     GLint oldPolygonMode[2];
     glGetIntegerv(GL_POLYGON_MODE, oldPolygonMode);
 
-    switch (drawingMode)
+	GLint oldCullFaceMode;
+    glGetIntegerv(GL_CULL_FACE_MODE, &oldCullFaceMode);
+    switch (faceCullingMode)
+    {
+    case NoCulling:
+        glDisable(GL_CULL_FACE);
+        break;
+    case FrontFace:
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT);
+        break;
+    case BackFace:
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        break;
+    case FrontAndBack:
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT_AND_BACK);
+        break;
+    default:
+        break;
+	}
+
+	switch (drawingMode)
     {
     case Solid:
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -148,25 +171,40 @@ void Renderable::Draw()
         glPointSize(1.0f);
         break;
     case WireFrameOverSolid:
+        SetForcedColor(false);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(1.0f, 1.0f);
         DrawImplementation();
         glDisable(GL_POLYGON_OFFSET_FILL);
 
+        SetForcedColor(true, Eigen::Vector3f(0.0f, 0.0f, 0.0f));
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         DrawImplementation();
+
+        SetForcedColor(false);
         break;
     default:
         break;
     }
 
     glPolygonMode(GL_FRONT_AND_BACK, oldPolygonMode[0]);
+    glCullFace(oldCullFaceMode);
     glBindVertexArray(0);
 }
 
 void Renderable::DrawImplementation()
 {
+    Shader* shader = GetActiveShader();
+    if (shader)
+    {
+        shader->SetInt("useSolidColor", useForcedColor ? 1 : 0);
+        if (useForcedColor)
+        {
+            shader->SetVector3f("solidColor", forcedColor);
+        }
+    }
+
     GLsizei count = (indices.Size() > 0) ? (GLsizei)indices.Size() : (GLsizei)vertices.Size();
     bool useIndices = (indices.Size() > 0);
 

@@ -34,6 +34,14 @@ public:
         NumberOfDrawingModes
     };
 
+    enum FaceCullingMode
+    {
+        NoCulling,
+        FrontFace,
+        BackFace,
+        FrontAndBack
+	};
+
 public:
     Renderable();
     virtual ~Renderable();
@@ -125,6 +133,8 @@ public:
 	inline DrawingMode GetDrawingMode() const { return drawingMode; }
     inline void SetDrawingMode(DrawingMode mode) { drawingMode = mode; }
     inline void NextDrawingMode() { drawingMode = (DrawingMode)((drawingMode + 1) % NumberOfDrawingModes); }
+	inline FaceCullingMode GetFaceCullingMode() const { return faceCullingMode; }
+	inline void SetFaceCullingMode(FaceCullingMode mode) { faceCullingMode = mode; }
 
     inline void SetVisible(bool isVisible) { visible = isVisible; }
     inline bool IsVisible() const { return visible; }
@@ -141,6 +151,12 @@ public:
 
     inline size_t GetInstanceCount() const { return instanceTransforms.Size(); }
 
+    inline void SetForcedColor(bool enable, const Eigen::Vector3f& color = Eigen::Vector3f(1.0f, 1.0f, 1.0f))
+    {
+        useForcedColor = enable;
+        forcedColor = color;
+    }
+
 protected:
     void DrawImplementation();
 
@@ -156,6 +172,7 @@ private:
 
     GeometryMode geometryMode = Triangles;
     DrawingMode drawingMode = Solid;
+	FaceCullingMode faceCullingMode = BackFace;
 
     // Basic Buffers
     AttributeBuffer<unsigned int>    indices;
@@ -172,6 +189,9 @@ private:
 
     unsigned int numberOfInstances = 0;
     bool instancingEnabled = false;
+
+    bool useForcedColor = false;
+    Eigen::Vector3f forcedColor = Eigen::Vector3f(1.0f, 1.0f, 1.0f);
 };
 
 class HELIUM_API DebuggingRenderable : public Renderable

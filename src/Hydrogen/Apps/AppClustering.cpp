@@ -22,7 +22,7 @@ namespace Eigen {
 	using Vector3ui = Vector<unsigned int, 3>;
 }
 
-class FlatClustering
+class FlatClusteringDevice
 {
 public:
 	struct KeyIndex {
@@ -624,7 +624,7 @@ public:
 
 		TS(Total);
 
-		static FlatClustering clustering;
+		static FlatClusteringDevice clustering;
 
 		TS(Build);
 		clustering.Build(ply.GetPoints(), 0.1f);

@@ -62,206 +62,6 @@ struct PointToKeyFunctor
 	}
 };
 
-__global__ void CheckAdjacencyKernel(
-	size_t numBlocks,
-	const uint64_t* blockKeys,
-	const unsigned int* blockOffsets,
-	const unsigned int* blockCounts,
-	const unsigned int* sortedIndices,
-	const Eigen::Vector3f* points,
-	float sqDistThreshold,
-	int* adjacencyMatrix)
-{
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i >= numBlocks) return;
-
-	uint64_t key = blockKeys[i];
-	unsigned int curOffset = blockOffsets[i];
-	unsigned int curCount = blockCounts[i];
-
-	int64_t xi = (int64_t)((key >> 42) & 0x1FFFFF); if (xi & 0x100000) xi |= ~0x1FFFFF;
-	int64_t yi = (int64_t)((key >> 21) & 0x1FFFFF); if (yi & 0x100000) yi |= ~0x1FFFFF;
-	int64_t zi = (int64_t)(key & 0x1FFFFF); if (zi & 0x100000) zi |= ~0x1FFFFF;
-
-	int adj_count = 0;
-	int base_idx = i * 27;
-
-	for (int64_t dz = -1; dz <= 1; ++dz)
-	{
-		for (int64_t dy = -1; dy <= 1; ++dy)
-		{
-			for (int64_t dx = -1; dx <= 1; ++dx)
-			{
-				if (dx == 0 && dy == 0 && dz == 0) continue;
-
-				uint64_t nKey = DeviceGetKeyFromIndices(xi + dx, yi + dy, zi + dz);
-
-				int left = 0;
-				int right = numBlocks - 1;
-				int found_ni = -1;
-
-				while (left <= right)
-				{
-					int mid = left + (right - left) / 2;
-					if (blockKeys[mid] == nKey)
-					{
-						found_ni = mid;
-						break;
-					}
-					else if (blockKeys[mid] < nKey)
-					{
-						left = mid + 1;
-					}
-					else
-					{
-						right = mid - 1;
-					}
-				}
-
-				if (found_ni != -1)
-				{
-					unsigned int nOffset = blockOffsets[found_ni];
-					unsigned int nCount = blockCounts[found_ni];
-					bool isConnected = false;
-
-					for (unsigned int p1 = 0; p1 < curCount; ++p1)
-					{
-						Eigen::Vector3f pt1 = points[sortedIndices[curOffset + p1]];
-						for (unsigned int p2 = 0; p2 < nCount; ++p2)
-						{
-							Eigen::Vector3f pt2 = points[sortedIndices[nOffset + p2]];
-							float dx_f = pt1.x() - pt2.x();
-							float dy_f = pt1.y() - pt2.y();
-							float dz_f = pt1.z() - pt2.z();
-							float distSq = dx_f * dx_f + dy_f * dy_f + dz_f * dz_f;
-
-							if (distSq <= sqDistThreshold)
-							{
-								isConnected = true;
-								break;
-							}
-						}
-						if (isConnected) break;
-					}
-
-					if (isConnected)
-					{
-						adjacencyMatrix[base_idx + adj_count] = found_ni;
-						adj_count++;
-					}
-				}
-			}
-		}
-	}
-	adjacencyMatrix[base_idx + adj_count] = -1;
-}
-
-__global__ void CheckAdjacencyNormalKernel(
-	size_t numBlocks,
-	const uint64_t* blockKeys,
-	const unsigned int* blockOffsets,
-	const unsigned int* blockCounts,
-	const unsigned int* sortedIndices,
-	const Eigen::Vector3f* points,
-	const Eigen::Vector3f* normals,
-	float sqDistThreshold,
-	float normalThreshold,
-	int* adjacencyMatrix)
-{
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i >= numBlocks) return;
-
-	uint64_t key = blockKeys[i];
-	unsigned int curOffset = blockOffsets[i];
-	unsigned int curCount = blockCounts[i];
-
-	int64_t xi = (int64_t)((key >> 42) & 0x1FFFFF); if (xi & 0x100000) xi |= ~0x1FFFFF;
-	int64_t yi = (int64_t)((key >> 21) & 0x1FFFFF); if (yi & 0x100000) yi |= ~0x1FFFFF;
-	int64_t zi = (int64_t)(key & 0x1FFFFF); if (zi & 0x100000) zi |= ~0x1FFFFF;
-
-	int adj_count = 0;
-	int base_idx = i * 27;
-
-	for (int64_t dz = -1; dz <= 1; ++dz)
-	{
-		for (int64_t dy = -1; dy <= 1; ++dy)
-		{
-			for (int64_t dx = -1; dx <= 1; ++dx)
-			{
-				if (dx == 0 && dy == 0 && dz == 0) continue;
-
-				uint64_t nKey = DeviceGetKeyFromIndices(xi + dx, yi + dy, zi + dz);
-
-				int left = 0;
-				int right = numBlocks - 1;
-				int found_ni = -1;
-
-				while (left <= right)
-				{
-					int mid = left + (right - left) / 2;
-					if (blockKeys[mid] == nKey)
-					{
-						found_ni = mid;
-						break;
-					}
-					else if (blockKeys[mid] < nKey)
-					{
-						left = mid + 1;
-					}
-					else
-					{
-						right = mid - 1;
-					}
-				}
-
-				if (found_ni != -1)
-				{
-					unsigned int nOffset = blockOffsets[found_ni];
-					unsigned int nCount = blockCounts[found_ni];
-					bool isConnected = false;
-
-					for (unsigned int p1 = 0; p1 < curCount; ++p1)
-					{
-						unsigned int idx1 = sortedIndices[curOffset + p1];
-						Eigen::Vector3f pt1 = points[idx1];
-						Eigen::Vector3f nm1 = normals[idx1];
-
-						for (unsigned int p2 = 0; p2 < nCount; ++p2)
-						{
-							unsigned int idx2 = sortedIndices[nOffset + p2];
-							Eigen::Vector3f pt2 = points[idx2];
-
-							float dx_f = pt1.x() - pt2.x();
-							float dy_f = pt1.y() - pt2.y();
-							float dz_f = pt1.z() - pt2.z();
-							float distSq = dx_f * dx_f + dy_f * dy_f + dz_f * dz_f;
-
-							if (distSq <= sqDistThreshold)
-							{
-								Eigen::Vector3f nm2 = normals[idx2];
-								float dotProd = nm1.x() * nm2.x() + nm1.y() * nm2.y() + nm1.z() * nm2.z();
-								if (fabs(dotProd) >= normalThreshold)
-								{
-									isConnected = true;
-									break;
-								}
-							}
-						}
-						if (isConnected) break;
-					}
-
-					if (isConnected)
-					{
-						adjacencyMatrix[base_idx + adj_count] = found_ni;
-						adj_count++;
-					}
-				}
-			}
-		}
-	}
-	adjacencyMatrix[base_idx + adj_count] = -1;
-}
-
 #pragma region FlatClustering
 __global__ void UnionBlocksKernel(
 	size_t numTotalBlocks,
@@ -510,10 +310,10 @@ struct FlatClusteringAllocator
 	bool operator!=(const FlatClusteringAllocator& other) const { return pool != other.pool; }
 };
 
-class FlatClustering
+class FlatClusteringDevice
 {
 public:
-	FlatClustering(size_t poolSize = 200ULL * 1024 * 1024)
+	FlatClusteringDevice(size_t poolSize = 200ULL * 1024 * 1024)
 		: memoryPool(poolSize),
 		deviceBlockKeys(FlatClusteringAllocator<uint64_t>(&memoryPool)),
 		deviceBlockOffsets(FlatClusteringAllocator<unsigned int>(&memoryPool)),
@@ -533,8 +333,10 @@ public:
 	{
 		if (pointCount == 0) return;
 
-		if (stream == 0) cudaDeviceSynchronize();
-		else cudaStreamSynchronize(stream);
+		//if (stream == 0) cudaDeviceSynchronize();
+		//else cudaStreamSynchronize(stream);
+
+		cudaStreamSynchronize(stream);
 
 		deviceBlockKeys.clear();     deviceBlockKeys.shrink_to_fit();
 		deviceBlockOffsets.clear();  deviceBlockOffsets.shrink_to_fit();
@@ -672,12 +474,12 @@ public:
 
 		nvtxRangePop();
 
-		CUDA_TS(Total);
+		//CUDA_TS(Total);
 		nvtxRangePushA("Total");
 
 		nvtxRangePushA("Creating FlatClustering object");
 
-		static FlatClustering clustering;
+		static FlatClusteringDevice clustering;
 
 		CheckDeviceMemory("After creating FlatClustering object");
 
@@ -687,9 +489,9 @@ public:
 		{
 			nvtxRangePushA("building clusters");
 
-			CUDA_TS(Build);
+			//CUDA_TS(Build);
 			clustering.BuildDevice(thrust::raw_pointer_cast(d_points.data()), d_points.size(), 0.1f);
-			CUDA_TE(Build);
+			//CUDA_TE(Build);
 
 			CheckDeviceMemory("After building clusters");
 
@@ -697,19 +499,19 @@ public:
 
 			nvtxRangePushA("Extracting clusters");
 
-			CUDA_TS(Extract);
+			//CUDA_TS(Extract);
 			clustering.ExtractClusterLabelsDevice(
 				thrust::raw_pointer_cast(d_points.data()),
 				thrust::raw_pointer_cast(d_labels.data()),
 				0.175f);
-			CUDA_TE(Extract);
+			//CUDA_TE(Extract);
 
 			CheckDeviceMemory("After extracting clusters");
 
 			nvtxRangePop();
 		}
 
-		CUDA_TE(Total);
+		//CUDA_TE(Total);
 
 		nvtxRangePop();
 

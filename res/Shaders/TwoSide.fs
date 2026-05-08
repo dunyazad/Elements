@@ -31,4 +31,9 @@ void main()
     {
         FragColor = vec4(solidColor * lighting, 1.0f);
     }
+
+    //if (!gl_FrontFacing)
+    //{
+    //    FragColor = vec4(1.0f - FragColor.r * 1.5f, 1.0f - FragColor.g * 1.5f, 1.0f - FragColor.b * 1.5f, FragColor.a);
+    //}
 }
