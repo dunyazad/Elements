@@ -24,6 +24,150 @@ namespace Eigen {
 	using Vector3ui = Vector<unsigned int, 3>;
 }
 
+#include <vector>
+#include <map>
+#include <utility>
+#include <Eigen/Dense>
+
+namespace HEM
+{
+	struct Face;
+	struct Edge;
+
+	struct Vertex
+	{
+		Eigen::Vector3f position;
+		Edge* edge;
+
+		Vertex() : position(0.0f, 0.0f, 0.0f), edge(nullptr)
+		{
+		}
+
+		Vertex(const Eigen::Vector3f& pos) : position(pos), edge(nullptr)
+		{
+		}
+	};
+
+	struct Edge
+	{
+		Vertex* vertex;
+		Edge* pair;
+		Edge* next;
+		Edge* prev;
+		Face* face;
+
+		Edge() : vertex(nullptr), pair(nullptr), next(nullptr), prev(nullptr), face(nullptr)
+		{
+		}
+	};
+
+	struct Face
+	{
+		Edge* edge;
+
+		Face() : edge(nullptr)
+		{
+		}
+	};
+
+	class Mesh
+	{
+	public:
+		Mesh()
+		{
+		}
+
+		~Mesh()
+		{
+			Clear();
+		}
+
+		void Clear()
+		{
+			for (auto v : vertices) delete v;
+			for (auto e : edges) delete e;
+			for (auto f : faces) delete f;
+
+			vertices.clear();
+			edges.clear();
+			faces.clear();
+		}
+
+		void Build(const std::vector<Eigen::Vector3f>& inPoints, const std::vector<Eigen::Vector3i>& inIndices)
+		{
+			Clear();
+
+			vertices.reserve(inPoints.size());
+			for (const auto& p : inPoints)
+			{
+				vertices.push_back(new Vertex(p));
+			}
+
+			std::map<std::pair<int, int>, Edge*> edgeMap;
+
+			faces.reserve(inIndices.size());
+			for (const auto& tri : inIndices)
+			{
+				Face* newFace = new Face();
+				faces.push_back(newFace);
+
+				Edge* e[3];
+				for (int i = 0; i < 3; ++i)
+				{
+					e[i] = new Edge();
+					edges.push_back(e[i]);
+				}
+
+				for (int i = 0; i < 3; ++i)
+				{
+					int idx0 = tri[i];
+					int idx1 = tri[(i + 1) % 3];
+
+					e[i]->vertex = vertices[idx1];
+					e[i]->face = newFace;
+					e[i]->next = e[(i + 1) % 3];
+					e[i]->prev = e[(i + 2) % 3];
+
+					vertices[idx0]->edge = e[i];
+					newFace->edge = e[i];
+
+					std::pair<int, int> currentKey = { idx0, idx1 };
+					std::pair<int, int> flipKey = { idx1, idx0 };
+
+					if (edgeMap.find(flipKey) != edgeMap.end())
+					{
+						Edge* twin = edgeMap[flipKey];
+						e[i]->pair = twin;
+						twin->pair = e[i];
+					}
+
+					edgeMap[currentKey] = e[i];
+				}
+			}
+		}
+
+		const std::vector<Vertex*>& GetVertices() const
+		{
+			return vertices;
+		}
+
+		const std::vector<Edge*>& GetEdges() const
+		{
+			return edges;
+		}
+
+		const std::vector<Face*>& GetFaces() const
+		{
+			return faces;
+		}
+
+	protected:
+		std::vector<Vertex*> vertices;
+		std::vector<Edge*> edges;
+		std::vector<Face*> faces;
+	};
+}
+
 class AppHalfEdgeMesh : public App
 {
 public:
@@ -77,6 +221,36 @@ public:
 			}
 
 			});
+
+		//renderable->SetVisible(false);
+
+		HEM::Mesh mesh;
+		std::vector<Eigen::Vector3i> meshIndices;
+		for (size_t i = 0; i < indices.size() / 3; i++)
+		{
+			meshIndices.push_back(Eigen::Vector3i(indices[i * 3], indices[i * 3 + 1], indices[i * 3 + 2]));
+		}
+
+		mesh.Build(stl.GetPoints(), meshIndices);
+
+		for (auto& face : mesh.GetFaces())
+		{
+			auto v0 = face->edge->vertex->position;
+			auto v1 = face->edge->next->vertex->position;
+			auto v2 = face->edge->prev->vertex->position;
+
+			//VD::AddTriangle("Mesh", v0, v1, v2, Eigen::Vector4f(1.0f, 1.0f, 1.0f, 1.0f));
+		}
+
+		for (auto& edge : mesh.GetEdges())
+		{
+			//if (edge->pair == nullptr)
+			{
+				auto v0 = edge->vertex->position;
+				auto v1 = edge->prev->vertex->position;
+				VD::AddLine("Mesh", v0, v1, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
+			}
+		}
 	}
 };
 
