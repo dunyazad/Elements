@@ -120,6 +120,7 @@
       <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;$(SolutionDir)External\nvapi510\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;$(SolutionDir)src\Hydrogen\Apps;$(SolutionDir)inc\robin_hood;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <DisableSpecificWarnings>4819</DisableSpecificWarnings>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -151,6 +152,7 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <DisableSpecificWarnings>4819</DisableSpecificWarnings>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -186,6 +188,7 @@
     <ClInclude Include="Apps\Core\DataStructures\VoxelCache.h" />
     <ClInclude Include="Apps\Core\DataStructures\VoxelDataBase.h" />
     <ClInclude Include="Apps\Core\Operations\OperationPointCloudMerge.h" />
+    <ClInclude Include="Apps\HalfEdgeMesh.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Hydrogen.h" />
     <ClInclude Include="Resource.h" />
@@ -198,6 +201,7 @@
     <ClCompile Include="Apps\AppDensityAnalyzing.cpp" />
     <ClCompile Include="Apps\AppHalfEdgeMesh.cpp" />
     <ClCompile Include="Apps\AppICP.cpp" />
+    <ClCompile Include="Apps\AppManifold.cpp" />
     <ClCompile Include="Apps\AppMorphology.cpp" />
     <ClCompile Include="Apps\AppMorphologyDebug.cpp" />
     <ClCompile Include="Apps\AppSDFFiltering.cpp" />

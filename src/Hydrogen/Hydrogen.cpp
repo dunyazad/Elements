@@ -32,29 +32,32 @@ using VD = VisualDebugging;
 
 #include <Monitor.h>
 
+#include <Argon/Argon.h>
+
 #include "Apps/Apps.h"
 
-const std::string  appName = "AppHalfEdgeMesh";
-//const std::string  appName = "AppSTL";
-//const std::string  appName = "AppSimple";
-//const std::string  appName = "AppTSDF";
-//const std::string  appName = "AppTSDFDevice";
-//const std::string  appName = "AppVoxelDataBaseMemoryUsageCheck";
-//const std::string  appName = "AppClustering";
-//const std::string  appName = "AppClusteringDevice";
-//const std::string  appName = "AppSDFFiltering";
-//const std::string  appName = "AppMorphology";
-//const std::string  appName = "AppMorphologyDebug";
-//const std::string  appName = "AppICP";
-//const std::string  appName = "AppVVV";
-//const std::string  appName = "AppVoxelDataBase";
-//const std::string  appName = "AppVoxelStreaming";
-//const std::string  appName = "AppMergePointClouds";
-//const std::string  appName = "AppMergePointClouds_Local";
-//const std::string  appName = "AppOperationPointCloudMerge";
-//const std::string  appName = "AppVoxelCache";
-//const std::string  appName = "AppICP";
-//const std::string  appName = "AppDataFrames";
+//const std::string appName = "AppManifold";
+const std::string appName = "AppHalfEdgeMesh";
+//const std::string appName = "AppSTL";
+//const std::string appName = "AppSimple";
+//const std::string appName = "AppTSDF";
+//const std::string appName = "AppTSDFDevice";
+//const std::string appName = "AppVoxelDataBaseMemoryUsageCheck";
+//const std::string appName = "AppClustering";
+//const std::string appName = "AppClusteringDevice";
+//const std::string appName = "AppSDFFiltering";
+//const std::string appName = "AppMorphology";
+//const std::string appName = "AppMorphologyDebug";
+//const std::string appName = "AppICP";
+//const std::string appName = "AppVVV";
+//const std::string appName = "AppVoxelDataBase";
+//const std::string appName = "AppVoxelStreaming";
+//const std::string appName = "AppMergePointClouds";
+//const std::string appName = "AppMergePointClouds_Local";
+//const std::string appName = "AppOperationPointCloudMerge";
+//const std::string appName = "AppVoxelCache";
+//const std::string appName = "AppICP";
+//const std::string appName = "AppDataFrames";
 
 #define MAX_LOADSTRING 100
 
