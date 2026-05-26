@@ -164,6 +164,36 @@ inline void MaximizeWindowOnMonitor(HWND hwnd, int monitorIndex)
     }
 }
 
+inline void MaximizeWindowOnLargestMonitor(HWND windowHandle)
+{
+    std::vector<MonitorInfo> monitors;
+    EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, reinterpret_cast<LPARAM>(&monitors));
+
+    if (monitors.empty())
+    {
+        return;
+    }
+
+    int largestMonitorIndex = 0;
+    long long largestArea = 0;
+
+    for (size_t i = 0; i < monitors.size(); ++i)
+    {
+        const RECT& workArea = monitors[i].monitorInfo.rcWork;
+        long long width = workArea.right - workArea.left;
+        long long height = workArea.bottom - workArea.top;
+        long long currentArea = width * height;
+
+        if (currentArea > largestArea)
+        {
+            largestArea = currentArea;
+            largestMonitorIndex = static_cast<int>(i);
+        }
+    }
+
+    MaximizeWindowOnMonitor(windowHandle, largestMonitorIndex);
+}
+
 inline void MaximizeConsoleWindowOnMonitor(int monitorIndex)
 {
     HWND hwnd = GetConsoleWindow();

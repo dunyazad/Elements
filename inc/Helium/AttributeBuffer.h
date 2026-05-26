@@ -90,6 +90,10 @@ public:
                     }
                 }
             }
+            else if (target == GL_ELEMENT_ARRAY_BUFFER)
+            {
+                gpuBuffer->Bind();
+            }
             dirty = false;
         }
     }

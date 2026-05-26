@@ -106,14 +106,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		AllocConsole();
 		freopen("CONOUT$", "w", stdout);
 		MaximizeConsoleWindowOnMonitor(3);
-		MaximizeWindowOnMonitor(hWnd, 2);
+		MaximizeWindowOnLargestMonitor(hWnd);
 	}
 	else
 	{
 		AllocConsole();
 		freopen("CONOUT$", "w", stdout);
 		SetConsoleToHalfOfScreen(0, 1);
-		MaximizeWindowOnMonitor(hWnd, 1);
+		MaximizeWindowOnLargestMonitor(hWnd);
 	}
 
 	std::cout << "CPU Vendor: " << vendor << std::endl;

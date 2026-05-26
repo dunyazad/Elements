@@ -62,7 +62,9 @@ void Renderable::Clear()
     colors3.Clear();
     colors4.Clear();
     uvs.Clear();
-    indices.Clear();
+	indices.Clear();
+    
+    ClearInstancingData();
 }
 
 void Renderable::ClearInstancingData()
@@ -137,8 +139,10 @@ void Renderable::Draw()
     GLint oldPolygonMode[2];
     glGetIntegerv(GL_POLYGON_MODE, oldPolygonMode);
 
-	GLint oldCullFaceMode;
+    GLboolean oldCullFaceEnabled = glIsEnabled(GL_CULL_FACE);
+    GLint oldCullFaceMode;
     glGetIntegerv(GL_CULL_FACE_MODE, &oldCullFaceMode);
+
     switch (faceCullingMode)
     {
     case NoCulling:
@@ -158,9 +162,9 @@ void Renderable::Draw()
         break;
     default:
         break;
-	}
+    }
 
-	switch (drawingMode)
+    switch (drawingMode)
     {
     case Solid:
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -195,7 +199,17 @@ void Renderable::Draw()
     }
 
     glPolygonMode(GL_FRONT_AND_BACK, oldPolygonMode[0]);
+
+    if (oldCullFaceEnabled)
+    {
+        glEnable(GL_CULL_FACE);
+    }
+    else
+    {
+        glDisable(GL_CULL_FACE);
+    }
     glCullFace(oldCullFaceMode);
+
     glBindVertexArray(0);
 }
 
