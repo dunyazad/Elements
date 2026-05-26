@@ -240,6 +240,7 @@ public:
         TE(SplitFaces);
 
         AddMesh("Mesh_A_Split", mesh_A);
+        //AddMesh("Mesh_B", mesh_B);
     }
 
     virtual void Execute() override
@@ -251,6 +252,21 @@ public:
 REGISTER_APP(AppHalfEdgeMesh, "AppHalfEdgeMesh");
 
 #endif // 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #include "Apps.h"
 
@@ -468,18 +484,13 @@ public:
             return;
         }
 
-        const auto& points = this->GetPoints();
-        const auto& vertices = this->GetVertices();
-        const auto& edges = this->GetEdges();
-        const auto& faces = this->GetFaces();
-
         if (InvalidEntity == entity)
         {
             entity = Helium.CreateEntity("HeliumMesh");
-            auto newRenderable = Helium.CreateComponent<Renderable>(entity);
-            newRenderable->Initialize(Renderable::Triangles);
-            newRenderable->AddShader(Helium.CreateShader("Default", File("../../res/Shaders/Default.vs"), File("../../res/Shaders/Default.fs")));
-            newRenderable->SetFaceCullingMode(Renderable::NoCulling);
+            auto renderable = Helium.CreateComponent<Renderable>(entity);
+            renderable->Initialize(Renderable::Triangles);
+            renderable->AddShader(Helium.CreateShader("Default", File("../../res/Shaders/Default.vs"), File("../../res/Shaders/Default.fs")));
+            renderable->SetFaceCullingMode(Renderable::NoCulling);
 
             Helium.CreateEventCallback<KeyEvent>(entity, "Mesh", [](Entity e, const KeyEvent& event)
                 {
@@ -570,26 +581,17 @@ public:
                             auto normal = (v1 - v0).cross(v2 - v0).normalized();
 
                             Eigen::Vector3f hitPoint = ray.origin + ray.direction * pickedDistance;
+                            //VD::AddSphere("HitPoint", hitPoint, normal, 0.01f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
 
-                            HEM::FID actualFid = 0;
-                            int validIndex = 0;
-                            const auto& meshFaces = this->GetFaces();
-                            for (size_t f = 0; f < meshFaces.size(); ++f)
-                            {
-                                if (meshFaces[f].eid != HEM::INVALID_ID)
-                                {
-                                    if (validIndex == pickedTriangleIndex)
-                                    {
-                                        actualFid = (HEM::FID)f;
-                                        break;
-                                    }
-                                    validIndex++;
-                                }
-                            }
+                            //VD::AddTriangle("HitTriangle", v0, v1, v2, Eigen::Vector4f(0.0f, 1.0f, 0.0f, 1.0f));
 
-                            this->SplitFaceByPoint(actualFid, hitPoint);
-                            this->isDirty = true;
-                            this->Update();
+							//color = Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f);
+
+							SplitFaceByPoint(pickedTriangleIndex, hitPoint);
+
+							isDirty = true;
+
+                            Update();
 
                             if (event.modifiers & static_cast<int>(KeyModifiers::Control))
                             {
@@ -598,60 +600,132 @@ public:
                         }
                     }
                 });
-        }
 
-        auto currentRenderable = Helium.GetComponent<Renderable>(entity);
-        if (nullptr == currentRenderable)
-        {
-            return;
-        }
-
-        std::vector<Eigen::Vector3f> positions(vertices.size());
-        for (size_t i = 0; i < vertices.size(); i++)
-        {
-            positions[i] = points[vertices[i].pid] + offset;
-        }
-
-        std::vector<Eigen::Vector3f> normals(positions.size(), Eigen::Vector3f::Zero());
-        std::vector<unsigned int> indices;
-
-        for (const auto& face : faces)
-        {
-            if (face.eid == HEM::INVALID_ID)
+            std::vector<Eigen::Vector3f> positions(vertices.size());
+            for (size_t i = 0; i < vertices.size(); i++)
             {
-                continue;
+                positions[i] = points[vertices[i].pid] + offset;
             }
 
-            HEM::EID e0 = face.eid;
-            HEM::EID e1 = edges[e0].neid;
-            HEM::EID e2 = edges[e0].peid;
+            std::vector<Eigen::Vector3f> normals(positions.size(), Eigen::Vector3f::Zero());
 
-            HEM::VID v0 = edges[e2].vid;
-            HEM::VID v1 = edges[e0].vid;
-            HEM::VID v2 = edges[e1].vid;
+            for (const auto& face : faces)
+            {
+                if (face.eid == HEM::INVALID_ID)
+                {
+                    continue;
+                }
 
-            Eigen::Vector3f normal = (positions[v1] - positions[v0]).cross(positions[v2] - positions[v0]).normalized();
-            normals[v0] += normal;
-            normals[v1] += normal;
-            normals[v2] += normal;
+                HEM::EID e0 = face.eid;
+                HEM::EID e1 = edges[e0].neid;
+                HEM::EID e2 = edges[e0].peid;
 
-            indices.push_back((unsigned int)v0);
-            indices.push_back((unsigned int)v1);
-            indices.push_back((unsigned int)v2);
+                HEM::VID v0 = edges[e2].vid;
+                HEM::VID v1 = edges[e0].vid;
+                HEM::VID v2 = edges[e1].vid;
+
+                Eigen::Vector3f normal = (positions[v1] - positions[v0]).cross(positions[v2] - positions[v0]).normalized();
+                normals[v0] += normal;
+                normals[v1] += normal;
+                normals[v2] += normal;
+            }
+
+            for (size_t i = 0; i < normals.size(); i++)
+            {
+                normals[i].normalize();
+            }
+
+            std::vector<unsigned int> indices;
+            for (const auto& face : faces)
+            {
+                if (face.eid == HEM::INVALID_ID)
+                {
+                    continue;
+                }
+
+                HEM::EID e0 = face.eid;
+                HEM::EID e1 = edges[e0].neid;
+                HEM::EID e2 = edges[e0].peid;
+
+                HEM::VID v0 = edges[e2].vid;
+                HEM::VID v1 = edges[e0].vid;
+                HEM::VID v2 = edges[e1].vid;
+
+                indices.push_back((unsigned int)v0);
+                indices.push_back((unsigned int)v1);
+                indices.push_back((unsigned int)v2);
+            }
+
+            renderable->AddVertices(positions);
+            renderable->AddNormals(normals);
+            renderable->AddColors4(std::vector<Eigen::Vector4f>(positions.size(), color));
+            renderable->AddIndices(indices);
+            renderable->Update();
         }
-
-        for (size_t i = 0; i < normals.size(); i++)
+        else
         {
-            normals[i].normalize();
+            std::vector<Eigen::Vector3f> positions(vertices.size());
+            for (size_t i = 0; i < vertices.size(); i++)
+            {
+                positions[i] = points[vertices[i].pid] + offset;
+            }
+
+            std::vector<Eigen::Vector3f> normals(positions.size(), Eigen::Vector3f::Zero());
+
+            for (const auto& face : faces)
+            {
+                if (face.eid == HEM::INVALID_ID)
+                {
+                    continue;
+                }
+
+                HEM::EID e0 = face.eid;
+                HEM::EID e1 = edges[e0].neid;
+                HEM::EID e2 = edges[e0].peid;
+
+                HEM::VID v0 = edges[e2].vid;
+                HEM::VID v1 = edges[e0].vid;
+                HEM::VID v2 = edges[e1].vid;
+
+                Eigen::Vector3f normal = (positions[v1] - positions[v0]).cross(positions[v2] - positions[v0]).normalized();
+                normals[v0] += normal;
+                normals[v1] += normal;
+                normals[v2] += normal;
+            }
+
+            for (size_t i = 0; i < normals.size(); i++)
+            {
+                normals[i].normalize();
+            }
+
+            std::vector<unsigned int> indices;
+            for (const auto& face : faces)
+            {
+                if (face.eid == HEM::INVALID_ID)
+                {
+                    continue;
+                }
+
+                HEM::EID e0 = face.eid;
+                HEM::EID e1 = edges[e0].neid;
+                HEM::EID e2 = edges[e0].peid;
+
+                HEM::VID v0 = edges[e2].vid;
+                HEM::VID v1 = edges[e0].vid;
+                HEM::VID v2 = edges[e1].vid;
+
+                indices.push_back((unsigned int)v0);
+                indices.push_back((unsigned int)v1);
+                indices.push_back((unsigned int)v2);
+            }
+
+            auto renderable = Helium.GetComponent<Renderable>(entity);
+            renderable->SetVertices(positions);
+            renderable->SetNormals(normals);
+            renderable->SetColors4(std::vector<Eigen::Vector4f>(positions.size(), color));
+            renderable->SetIndices(indices);
+            renderable->Update();
         }
-
-        currentRenderable->Clear();
-        currentRenderable->AddVertices(positions);
-        currentRenderable->AddNormals(normals);
-        currentRenderable->AddColors4(std::vector<Eigen::Vector4f>(positions.size(), color));
-        currentRenderable->AddIndices(indices);
-
-        currentRenderable->Update();
 
         isDirty = false;
     }
@@ -802,7 +876,9 @@ public:
 
     virtual void Execute() override
     {
-        Execute_Basic();
+        //Execute_Intersection();
+
+		Execute_Basic();
     }
 
     std::vector<std::unique_ptr<HeliumMesh>> meshes;
