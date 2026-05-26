@@ -501,8 +501,14 @@ namespace HEM
             VID v1 = edges[e0].vid;
             VID v2 = edges[e1].vid;
 
-            // 이미 Raycast로 삼각형 내부임이 완벽하게 검증된 point이므로, 
-            // 부동소수점 오차로 인해 분할이 취소되는 것을 막기 위해 PointInTriangle 중복 검사를 제거합니다.
+            Eigen::Vector3f p0 = points[vertices[v0].pid];
+            Eigen::Vector3f p1 = points[vertices[v1].pid];
+            Eigen::Vector3f p2 = points[vertices[v2].pid];
+
+            if (!PointInTriangle(point, p0, p1, p2))
+            {
+                return;
+            }
 
             points.push_back(point);
             PID newPid = (PID)points.size() - 1;
@@ -581,9 +587,6 @@ namespace HEM
             faces[f2].eid = e2;
 
             vertices[vm].eid = e_vm_v0;
-
-            // 분할이 실제로 성공하여 데이터가 늘어났는지 콘솔에서 즉시 확인하기 위한 디버깅 로그
-            printf("Face Split Success! Total Points: %zu, Total Faces: %zu\n", points.size(), faces.size());
         }
 
         void SplitIntersectingFaces(const Mesh& other)
@@ -1221,10 +1224,8 @@ namespace HEM
             float invDenom = 1.0f / (dot00 * dot11 - dot01 * dot01);
             float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
             float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
-
-            const float eps = 1e-5f;
-            return (u >= -eps) && (v >= -eps) && (u + v <= 1.0f + eps);
-        }
+            return (u >= 0) && (v >= 0) && (u + v < 1);
+		}
 
         bool TriTriIntersect(const Eigen::Vector3f& p0, const Eigen::Vector3f& p1, const Eigen::Vector3f& p2, const Eigen::Vector3f& q0, const Eigen::Vector3f& q1, const Eigen::Vector3f& q2) const
         {
