@@ -486,6 +486,109 @@ namespace HEM
             return intersectingLines;
         }
 
+        void SplitFaceByPoint(FID fid, const Eigen::Vector3f& point)
+        {
+            if (fid >= faces.size() || faces[fid].eid == INVALID_ID)
+            {
+                return;
+            }
+
+            EID e0 = faces[fid].eid;
+            EID e1 = edges[e0].neid;
+            EID e2 = edges[e0].peid;
+
+            VID v0 = edges[e2].vid;
+            VID v1 = edges[e0].vid;
+            VID v2 = edges[e1].vid;
+
+            Eigen::Vector3f p0 = points[vertices[v0].pid];
+            Eigen::Vector3f p1 = points[vertices[v1].pid];
+            Eigen::Vector3f p2 = points[vertices[v2].pid];
+
+            if (!PointInTriangle(point, p0, p1, p2))
+            {
+                return;
+            }
+
+            points.push_back(point);
+            PID newPid = (PID)points.size() - 1;
+            VID vm = (VID)vertices.size();
+            vertices.push_back(Vertex(newPid));
+
+            FID f0 = fid;
+            FID f1 = (FID)faces.size();
+            FID f2 = f1 + 1;
+            faces.push_back(Face());
+            faces.push_back(Face());
+
+            EID e_v1_vm = (EID)edges.size();
+            EID e_vm_v1 = e_v1_vm + 1;
+            EID e_v2_vm = e_v1_vm + 2;
+            EID e_vm_v2 = e_v1_vm + 3;
+            EID e_v0_vm = e_v1_vm + 4;
+            EID e_vm_v0 = e_v1_vm + 5;
+
+            for (int i = 0; i < 6; ++i)
+            {
+                edges.push_back(Edge());
+            }
+
+            edges[e0].neid = e_v1_vm;
+            edges[e0].peid = e_vm_v0;
+
+            edges[e_v1_vm].vid = vm;
+            edges[e_v1_vm].oeid = e_vm_v1;
+            edges[e_v1_vm].neid = e_vm_v0;
+            edges[e_v1_vm].peid = e0;
+            edges[e_v1_vm].fid = f0;
+
+            edges[e_vm_v0].vid = v0;
+            edges[e_vm_v0].oeid = e_v0_vm;
+            edges[e_vm_v0].neid = e0;
+            edges[e_vm_v0].peid = e_v1_vm;
+            edges[e_vm_v0].fid = f0;
+
+            faces[f0].eid = e0;
+
+            edges[e1].neid = e_v2_vm;
+            edges[e1].peid = e_vm_v1;
+            edges[e1].fid = f1;
+
+            edges[e_v2_vm].vid = vm;
+            edges[e_v2_vm].oeid = e_vm_v2;
+            edges[e_v2_vm].neid = e_vm_v1;
+            edges[e_v2_vm].peid = e1;
+            edges[e_v2_vm].fid = f1;
+
+            edges[e_vm_v1].vid = v1;
+            edges[e_vm_v1].oeid = e_v1_vm;
+            edges[e_vm_v1].neid = e1;
+            edges[e_vm_v1].peid = e_v2_vm;
+            edges[e_vm_v1].fid = f1;
+
+            faces[f1].eid = e1;
+
+            edges[e2].neid = e_v0_vm;
+            edges[e2].peid = e_vm_v2;
+            edges[e2].fid = f2;
+
+            edges[e_v0_vm].vid = vm;
+            edges[e_v0_vm].oeid = e_vm_v0;
+            edges[e_v0_vm].neid = e_vm_v2;
+            edges[e_v0_vm].peid = e2;
+            edges[e_v0_vm].fid = f2;
+
+            edges[e_vm_v2].vid = v2;
+            edges[e_vm_v2].oeid = e_v2_vm;
+            edges[e_vm_v2].neid = e2;
+            edges[e_vm_v2].peid = e_v0_vm;
+            edges[e_vm_v2].fid = f2;
+
+            faces[f2].eid = e2;
+
+            vertices[vm].eid = e_vm_v0;
+        }
+
         void SplitIntersectingFaces(const Mesh& other)
         {
             if (bvhNodes.empty() || other.bvhNodes.empty())
@@ -658,7 +761,6 @@ namespace HEM
 
             Build(newPoints, newIndices);
         }
-
 
         bool IsPointInside(const Eigen::Vector3f& p) const
         {
@@ -1109,6 +1211,22 @@ namespace HEM
             return t > 1e-6f;
         }
 
+        bool PointInTriangle(const Eigen::Vector3f& p, const Eigen::Vector3f& a, const Eigen::Vector3f& b, const Eigen::Vector3f& c) const
+        {
+            Eigen::Vector3f v0 = c - a;
+            Eigen::Vector3f v1 = b - a;
+            Eigen::Vector3f v2 = p - a;
+            float dot00 = v0.dot(v0);
+            float dot01 = v0.dot(v1);
+            float dot02 = v0.dot(v2);
+            float dot11 = v1.dot(v1);
+            float dot12 = v1.dot(v2);
+            float invDenom = 1.0f / (dot00 * dot11 - dot01 * dot01);
+            float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+            float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+            return (u >= 0) && (v >= 0) && (u + v < 1);
+		}
+
         bool TriTriIntersect(const Eigen::Vector3f& p0, const Eigen::Vector3f& p1, const Eigen::Vector3f& p2, const Eigen::Vector3f& q0, const Eigen::Vector3f& q1, const Eigen::Vector3f& q2) const
         {
             Eigen::Vector3f normal1 = (p1 - p0).cross(p2 - p0);
@@ -1353,7 +1471,6 @@ namespace HEM
             Fan(backPoints, outTris);
         }
 
-    private:
         std::vector<Eigen::Vector3f> points;
         std::vector<Vertex> vertices;
         std::vector<Edge> edges;

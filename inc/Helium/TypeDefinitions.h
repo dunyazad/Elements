@@ -39,6 +39,32 @@ struct Ray
 
 		return t >= 0.0f;
 	}
+
+	inline bool IntersectPlane(const Eigen::Vector3f& planeNormal, float planeD, float& t) const
+	{
+		float denom = planeNormal.dot(direction);
+		if (std::abs(denom) < 1e-6f) return false;
+		t = -(planeNormal.dot(origin) + planeD) / denom;
+		return t >= 0.0f;
+	}
+
+	inline bool IntersectTriangle(const Eigen::Vector3f& v0, const Eigen::Vector3f& v1, const Eigen::Vector3f& v2, float& t) const
+	{
+		Eigen::Vector3f edge1 = v1 - v0;
+		Eigen::Vector3f edge2 = v2 - v0;
+		Eigen::Vector3f h = direction.cross(edge2);
+		float a = edge1.dot(h);
+		if (std::abs(a) < 1e-6f) return false;
+		float f = 1.0f / a;
+		Eigen::Vector3f s = origin - v0;
+		float u = f * s.dot(h);
+		if (u < 0.0f || u > 1.0f) return false;
+		Eigen::Vector3f q = s.cross(edge1);
+		float v = f * direction.dot(q);
+		if (v < 0.0f || u + v > 1.0f) return false;
+		t = f * edge2.dot(q);
+		return t >= 0.0f;
+	}
 };
 
 struct AABB

@@ -1205,6 +1205,158 @@ protected:
 	bool useAlpha = false;
 };
 
+class PTSFormat : public HSerializable
+{
+public:
+	virtual bool Serialize(const std::string& filename) override
+	{
+		std::ofstream ofs(filename);
+		if (!ofs.is_open())
+		{
+			return false;
+		}
+
+		ofs << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" << std::endl;
+		ofs << "<Teeth>" << std::endl;
+		ofs << " <ScanTooth>" << std::endl;
+		ofs << "  <Number>0</Number>" << std::endl; // 기본값으로 0 설정
+		ofs << "  <PreparationMargin>" << std::endl;
+
+		for (const auto& p : points)
+		{
+			ofs << "   <Vec>" << std::endl;
+			ofs << "    <x>" << p.x() << "</x>" << std::endl;
+			ofs << "    <y>" << p.y() << "</y>" << std::endl;
+			ofs << "    <z>" << p.z() << "</z>" << std::endl;
+			ofs << "   </Vec>" << std::endl;
+		}
+
+		ofs << "  </PreparationMargin>" << std::endl;
+		ofs << "  <Axis>" << std::endl;
+		ofs << "   <x>" << axis.x() << "</x>" << std::endl;
+		ofs << "   <y>" << axis.y() << "</y>" << std::endl;
+		ofs << "   <z>" << axis.z() << "</z>" << std::endl;
+		ofs << "  </Axis>" << std::endl;
+		ofs << " </ScanTooth>" << std::endl;
+		ofs << "</Teeth>" << std::endl;
+
+		ofs.close();
+		return true;
+	}
+
+	virtual bool Serialize(const std::wstring& filename) override
+	{
+		return false;
+	}
+
+	virtual bool Deserialize(const std::string& filename) override
+	{
+		std::ifstream ifs(filename);
+		if (!ifs.is_open())
+		{
+			return false;
+		}
+
+		std::string line;
+		bool inMargin = false;
+		bool inAxis = false;
+		float x = 0, y = 0, z = 0;
+
+		while (std::getline(ifs, line))
+		{
+			if (line.find("<PreparationMargin>") != std::string::npos)
+			{
+				inMargin = true;
+				continue;
+			}
+			if (line.find("</PreparationMargin>") != std::string::npos)
+			{
+				inMargin = false;
+				continue;
+			}
+			if (line.find("<Axis>") != std::string::npos)
+			{
+				inAxis = true;
+				continue;
+			}
+			if (line.find("</Axis>") != std::string::npos)
+			{
+				inAxis = false;
+				continue;
+			}
+
+			if (line.find("<x>") != std::string::npos)
+			{
+				x = ExtractValue(line);
+			}
+			else if (line.find("<y>") != std::string::npos)
+			{
+				y = ExtractValue(line);
+			}
+			else if (line.find("<z>") != std::string::npos)
+			{
+				z = ExtractValue(line);
+				if (inMargin)
+				{
+					AddPoint(x, y, z);
+				}
+				else if (inAxis)
+				{
+					axis = Eigen::Vector3f(x, y, z);
+				}
+			}
+		}
+
+		ifs.close();
+		return true;
+	}
+
+	virtual bool Deserialize(const std::wstring& filename) override
+	{
+		return false;
+	}
+
+	virtual inline void SwapAxisYZ() override
+	{
+		for (auto& p : points)
+		{
+			std::swap(p.y(), p.z());
+		}
+		std::swap(axis.y(), axis.z());
+
+		aabb.setEmpty();
+		for (const auto& p : points)
+		{
+			aabb.extend(p);
+		}
+	}
+
+	inline void SetAxis(const Eigen::Vector3f& a)
+	{
+		axis = a;
+	}
+
+	inline Eigen::Vector3f GetAxis() const
+	{
+		return axis;
+	}
+
+private:
+	float ExtractValue(const std::string& line)
+	{
+		size_t start = line.find('>') + 1;
+		size_t end = line.find('<', start);
+		if (start != std::string::npos && end != std::string::npos)
+		{
+			return std::stof(line.substr(start, end - start));
+		}
+		return 0.0f;
+	}
+
+protected:
+	Eigen::Vector3f axis = Eigen::Vector3f::UnitZ();
+};
+
 struct EigenPoint
 {
 	Eigen::Vector3f position;

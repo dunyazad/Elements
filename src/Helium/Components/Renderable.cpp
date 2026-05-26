@@ -4,6 +4,7 @@
 
 Renderable::Renderable()
 {
+    vao = 0;
 }
 
 Renderable::~Renderable()
@@ -74,6 +75,11 @@ void Renderable::ClearInstancingData()
 
 void Renderable::Update()
 {
+    if (vao == 0)
+    {
+        return;
+    }
+
     glBindVertexArray(vao);
 
     vertices.Update();
