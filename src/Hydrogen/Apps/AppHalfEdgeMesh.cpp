@@ -112,6 +112,12 @@ public:
                         int pickedTriangleIndex = -1;
                         float pickedDistance = std::numeric_limits<float>::max();
 
+                        for (size_t i = 0; i < faces.size(); i++)
+                        {
+							Eigen::Vector3f v0, v1, v2;
+							GetFaceVertices((SGL::FID)i, v0, v1, v2);
+                        }
+
                         if (!bvh.nodes.empty())
                         {
                             Eigen::Vector3f localOrigin = ray.origin - offset;
@@ -168,7 +174,10 @@ public:
                             Eigen::Vector3f localHitPoint = (ray.origin - offset) + ray.direction * pickedDistance;
 
                             SplitFaceByPoint(pickedTriangleIndex, localHitPoint);
+
+                            TS(RebuildBVH);
                             RebuildBVH();
+                            TE(RebuildBVH);
 
                             isDirty = true;
 
@@ -329,73 +338,13 @@ public:
             mesh.Build(stl.GetPoints(), indices);
         }
 
-        //Helium.AddOnUpdateCallback([this](float timeDelta)
-        //    {
-        //        for (auto& m : this->meshes)
-        //        {
-        //            m->Update();
-        //        }
-        //    });
-
-        TS(BuildBSP);
-        mesh.BuildBSP();
-        TE(BuildBSP);
-
-		std::vector<SGL::Triangle> triangles;
-
-		int maxCoplanarFaces = 0;
-		auto& bsp = mesh.GetBSP();
-        std::function<void(const SGL::BSPNode*, int)> drawRecursive = [&] (const SGL::BSPNode* node, int depth) {
-            if (!node)
+        Helium.AddOnUpdateCallback([this](float timeDelta)
             {
-                return;
-            }
-
-			maxCoplanarFaces = std::max(maxCoplanarFaces, (int)node->coplanarFaces.size());
-            for (size_t i = 0; i < node->coplanarFaces.size(); i++)
-            {
-                Eigen::Vector3f v0;
-                Eigen::Vector3f v1;
-                Eigen::Vector3f v2;
-                mesh.GetFaceVertices(node->coplanarFaces[i], v0, v1, v2);
-
-				triangles.push_back({ v0, v1, v2 });
-
-                VD::AddTriangle(
-                    "BSP",
-                    v0 + mesh.offset,
-                    v1 + mesh.offset,
-                    v2 + mesh.offset,
-                    Eigen::Vector4f(0.8f, 0.8f, 0.8f, 1.0f)
-				);
-            }
-
-            if (node->front)
-            {
-                drawRecursive(node->front, depth + 1);
-            }
-            if (node->back)
-            {
-                drawRecursive(node->back, depth + 1);
-            }
-        };
-
-		drawRecursive(bsp.root, 0);
-
-		printf("Max coplanar faces in a BSP node: %d\n", maxCoplanarFaces);
-
-        //Save Triangles to STL
-        {
-            STLFormat stl;
-			stl.GetPoints().resize(triangles.size() * 3);
-            for (size_t i = 0; i < triangles.size(); i++)
-            {
-                stl.GetPoints()[i * 3] = triangles[i].v0;
-                stl.GetPoints()[i * 3 + 1] = triangles[i].v1;
-                stl.GetPoints()[i * 3 + 2] = triangles[i].v2;
-            }
-            stl.Serialize("D:\\Resources\\3D\\STL\\bsp_output.stl");
-		}
+                for (auto& m : this->meshes)
+                {
+                    m->Update();
+                }
+            });
     }
 
     virtual void Execute_Boolean()
@@ -429,21 +378,13 @@ public:
                 mesh.Build(stl.GetPoints(), indices);
             }
         }
-
-        {
-            SGL::Mesh resultUnion = SGL::CSG::PerformCSG(meshes[0].get(), meshes[1].get(), SGL::CSGOperation::UNION);
-            if (resultUnion.ToSTL("D:\\Temp\\csg_union.stl"))
-            {
-                std::cout << "Saved: csg_union.stl" << std::endl;
-            }
-        }
     }
 
     virtual void Execute() override
     {
-		//Execute_Basic();
+		Execute_Basic();
 
-        Execute_Boolean();
+        //Execute_Boolean();
     }
 
     std::vector<std::unique_ptr<HeliumMesh>> meshes;

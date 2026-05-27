@@ -12,118 +12,11 @@
 #include <Eigen/Dense>
 #include <robin_hood/robin_hood.h>
 
+#include "SimpleGeometryLibrary_Primitives.hpp"
+
 // Simple Geometry Library (SGL)
 namespace SGL
 {
-    struct Ray
-    {
-        Eigen::Vector3f origin;
-        Eigen::Vector3f direction;
-	};
-
-    struct Line
-    {
-        Eigen::Vector3f start;
-        Eigen::Vector3f end;
-    };
-
-    struct Plane
-    {
-        Eigen::Vector3f normal;
-        Eigen::Vector3f planePoint;
-	};
-
-    struct Triangle
-    {
-        Eigen::Vector3f v0;
-        Eigen::Vector3f v1;
-		Eigen::Vector3f v2;
-    };
-
-    using PID = unsigned int;
-    using VID = unsigned int;
-    using EID = unsigned int;
-    using FID = unsigned int;
-
-    const unsigned int INVALID_ID = -1;
-
-    struct Vertex
-    {
-        PID pid;
-        EID eid;
-
-        Vertex() : pid(INVALID_ID), eid(INVALID_ID)
-        {
-        }
-
-        Vertex(PID pid) : pid(pid), eid(INVALID_ID)
-        {
-        }
-    };
-
-    struct HalfEdge
-    {
-        VID vid;
-        EID oeid;
-        EID neid;
-        EID peid;
-        FID fid;
-
-        HalfEdge() : vid(INVALID_ID), oeid(INVALID_ID), neid(INVALID_ID), peid(INVALID_ID), fid(INVALID_ID)
-        {
-        }
-    };
-
-    struct Face
-    {
-        EID eid;
-
-        Face() : eid(INVALID_ID)
-        {
-        }
-    };
-
-    struct AABB
-    {
-        Eigen::Vector3f minBound;
-        Eigen::Vector3f maxBound;
-
-        AABB()
-        {
-            minBound = Eigen::Vector3f::Constant(std::numeric_limits<float>::max());
-            maxBound = Eigen::Vector3f::Constant(std::numeric_limits<float>::lowest());
-        }
-
-        void Expand(const Eigen::Vector3f& p)
-        {
-            minBound = minBound.cwiseMin(p);
-            maxBound = maxBound.cwiseMax(p);
-        }
-
-        void Expand(const AABB& other)
-        {
-            minBound = minBound.cwiseMin(other.minBound);
-            maxBound = maxBound.cwiseMax(other.maxBound);
-        }
-
-        bool Intersects(const AABB& other) const
-        {
-            if (maxBound.x() < other.minBound.x() || minBound.x() > other.maxBound.x())
-            {
-                return false;
-            }
-            if (maxBound.y() < other.minBound.y() || minBound.y() > other.maxBound.y())
-            {
-                return false;
-            }
-            if (maxBound.z() < other.minBound.z() || minBound.z() > other.maxBound.z())
-            {
-                return false;
-            }
-            return true;
-        }
-    };
-
     struct BVHNode
     {
         AABB bounds;
@@ -152,62 +45,12 @@ namespace SGL
 
         BVH();
         void Build(const Mesh* targetMesh);
-        void UpdateNodeBounds(int nodeIndex);
-        void SubdivideNode(int nodeIndex);
+
+        // 캐싱된 데이터를 인자로 받도록 시그니처 변경
+        void UpdateNodeBounds(int nodeIndex, const std::vector<AABB>& faceAABBs);
+        void SubdivideNode(int nodeIndex, const std::vector<AABB>& faceAABBs, const std::vector<Eigen::Vector3f>& faceCentroids);
+
         void Query(const AABB& queryBounds, std::vector<FID>& outFaces) const;
-    };
-
-    struct BSPNode
-    {
-        Plane splitPlane;
-        BSPNode* front = nullptr;
-        BSPNode* back = nullptr;
-        std::vector<FID> coplanarFaces;
-    };
-
-    struct BSPFaceData
-    {
-        Eigen::Vector3f v0;
-        Eigen::Vector3f v1;
-        Eigen::Vector3f v2;
-        Eigen::Vector3f normal;
-        float d;
-    };
-
-    struct PolygonFragment
-    {
-        std::vector<Eigen::Vector3f> vertices;
-        Eigen::Vector3f normal;
-    };
-
-    struct BSP
-    {
-        BSP()
-        {
-            root = nullptr;
-        }
-
-        ~BSP()
-        {
-            ClearRecursive(root);
-        }
-
-        BSPNode* root = nullptr;
-        std::vector<BSPFaceData> faceDataCache;
-
-        void ClearRecursive(BSPNode* node);
-
-        void Build(const Mesh* targetMesh);
-
-        void BuildRecursive(BSPNode* node, const std::vector<FID>& faceIDs, int depth = 0);
-
-        void ClassifyPolygonForCSG(
-            BSPNode* node,
-            const PolygonFragment& poly,
-            std::vector<PolygonFragment>& outInside,
-            std::vector<PolygonFragment>& outOutside,
-            std::vector<PolygonFragment>& outCoplanarSame,
-            std::vector<PolygonFragment>& outCoplanarOpposite) const;
     };
 
     class Mesh
@@ -366,11 +209,6 @@ namespace SGL
         {
             bvh.Build(this);
         }
-
-        void BuildBSP()
-        {
-            bsp.Build(this);
-		}
 
         bool ToSTL(const std::string& filename)
         {
@@ -1214,8 +1052,6 @@ namespace SGL
 
         inline const BVH& GetBVH() const { return bvh; }
 
-		inline const BSP& GetBSP() const { return bsp; }
-
         AABB GetFaceAABB(FID fid) const
         {
             AABB box;
@@ -1611,7 +1447,6 @@ namespace SGL
         std::vector<HalfEdge> halfEdges;
         std::vector<Face> faces;
         BVH bvh;
-		BSP bsp;
     };
 
     inline BVH::BVH() : mesh(nullptr)
@@ -1643,16 +1478,29 @@ namespace SGL
             return;
         }
 
+        // 1. AABB와 Centroid 사전 계산 (병렬 처리 적용)
+        std::vector<AABB> precomputedAABBs(mesh->GetFaces().size());
+        std::vector<Eigen::Vector3f> precomputedCentroids(mesh->GetFaces().size());
+
+        std::for_each(std::execution::par_unseq, faceIds.begin(), faceIds.end(), [&](FID fid)
+            {
+                precomputedAABBs[fid] = mesh->GetFaceAABB(fid);
+                precomputedCentroids[fid] = mesh->GetFaceCentroid(fid);
+            });
+
+        // 2. 노드 메모리 사전 예약 (재할당 방지, 2N 사이즈면 충분함)
+        nodes.reserve(faceIds.size() * 2);
+
         BVHNode rootNode;
         rootNode.faceOffset = 0;
         rootNode.faceCount = (int)faceIds.size();
         nodes.push_back(rootNode);
 
-        UpdateNodeBounds(0);
-        SubdivideNode(0);
+        UpdateNodeBounds(0, precomputedAABBs);
+        SubdivideNode(0, precomputedAABBs, precomputedCentroids);
     }
 
-    inline void BVH::UpdateNodeBounds(int nodeIndex)
+    inline void BVH::UpdateNodeBounds(int nodeIndex, const std::vector<AABB>& faceAABBs)
     {
         BVHNode& node = nodes[nodeIndex];
         node.bounds = AABB();
@@ -1660,12 +1508,12 @@ namespace SGL
         for (int i = 0; i < node.faceCount; ++i)
         {
             FID fid = faceIds[node.faceOffset + i];
-            AABB faceBox = mesh->GetFaceAABB(fid);
-            node.bounds.Expand(faceBox);
+            // 매번 계산하지 않고 캐싱된 AABB를 사용
+            node.bounds.Expand(faceAABBs[fid]);
         }
     }
 
-    inline void BVH::SubdivideNode(int nodeIndex)
+    inline void BVH::SubdivideNode(int nodeIndex, const std::vector<AABB>& faceAABBs, const std::vector<Eigen::Vector3f>& faceCentroids)
     {
         int faceCount = nodes[nodeIndex].faceCount;
         if (faceCount <= 4)
@@ -1687,13 +1535,14 @@ namespace SGL
         int faceOffset = nodes[nodeIndex].faceOffset;
         int middleIndex = faceOffset + faceCount / 2;
 
+        // 캐싱된 Centroid 배열을 사용하여 비교 속도를 극한으로 끌어올림
         std::nth_element(
             faceIds.begin() + faceOffset,
             faceIds.begin() + middleIndex,
             faceIds.begin() + faceOffset + faceCount,
             [&](FID a, FID b)
             {
-                return mesh->GetFaceCentroid(a)[axis] < mesh->GetFaceCentroid(b)[axis];
+                return faceCentroids[a][axis] < faceCentroids[b][axis];
             });
 
         int leftCount = middleIndex - faceOffset;
@@ -1705,6 +1554,7 @@ namespace SGL
         int rightChildIdx = (int)nodes.size();
         nodes.push_back(BVHNode());
 
+        // push_back으로 인해 nodes 레퍼런스가 무효화될 수 있으므로 인덱스로 접근
         nodes[leftChildIdx].faceOffset = faceOffset;
         nodes[leftChildIdx].faceCount = leftCount;
 
@@ -1715,11 +1565,11 @@ namespace SGL
         nodes[nodeIndex].rightChild = rightChildIdx;
         nodes[nodeIndex].faceCount = 0;
 
-        UpdateNodeBounds(leftChildIdx);
-        UpdateNodeBounds(rightChildIdx);
+        UpdateNodeBounds(leftChildIdx, faceAABBs);
+        UpdateNodeBounds(rightChildIdx, faceAABBs);
 
-        SubdivideNode(leftChildIdx);
-        SubdivideNode(rightChildIdx);
+        SubdivideNode(leftChildIdx, faceAABBs, faceCentroids);
+        SubdivideNode(rightChildIdx, faceAABBs, faceCentroids);
     }
 
     inline void BVH::Query(const AABB& queryBounds, std::vector<FID>& outFaces) const
@@ -1758,615 +1608,4 @@ namespace SGL
             }
         }
     }
-
-    inline void BSP::ClearRecursive(BSPNode* node)
-    {
-        if (node == nullptr)
-        {
-            return;
-        }
-
-        ClearRecursive(node->front);
-        ClearRecursive(node->back);
-        delete node;
-    }
-
-    inline void BSP::Build(const Mesh* targetMesh)
-    {
-        if (targetMesh == nullptr)
-        {
-            return;
-        }
-
-        if (nullptr != root)
-        {
-            ClearRecursive(root);
-            root = nullptr;
-        }
-
-        const auto& faces = targetMesh->GetFaces();
-        std::vector<SGL::FID> initialFaceIDs;
-        initialFaceIDs.reserve(faces.size());
-
-        for (size_t i = 0; i < faces.size(); ++i)
-        {
-            if (faces[i].eid != INVALID_ID)
-            {
-                initialFaceIDs.push_back((FID)i);
-            }
-        }
-
-        if (initialFaceIDs.empty())
-        {
-            return;
-        }
-
-        faceDataCache.resize(faces.size());
-
-        std::for_each(std::execution::par, initialFaceIDs.begin(), initialFaceIDs.end(), [&](FID fid)
-            {
-                Eigen::Vector3f v0, v1, v2;
-                targetMesh->GetFaceVertices(fid, v0, v1, v2);
-
-                Eigen::Vector3f crossVec = (v1 - v0).cross(v2 - v0);
-                Eigen::Vector3f normal = Eigen::Vector3f::UnitY();
-
-                if (crossVec.squaredNorm() >= 1e-12f)
-                {
-                    normal = crossVec.normalized();
-                }
-
-                faceDataCache[fid].v0 = v0;
-                faceDataCache[fid].v1 = v1;
-                faceDataCache[fid].v2 = v2;
-                faceDataCache[fid].normal = normal;
-                faceDataCache[fid].d = normal.dot(v0);
-            });
-
-        root = new BSPNode();
-        BuildRecursive(root, initialFaceIDs, 0);
-    }
-
-    inline void BSP::BuildRecursive(BSPNode* node, const std::vector<FID>& faceIDs, int depth)
-    {
-        if (faceIDs.empty())
-        {
-            return;
-        }
-
-        if (depth > 100)
-        {
-            for (size_t i = 0; i < faceIDs.size(); ++i)
-            {
-                node->coplanarFaces.push_back(faceIDs[i]);
-            }
-            return;
-        }
-
-        int bestCandidateIdx = 0;
-        int minScore = std::numeric_limits<int>::max();
-        const int numCandidates = std::min(7, (int)faceIDs.size());
-        int step = std::max(1, (int)faceIDs.size() / numCandidates);
-
-        Eigen::Vector3f bestNormal = Eigen::Vector3f::UnitY();
-        Eigen::Vector3f bestPoint = Eigen::Vector3f::Zero();
-        float bestPlaneD = 0.0f;
-        bool foundValidSplit = false;
-
-        for (int i = 0; i < numCandidates; ++i)
-        {
-            int candidateIdx = i * step;
-            if (candidateIdx >= (int)faceIDs.size())
-            {
-                break;
-            }
-
-            FID candidateFID = faceIDs[candidateIdx];
-            const auto& candidateData = faceDataCache[candidateFID];
-
-            Eigen::Vector3f normal = candidateData.normal;
-            float planeD = candidateData.d;
-
-            int frontCount = 0;
-            int backCount = 0;
-            int splitCount = 0;
-            const float eps = 1e-4f;
-
-            for (size_t j = 0; j < faceIDs.size(); ++j)
-            {
-                if (candidateIdx == (int)j)
-                {
-                    continue;
-                }
-
-                const auto& tv = faceDataCache[faceIDs[j]];
-
-                float d0 = normal.dot(tv.v0) - planeD;
-                float d1 = normal.dot(tv.v1) - planeD;
-                float d2 = normal.dot(tv.v2) - planeD;
-
-                bool inFront = (d0 > eps || d1 > eps || d2 > eps);
-                bool inBack = (d0 < -eps || d1 < -eps || d2 < -eps);
-
-                if (inFront && inBack)
-                {
-                    splitCount++;
-                }
-                else if (inFront)
-                {
-                    frontCount++;
-                }
-                else if (inBack)
-                {
-                    backCount++;
-                }
-            }
-
-            int score = std::abs(frontCount - backCount) + (splitCount * 8);
-            if (score < minScore)
-            {
-                minScore = score;
-                bestCandidateIdx = candidateIdx;
-                bestNormal = normal;
-                bestPoint = candidateData.v0;
-                bestPlaneD = planeD;
-                foundValidSplit = true;
-            }
-        }
-
-        if (!foundValidSplit)
-        {
-            const auto& fallbackData = faceDataCache[faceIDs[0]];
-            bestNormal = fallbackData.normal;
-            bestPoint = fallbackData.v0;
-            bestPlaneD = fallbackData.d;
-        }
-
-        node->splitPlane.normal = bestNormal;
-        node->splitPlane.planePoint = bestPoint;
-
-        std::vector<FID> frontFaces;
-        std::vector<FID> backFaces;
-
-        const float eps = 1e-4f;
-
-        for (size_t i = 0; i < faceIDs.size(); ++i)
-        {
-            FID currentFID = faceIDs[i];
-            const auto& tv = faceDataCache[currentFID];
-
-            float d0 = bestNormal.dot(tv.v0) - bestPlaneD;
-            float d1 = bestNormal.dot(tv.v1) - bestPlaneD;
-            float d2 = bestNormal.dot(tv.v2) - bestPlaneD;
-
-            bool inFront = (d0 > eps || d1 > eps || d2 > eps);
-            bool inBack = (d0 < -eps || d1 < -eps || d2 < -eps);
-
-            if (inFront && inBack)
-            {
-                frontFaces.push_back(currentFID);
-                backFaces.push_back(currentFID);
-            }
-            else if (inFront)
-            {
-                frontFaces.push_back(currentFID);
-            }
-            else if (inBack)
-            {
-                backFaces.push_back(currentFID);
-            }
-            else
-            {
-                node->coplanarFaces.push_back(currentFID);
-            }
-        }
-
-        if (!frontFaces.empty())
-        {
-            node->front = new BSPNode();
-            BuildRecursive(node->front, frontFaces, depth + 1);
-        }
-
-        if (!backFaces.empty())
-        {
-            node->back = new BSPNode();
-            BuildRecursive(node->back, backFaces, depth + 1);
-        }
-    }
-
-    inline void BSP::ClassifyPolygonForCSG(
-        BSPNode* node,
-        const PolygonFragment& poly,
-        std::vector<PolygonFragment>& outInside,
-        std::vector<PolygonFragment>& outOutside,
-        std::vector<PolygonFragment>& outCoplanarSame,
-        std::vector<PolygonFragment>& outCoplanarOpposite) const
-    {
-        if (node == nullptr)
-        {
-            outOutside.push_back(poly);
-            return;
-        }
-
-        std::vector<Eigen::Vector3f> frontVerts;
-        std::vector<Eigen::Vector3f> backVerts;
-
-        const float eps = 1e-4f;
-        int frontCount = 0;
-        int backCount = 0;
-
-        std::vector<float> distances(poly.vertices.size());
-        for (size_t i = 0; i < poly.vertices.size(); ++i)
-        {
-            distances[i] = node->splitPlane.normal.dot(poly.vertices[i] - node->splitPlane.planePoint);
-            if (distances[i] > eps)
-            {
-                frontCount++;
-            }
-            else if (distances[i] < -eps)
-            {
-                backCount++;
-            }
-        }
-
-        if (frontCount > 0 && backCount == 0)
-        {
-            if (node->front)
-            {
-                ClassifyPolygonForCSG(node->front, poly, outInside, outOutside, outCoplanarSame, outCoplanarOpposite);
-            }
-            else
-            {
-                outOutside.push_back(poly);
-            }
-        }
-        else if (backCount > 0 && frontCount == 0)
-        {
-            if (node->back)
-            {
-                ClassifyPolygonForCSG(node->back, poly, outInside, outOutside, outCoplanarSame, outCoplanarOpposite);
-            }
-            else
-            {
-                outInside.push_back(poly);
-            }
-        }
-        else if (frontCount == 0 && backCount == 0)
-        {
-            float dot = poly.normal.dot(node->splitPlane.normal);
-            if (dot > 0.0f)
-            {
-                if (node->front)
-                {
-                    ClassifyPolygonForCSG(node->front, poly, outInside, outOutside, outCoplanarSame, outCoplanarOpposite);
-                }
-                else
-                {
-                    outCoplanarSame.push_back(poly);
-                }
-            }
-            else
-            {
-                if (node->back)
-                {
-                    ClassifyPolygonForCSG(node->back, poly, outInside, outOutside, outCoplanarSame, outCoplanarOpposite);
-                }
-                else
-                {
-                    outCoplanarOpposite.push_back(poly);
-                }
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < poly.vertices.size(); ++i)
-            {
-                size_t next_i = (i + 1) % poly.vertices.size();
-                float d1 = distances[i];
-                float d2 = distances[next_i];
-
-                Eigen::Vector3f p1 = poly.vertices[i];
-                Eigen::Vector3f p2 = poly.vertices[next_i];
-
-                if (d1 >= -eps)
-                {
-                    frontVerts.push_back(p1);
-                }
-                if (d1 <= eps)
-                {
-                    backVerts.push_back(p1);
-                }
-
-                if ((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps))
-                {
-                    float t = d1 / (d1 - d2);
-                    Eigen::Vector3f intersect = p1 + t * (p2 - p1);
-                    frontVerts.push_back(intersect);
-                    backVerts.push_back(intersect);
-                }
-            }
-
-            if (frontVerts.size() >= 3)
-            {
-                PolygonFragment frontPoly;
-                frontPoly.vertices = frontVerts;
-                frontPoly.normal = poly.normal;
-
-                if (node->front)
-                {
-                    ClassifyPolygonForCSG(node->front, frontPoly, outInside, outOutside, outCoplanarSame, outCoplanarOpposite);
-                }
-                else
-                {
-                    outOutside.push_back(frontPoly);
-                }
-            }
-
-            if (backVerts.size() >= 3)
-            {
-                PolygonFragment backPoly;
-                backPoly.vertices = backVerts;
-                backPoly.normal = poly.normal;
-
-                if (node->back)
-                {
-                    ClassifyPolygonForCSG(node->back, backPoly, outInside, outOutside, outCoplanarSame, outCoplanarOpposite);
-                }
-                else
-                {
-                    outInside.push_back(backPoly);
-                }
-            }
-        }
-    }
-
-    enum class CSGOperation
-    {
-        UNION,
-        INTERSECTION,
-        SUBTRACTION // A - B
-    };
-
-    struct CSG
-    {
-        static std::vector<PolygonFragment> MeshToFragments(const Mesh* mesh)
-        {
-            std::vector<PolygonFragment> fragments;
-            const auto& faces = mesh->GetFaces();
-
-            for (FID i = 0; i < (FID)faces.size(); ++i)
-            {
-                if (faces[i].eid != INVALID_ID)
-                {
-                    Eigen::Vector3f v0, v1, v2;
-                    mesh->GetFaceVertices(i, v0, v1, v2);
-
-                    PolygonFragment frag;
-                    frag.vertices = { v0, v1, v2 };
-
-                    Eigen::Vector3f crossVec = (v1 - v0).cross(v2 - v0);
-                    if (crossVec.squaredNorm() >= 1e-12f)
-                    {
-                        frag.normal = crossVec.normalized();
-                        fragments.push_back(frag);
-                    }
-                }
-            }
-            return fragments;
-        }
-
-        static void InvertFragment(PolygonFragment& frag)
-        {
-            std::reverse(frag.vertices.begin(), frag.vertices.end());
-            frag.normal = -frag.normal;
-        }
-
-        static Mesh FragmentsToMesh(const std::vector<PolygonFragment>& fragments)
-        {
-            Mesh resultMesh;
-            std::vector<Eigen::Vector3f> points;
-            std::vector<Eigen::Vector3i> indices;
-
-            std::vector<Eigen::Vector3f> rawPoints;
-            for (const auto& frag : fragments)
-            {
-                for (const auto& v : frag.vertices)
-                {
-                    rawPoints.push_back(v);
-                }
-            }
-
-            if (rawPoints.empty())
-            {
-                return resultMesh;
-            }
-
-            // 1. Sweep and Prune 고속 정점 병합 (유지)
-            struct SortPoint
-            {
-                Eigen::Vector3f p;
-                int originalIdx;
-            };
-
-            std::vector<SortPoint> sp(rawPoints.size());
-            for (int i = 0; i < (int)rawPoints.size(); ++i)
-            {
-                sp[i] = { rawPoints[i], i };
-            }
-
-            std::sort(std::execution::par, sp.begin(), sp.end(), [](const SortPoint& a, const SortPoint& b)
-                {
-                    return a.p.x() < b.p.x();
-                });
-
-            std::vector<int> indexMap(rawPoints.size());
-            const float eps = 1e-4f;
-            const float epsSq = eps * eps;
-
-            for (int i = 0; i < (int)sp.size(); ++i)
-            {
-                int foundIdx = -1;
-                for (int j = i - 1; j >= 0; --j)
-                {
-                    if (sp[i].p.x() - sp[j].p.x() > eps)
-                    {
-                        break;
-                    }
-                    if ((sp[i].p - sp[j].p).squaredNorm() <= epsSq)
-                    {
-                        foundIdx = indexMap[sp[j].originalIdx];
-                        break;
-                    }
-                }
-
-                if (foundIdx != -1)
-                {
-                    indexMap[sp[i].originalIdx] = foundIdx;
-                }
-                else
-                {
-                    indexMap[sp[i].originalIdx] = (int)points.size();
-                    points.push_back(sp[i].p);
-                }
-            }
-
-            // 2. 안전한 볼록 다각형 삼각화 (Safe Convex Fan Triangulation)
-            // Ear Clipping의 불안정성 및 면 뒤집힘(Black faces) 현상 완벽 제거
-            int rawIdxCounter = 0;
-            for (const auto& frag : fragments)
-            {
-                std::vector<int> polyIndices;
-
-                // 병합된 인덱스 추출 (연속된 중복 정점만 제거, 일직선 정점은 유지하여 T-Junction 방지)
-                for (size_t i = 0; i < frag.vertices.size(); ++i)
-                {
-                    int mappedIdx = indexMap[rawIdxCounter++];
-                    if (polyIndices.empty() || polyIndices.back() != mappedIdx)
-                    {
-                        polyIndices.push_back(mappedIdx);
-                    }
-                }
-
-                if (polyIndices.size() > 1 && polyIndices.front() == polyIndices.back())
-                {
-                    polyIndices.pop_back();
-                }
-
-                if (polyIndices.size() < 3)
-                {
-                    continue;
-                }
-
-                // BSP로 잘린 다각형은 무조건 Convex(볼록)이므로 Fan 방식이 가장 빠르고 수학적으로 안전함
-                int v0 = polyIndices[0];
-                for (size_t i = 1; i + 1 < polyIndices.size(); ++i)
-                {
-                    int v1 = polyIndices[i];
-                    int v2 = polyIndices[i + 1];
-
-                    // 동일 정점이 섞여 들어간 찌그러진 삼각형 무시
-                    if (v0 == v1 || v1 == v2 || v2 == v0)
-                    {
-                        continue;
-                    }
-
-                    // 외적을 통해 만들어질 삼각형의 법선(Normal) 추출
-                    Eigen::Vector3f edge1 = points[v1] - points[v0];
-                    Eigen::Vector3f edge2 = points[v2] - points[v0];
-                    Eigen::Vector3f crossVec = edge1.cross(edge2);
-
-                    if (crossVec.squaredNorm() > 1e-12f)
-                    {
-                        // [핵심] 생성된 삼각형의 방향이 원본 조각(Fragment)의 법선과 일치하는지 강제 검증
-                        // 방향이 꼬여서 검은색(Inside-out)으로 렌더링되는 현상 원천 차단
-                        if (crossVec.dot(frag.normal) > 0.0f)
-                        {
-                            indices.push_back(Eigen::Vector3i(v0, v1, v2)); // 정방향
-                        }
-                        else
-                        {
-                            indices.push_back(Eigen::Vector3i(v0, v2, v1)); // 역방향(뒤집어서 보정)
-                        }
-                    }
-                }
-            }
-
-            resultMesh.Build(points, indices);
-            return resultMesh;
-        }
-
-        static Mesh PerformCSG(const Mesh* meshA, const Mesh* meshB, CSGOperation op)
-        {
-            BSP bspA;
-            bspA.Build(meshA);
-
-            BSP bspB;
-            bspB.Build(meshB);
-
-            std::vector<PolygonFragment> fragsA = MeshToFragments(meshA);
-            std::vector<PolygonFragment> fragsB = MeshToFragments(meshB);
-
-            std::vector<PolygonFragment> A_Inside, A_Outside, A_Same, A_Opposite;
-            std::mutex mutexA;
-
-            std::for_each(std::execution::par, fragsA.begin(), fragsA.end(), [&](const PolygonFragment& frag)
-                {
-                    std::vector<PolygonFragment> localIn, localOut, localSame, localOpp;
-                    bspB.ClassifyPolygonForCSG(bspB.root, frag, localIn, localOut, localSame, localOpp);
-
-                    std::lock_guard<std::mutex> lock(mutexA);
-                    A_Inside.insert(A_Inside.end(), localIn.begin(), localIn.end());
-                    A_Outside.insert(A_Outside.end(), localOut.begin(), localOut.end());
-                    A_Same.insert(A_Same.end(), localSame.begin(), localSame.end());
-                    A_Opposite.insert(A_Opposite.end(), localOpp.begin(), localOpp.end());
-                });
-
-            std::vector<PolygonFragment> B_Inside, B_Outside, B_Same, B_Opposite;
-            std::mutex mutexB;
-
-            std::for_each(std::execution::par, fragsB.begin(), fragsB.end(), [&](const PolygonFragment& frag)
-                {
-                    std::vector<PolygonFragment> localIn, localOut, localSame, localOpp;
-                    bspA.ClassifyPolygonForCSG(bspA.root, frag, localIn, localOut, localSame, localOpp);
-
-                    std::lock_guard<std::mutex> lock(mutexB);
-                    B_Inside.insert(B_Inside.end(), localIn.begin(), localIn.end());
-                    B_Outside.insert(B_Outside.end(), localOut.begin(), localOut.end());
-                    B_Same.insert(B_Same.end(), localSame.begin(), localSame.end());
-                    B_Opposite.insert(B_Opposite.end(), localOpp.begin(), localOpp.end());
-                });
-
-            std::vector<PolygonFragment> resultFrags;
-
-            switch (op)
-            {
-            case CSGOperation::UNION:
-                resultFrags.insert(resultFrags.end(), A_Outside.begin(), A_Outside.end());
-                resultFrags.insert(resultFrags.end(), B_Outside.begin(), B_Outside.end());
-                resultFrags.insert(resultFrags.end(), A_Same.begin(), A_Same.end());
-                break;
-
-            case CSGOperation::INTERSECTION:
-                resultFrags.insert(resultFrags.end(), A_Inside.begin(), A_Inside.end());
-                resultFrags.insert(resultFrags.end(), B_Inside.begin(), B_Inside.end());
-                resultFrags.insert(resultFrags.end(), A_Same.begin(), A_Same.end());
-                break;
-
-            case CSGOperation::SUBTRACTION: // A - B
-                resultFrags.insert(resultFrags.end(), A_Outside.begin(), A_Outside.end());
-
-                // 메쉬 B에서 파인 부분은 뒤집혀서 안쪽 면을 형성해야 하므로 법선 역전
-                for (auto& frag : B_Inside)
-                {
-                    InvertFragment(frag);
-                    resultFrags.push_back(frag);
-                }
-
-                resultFrags.insert(resultFrags.end(), A_Opposite.begin(), A_Opposite.end());
-                break;
-            }
-
-            return FragmentsToMesh(resultFrags);
-        }
-    };
 }

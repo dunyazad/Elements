@@ -189,6 +189,7 @@
     <ClInclude Include="Apps\Core\DataStructures\VoxelDataBase.h" />
     <ClInclude Include="Apps\Core\Operations\OperationPointCloudMerge.h" />
     <ClInclude Include="Apps\SimpleGeometryLibrary.hpp" />
+    <ClInclude Include="Apps\SimpleGeometryLibrary_Primitives.hpp" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Hydrogen.h" />
     <ClInclude Include="Resource.h" />
