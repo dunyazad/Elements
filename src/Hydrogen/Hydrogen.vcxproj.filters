@@ -90,7 +90,7 @@
     <ClInclude Include="Apps\Core\DataStructures\VoxelCache.h">
       <Filter>Apps\Core\DataStructures</Filter>
     </ClInclude>
-    <ClInclude Include="Apps\HalfEdgeMesh.h">
+    <ClInclude Include="Apps\SimpleGeometryLibrary.hpp">
       <Filter>Apps</Filter>
     </ClInclude>
   </ItemGroup>
@@ -138,6 +138,9 @@
       <Filter>Apps</Filter>
     </ClCompile>
     <ClCompile Include="Apps\AppManifold.cpp">
+      <Filter>Apps</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppSGL.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
   </ItemGroup>

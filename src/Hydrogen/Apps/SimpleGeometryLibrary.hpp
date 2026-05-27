@@ -12,7 +12,8 @@
 #include <Eigen/Dense>
 #include <robin_hood/robin_hood.h>
 
-namespace HEM
+// Simple Geometry Library (SGL)
+namespace SGL
 {
     using PID = unsigned int;
     using VID = unsigned int;
@@ -42,7 +43,7 @@ namespace HEM
         }
     };
 
-    struct Edge
+    struct HalfEdge
     {
         VID vid;
         EID oeid;
@@ -50,7 +51,7 @@ namespace HEM
         EID peid;
         FID fid;
 
-        Edge() : vid(INVALID_ID), oeid(INVALID_ID), neid(INVALID_ID), peid(INVALID_ID), fid(INVALID_ID)
+        HalfEdge() : vid(INVALID_ID), oeid(INVALID_ID), neid(INVALID_ID), peid(INVALID_ID), fid(INVALID_ID)
         {
         }
     };
@@ -123,8 +124,25 @@ namespace HEM
         }
     };
 
+    class Mesh;
+
+    struct BVH
+    {
+        std::vector<BVHNode> nodes;
+        std::vector<FID> faceIds;
+        const Mesh* mesh;
+
+        BVH();
+        void Build(const Mesh* targetMesh);
+        void UpdateNodeBounds(int nodeIndex);
+        void SubdivideNode(int nodeIndex);
+        void Query(const AABB& queryBounds, std::vector<FID>& outFaces) const;
+    };
+
     class Mesh
     {
+        friend struct BVH;
+
     public:
         Mesh()
         {
@@ -139,10 +157,10 @@ namespace HEM
         {
             points.clear();
             vertices.clear();
-            edges.clear();
+            halfEdges.clear();
             faces.clear();
-            bvhNodes.clear();
-            bvhFaceIds.clear();
+            bvh.nodes.clear();
+            bvh.faceIds.clear();
         }
 
         void Build(const std::vector<Eigen::Vector3f>& sourcePoints, const std::vector<Eigen::Vector3i>& indices)
@@ -234,8 +252,8 @@ namespace HEM
                 EID edgeIds[3];
                 for (int i = 0; i < 3; ++i)
                 {
-                    edgeIds[i] = (EID)edges.size();
-                    edges.push_back(Edge());
+                    edgeIds[i] = (EID)halfEdges.size();
+                    halfEdges.push_back(HalfEdge());
                 }
 
                 for (int i = 0; i < 3; ++i)
@@ -243,10 +261,10 @@ namespace HEM
                     int vFrom = idx[i];
                     int vTo = idx[(i + 1) % 3];
 
-                    edges[edgeIds[i]].vid = (VID)vTo;
-                    edges[edgeIds[i]].fid = newFaceId;
-                    edges[edgeIds[i]].neid = edgeIds[(i + 1) % 3];
-                    edges[edgeIds[i]].peid = edgeIds[(i + 2) % 3];
+                    halfEdges[edgeIds[i]].vid = (VID)vTo;
+                    halfEdges[edgeIds[i]].fid = newFaceId;
+                    halfEdges[edgeIds[i]].neid = edgeIds[(i + 1) % 3];
+                    halfEdges[edgeIds[i]].peid = edgeIds[(i + 2) % 3];
 
                     vertices[vFrom].eid = edgeIds[i];
                     faces[newFaceId].eid = edgeIds[i];
@@ -255,10 +273,10 @@ namespace HEM
                     bool paired = false;
                     for (EID existingId : edgeMap[key])
                     {
-                        if (edges[existingId].oeid == INVALID_ID && edges[edges[existingId].peid].vid == (VID)vTo)
+                        if (halfEdges[existingId].oeid == INVALID_ID && halfEdges[halfEdges[existingId].peid].vid == (VID)vTo)
                         {
-                            edges[edgeIds[i]].oeid = existingId;
-                            edges[existingId].oeid = edgeIds[i];
+                            halfEdges[edgeIds[i]].oeid = existingId;
+                            halfEdges[existingId].oeid = edgeIds[i];
                             paired = true;
                             break;
                         }
@@ -270,7 +288,12 @@ namespace HEM
                 }
             }
 
-            BuildBVH();
+            bvh.Build(this);
+        }
+
+        void RebuildBVH()
+        {
+            bvh.Build(this);
         }
 
         bool ToSTL(const std::string& filename)
@@ -287,11 +310,11 @@ namespace HEM
                 if (f.eid != INVALID_ID)
                 {
                     EID e0 = f.eid;
-                    EID e1 = edges[e0].neid;
+                    EID e1 = halfEdges[e0].neid;
 
-                    VID v0 = edges[edges[e0].peid].vid;
-                    VID v1 = edges[e0].vid;
-                    VID v2 = edges[e1].vid;
+                    VID v0 = halfEdges[halfEdges[e0].peid].vid;
+                    VID v1 = halfEdges[e0].vid;
+                    VID v2 = halfEdges[e1].vid;
 
                     Eigen::Vector3f p0 = points[vertices[v0].pid];
                     Eigen::Vector3f p1 = points[vertices[v1].pid];
@@ -312,53 +335,16 @@ namespace HEM
             return true;
         }
 
-        void QueryBVH(const AABB& queryBounds, std::vector<FID>& outFaces) const
-        {
-            if (bvhNodes.empty())
-            {
-                return;
-            }
-
-            std::vector<int> stack;
-            stack.reserve(64);
-            stack.push_back(0);
-
-            while (!stack.empty())
-            {
-                int nodeIdx = stack.back();
-                stack.pop_back();
-
-                const BVHNode& node = bvhNodes[nodeIdx];
-                if (!node.bounds.Intersects(queryBounds))
-                {
-                    continue;
-                }
-
-                if (node.IsLeaf())
-                {
-                    for (int i = 0; i < node.faceCount; ++i)
-                    {
-                        outFaces.push_back(bvhFaceIds[node.faceOffset + i]);
-                    }
-                }
-                else
-                {
-                    stack.push_back(node.leftChild);
-                    stack.push_back(node.rightChild);
-                }
-            }
-        }
-
         std::vector<std::pair<FID, FID>> FindIntersection(const Mesh& other) const
         {
             std::vector<std::pair<FID, FID>> intersectingFaces;
 
-            if (bvhNodes.empty() || other.bvhNodes.empty())
+            if (bvh.nodes.empty() || other.bvh.nodes.empty())
             {
                 return intersectingFaces;
             }
 
-            if (!bvhNodes[0].bounds.Intersects(other.bvhNodes[0].bounds))
+            if (!bvh.nodes[0].bounds.Intersects(other.bvh.nodes[0].bounds))
             {
                 return intersectingFaces;
             }
@@ -371,7 +357,7 @@ namespace HEM
                 if (faces[i].eid != INVALID_ID)
                 {
                     AABB box = GetFaceAABB(i);
-                    if (box.Intersects(other.bvhNodes[0].bounds))
+                    if (box.Intersects(other.bvh.nodes[0].bounds))
                     {
                         validFaces.push_back(i);
                     }
@@ -384,7 +370,7 @@ namespace HEM
                 {
                     AABB aabb = GetFaceAABB(fid);
                     std::vector<FID> candidateFaces;
-                    other.QueryBVH(aabb, candidateFaces);
+                    other.bvh.Query(aabb, candidateFaces);
 
                     if (candidateFaces.empty())
                     {
@@ -421,12 +407,12 @@ namespace HEM
         {
             std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> intersectingLines;
 
-            if (bvhNodes.empty() || other.bvhNodes.empty())
+            if (bvh.nodes.empty() || other.bvh.nodes.empty())
             {
                 return intersectingLines;
             }
 
-            if (!bvhNodes[0].bounds.Intersects(other.bvhNodes[0].bounds))
+            if (!bvh.nodes[0].bounds.Intersects(other.bvh.nodes[0].bounds))
             {
                 return intersectingLines;
             }
@@ -439,7 +425,7 @@ namespace HEM
                 if (faces[i].eid != INVALID_ID)
                 {
                     AABB box = GetFaceAABB(i);
-                    if (box.Intersects(other.bvhNodes[0].bounds))
+                    if (box.Intersects(other.bvh.nodes[0].bounds))
                     {
                         validFaces.push_back(i);
                     }
@@ -452,7 +438,7 @@ namespace HEM
                 {
                     AABB aabb = GetFaceAABB(fid);
                     std::vector<FID> candidateFaces;
-                    other.QueryBVH(aabb, candidateFaces);
+                    other.bvh.Query(aabb, candidateFaces);
 
                     if (candidateFaces.empty())
                     {
@@ -486,6 +472,137 @@ namespace HEM
             return intersectingLines;
         }
 
+        void SplitEdge(EID eid, const Eigen::Vector3f& point)
+        {
+            EID eOpp = halfEdges[eid].oeid;
+            VID vStart = halfEdges[halfEdges[eid].peid].vid;
+            VID vEnd = halfEdges[eid].vid;
+
+            const float eps = 1e-4f;
+            if ((points[vertices[vStart].pid] - point).norm() < eps ||
+                (points[vertices[vEnd].pid] - point).norm() < eps)
+            {
+                return;
+            }
+
+            points.push_back(point);
+            PID newPid = (PID)points.size() - 1;
+            VID vm = (VID)vertices.size();
+            vertices.push_back(Vertex(newPid));
+
+            FID fMain = halfEdges[eid].fid;
+            EID eMainPrev = halfEdges[eid].peid;
+            EID eMainNext = halfEdges[eid].neid;
+
+            VID vTop = halfEdges[eMainNext].vid;
+
+            FID fNewMain = (FID)faces.size();
+            faces.push_back(Face());
+
+            EID eVmVtop = (EID)halfEdges.size();
+            EID eVtopVm = eVmVtop + 1;
+            EID eVmVend = eVmVtop + 2;
+
+            for (int i = 0; i < 3; ++i)
+            {
+                halfEdges.push_back(HalfEdge());
+            }
+
+            halfEdges[eid].vid = vm;
+            halfEdges[eid].neid = eVmVtop;
+
+            halfEdges[eVmVtop].vid = vTop;
+            halfEdges[eVmVtop].neid = eMainPrev;
+            halfEdges[eVmVtop].peid = eid;
+            halfEdges[eVmVtop].fid = fMain;
+            halfEdges[eVmVtop].oeid = eVtopVm;
+
+            halfEdges[eMainPrev].neid = eid;
+            halfEdges[eMainPrev].peid = eVmVtop;
+            halfEdges[eMainPrev].fid = fMain;
+
+            faces[fMain].eid = eid;
+
+            halfEdges[eVmVend].vid = vEnd;
+            halfEdges[eVmVend].neid = eMainNext;
+            halfEdges[eVmVend].peid = eVtopVm;
+            halfEdges[eVmVend].fid = fNewMain;
+
+            halfEdges[eMainNext].neid = eVtopVm;
+            halfEdges[eMainNext].peid = eVmVend;
+            halfEdges[eMainNext].fid = fNewMain;
+
+            halfEdges[eVtopVm].vid = vm;
+            halfEdges[eVtopVm].neid = eVmVend;
+            halfEdges[eVtopVm].peid = eMainNext;
+            halfEdges[eVtopVm].fid = fNewMain;
+            halfEdges[eVtopVm].oeid = eVmVtop;
+
+            faces[fNewMain].eid = eVmVend;
+            vertices[vm].eid = eVmVtop;
+
+            if (eOpp != INVALID_ID)
+            {
+                FID fAdj = halfEdges[eOpp].fid;
+                EID eAdjPrev = halfEdges[eOpp].peid;
+                EID eAdjNext = halfEdges[eOpp].neid;
+                VID vAdjTop = halfEdges[eAdjNext].vid;
+
+                FID fNewAdj = (FID)faces.size();
+                faces.push_back(Face());
+
+                EID eVmVadjTop = (EID)halfEdges.size();
+                EID eVadjTopVm = eVmVadjTop + 1;
+                EID eVmVstart = eVmVadjTop + 2;
+
+                for (int i = 0; i < 3; ++i)
+                {
+                    halfEdges.push_back(HalfEdge());
+                }
+
+                halfEdges[eOpp].vid = vm;
+                halfEdges[eOpp].neid = eVmVadjTop;
+                halfEdges[eOpp].oeid = eVmVend;
+                halfEdges[eVmVend].oeid = eOpp;
+
+                halfEdges[eVmVadjTop].vid = vAdjTop;
+                halfEdges[eVmVadjTop].neid = eAdjPrev;
+                halfEdges[eVmVadjTop].peid = eOpp;
+                halfEdges[eVmVadjTop].fid = fAdj;
+                halfEdges[eVmVadjTop].oeid = eVadjTopVm;
+
+                halfEdges[eAdjPrev].neid = eOpp;
+                halfEdges[eAdjPrev].peid = eVmVadjTop;
+                halfEdges[eAdjPrev].fid = fAdj;
+
+                faces[fAdj].eid = eOpp;
+
+                halfEdges[eVmVstart].vid = vStart;
+                halfEdges[eVmVstart].neid = eAdjNext;
+                halfEdges[eVmVstart].peid = eVadjTopVm;
+                halfEdges[eVmVstart].fid = fNewAdj;
+                halfEdges[eVmVstart].oeid = eid;
+                halfEdges[eid].oeid = eVmVstart;
+
+                halfEdges[eAdjNext].neid = eVadjTopVm;
+                halfEdges[eAdjNext].peid = eVmVstart;
+                halfEdges[eAdjNext].fid = fNewAdj;
+
+                halfEdges[eVadjTopVm].vid = vm;
+                halfEdges[eVadjTopVm].neid = eVmVstart;
+                halfEdges[eVadjTopVm].peid = eAdjNext;
+                halfEdges[eVadjTopVm].fid = fNewAdj;
+                halfEdges[eVadjTopVm].oeid = eVmVadjTop;
+
+                faces[fNewAdj].eid = eVmVstart;
+            }
+            else
+            {
+                halfEdges[eid].oeid = INVALID_ID;
+                halfEdges[eVmVend].oeid = INVALID_ID;
+            }
+        }
+
         void SplitFaceByPoint(FID fid, const Eigen::Vector3f& point)
         {
             if (fid >= faces.size() || faces[fid].eid == INVALID_ID)
@@ -494,19 +611,61 @@ namespace HEM
             }
 
             EID e0 = faces[fid].eid;
-            EID e1 = edges[e0].neid;
-            EID e2 = edges[e0].peid;
+            EID e1 = halfEdges[e0].neid;
+            EID e2 = halfEdges[e0].peid;
 
-            VID v0 = edges[e2].vid;
-            VID v1 = edges[e0].vid;
-            VID v2 = edges[e1].vid;
+            VID v0 = halfEdges[e2].vid;
+            VID v1 = halfEdges[e0].vid;
+            VID v2 = halfEdges[e1].vid;
 
             Eigen::Vector3f p0 = points[vertices[v0].pid];
             Eigen::Vector3f p1 = points[vertices[v1].pid];
             Eigen::Vector3f p2 = points[vertices[v2].pid];
 
-            if (!PointInTriangle(point, p0, p1, p2))
+            Eigen::Vector3f vec0 = p2 - p0;
+            Eigen::Vector3f vec1 = p1 - p0;
+            Eigen::Vector3f vec2 = point - p0;
+
+            float dot00 = vec0.dot(vec0);
+            float dot01 = vec0.dot(vec1);
+            float dot02 = vec0.dot(vec2);
+            float dot11 = vec1.dot(vec1);
+            float dot12 = vec1.dot(vec2);
+
+            float denom = dot00 * dot11 - dot01 * dot01;
+            if (denom < 1e-8f)
             {
+                return;
+            }
+
+            float invDenom = 1.0f / denom;
+            float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+            float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+            float w = 1.0f - u - v;
+
+            const float eps = 1e-4f;
+
+            if (u < -eps || v < -eps || w < -eps || u > 1.0f + eps || v > 1.0f + eps || w > 1.0f + eps)
+            {
+                return;
+            }
+
+            if (u < eps || v < eps || w < eps)
+            {
+                EID splitEdge = INVALID_ID;
+                if (u < eps)
+                {
+                    splitEdge = e0;
+                }
+                else if (w < eps)
+                {
+                    splitEdge = e1;
+                }
+                else
+                {
+                    splitEdge = e2;
+                }
+                SplitEdge(splitEdge, point);
                 return;
             }
 
@@ -521,77 +680,76 @@ namespace HEM
             faces.push_back(Face());
             faces.push_back(Face());
 
-            EID e_v1_vm = (EID)edges.size();
-            EID e_vm_v1 = e_v1_vm + 1;
-            EID e_v2_vm = e_v1_vm + 2;
-            EID e_vm_v2 = e_v1_vm + 3;
-            EID e_v0_vm = e_v1_vm + 4;
-            EID e_vm_v0 = e_v1_vm + 5;
+            EID eV1Vm = (EID)halfEdges.size();
+            EID eVmV1 = eV1Vm + 1;
+            EID eV2Vm = eV1Vm + 2;
+            EID eVmV2 = eV1Vm + 3;
+            EID eV0Vm = eV1Vm + 4;
+            EID eVmV0 = eV1Vm + 5;
 
             for (int i = 0; i < 6; ++i)
             {
-                edges.push_back(Edge());
+                halfEdges.push_back(HalfEdge());
             }
 
-            edges[e0].neid = e_v1_vm;
-            edges[e0].peid = e_vm_v0;
+            halfEdges[e0].neid = eV1Vm;
+            halfEdges[e0].peid = eVmV0;
 
-            edges[e_v1_vm].vid = vm;
-            edges[e_v1_vm].oeid = e_vm_v1;
-            edges[e_v1_vm].neid = e_vm_v0;
-            edges[e_v1_vm].peid = e0;
-            edges[e_v1_vm].fid = f0;
+            halfEdges[eV1Vm].vid = vm;
+            halfEdges[eV1Vm].oeid = eVmV1;
+            halfEdges[eV1Vm].neid = eVmV0;
+            halfEdges[eV1Vm].peid = e0;
+            halfEdges[eV1Vm].fid = f0;
 
-            edges[e_vm_v0].vid = v0;
-            edges[e_vm_v0].oeid = e_v0_vm;
-            edges[e_vm_v0].neid = e0;
-            edges[e_vm_v0].peid = e_v1_vm;
-            edges[e_vm_v0].fid = f0;
+            halfEdges[eVmV0].vid = v0;
+            halfEdges[eVmV0].oeid = eV0Vm;
+            halfEdges[eVmV0].neid = e0;
+            halfEdges[eVmV0].peid = eV1Vm;
+            halfEdges[eVmV0].fid = f0;
 
             faces[f0].eid = e0;
 
-            edges[e1].neid = e_v2_vm;
-            edges[e1].peid = e_vm_v1;
-            edges[e1].fid = f1;
+            halfEdges[e1].neid = eV2Vm;
+            halfEdges[e1].peid = eVmV1;
+            halfEdges[e1].fid = f1;
 
-            edges[e_v2_vm].vid = vm;
-            edges[e_v2_vm].oeid = e_vm_v2;
-            edges[e_v2_vm].neid = e_vm_v1;
-            edges[e_v2_vm].peid = e1;
-            edges[e_v2_vm].fid = f1;
+            halfEdges[eV2Vm].vid = vm;
+            halfEdges[eV2Vm].oeid = eVmV2;
+            halfEdges[eV2Vm].neid = eVmV1;
+            halfEdges[eV2Vm].peid = e1;
+            halfEdges[eV2Vm].fid = f1;
 
-            edges[e_vm_v1].vid = v1;
-            edges[e_vm_v1].oeid = e_v1_vm;
-            edges[e_vm_v1].neid = e1;
-            edges[e_vm_v1].peid = e_v2_vm;
-            edges[e_vm_v1].fid = f1;
+            halfEdges[eVmV1].vid = v1;
+            halfEdges[eVmV1].oeid = eV1Vm;
+            halfEdges[eVmV1].neid = e1;
+            halfEdges[eVmV1].peid = eV2Vm;
+            halfEdges[eVmV1].fid = f1;
 
             faces[f1].eid = e1;
 
-            edges[e2].neid = e_v0_vm;
-            edges[e2].peid = e_vm_v2;
-            edges[e2].fid = f2;
+            halfEdges[e2].neid = eV0Vm;
+            halfEdges[e2].peid = eVmV2;
+            halfEdges[e2].fid = f2;
 
-            edges[e_v0_vm].vid = vm;
-            edges[e_v0_vm].oeid = e_vm_v0;
-            edges[e_v0_vm].neid = e_vm_v2;
-            edges[e_v0_vm].peid = e2;
-            edges[e_v0_vm].fid = f2;
+            halfEdges[eV0Vm].vid = vm;
+            halfEdges[eV0Vm].oeid = eVmV0;
+            halfEdges[eV0Vm].neid = eVmV2;
+            halfEdges[eV0Vm].peid = e2;
+            halfEdges[eV0Vm].fid = f2;
 
-            edges[e_vm_v2].vid = v2;
-            edges[e_vm_v2].oeid = e_v2_vm;
-            edges[e_vm_v2].neid = e2;
-            edges[e_vm_v2].peid = e_v0_vm;
-            edges[e_vm_v2].fid = f2;
+            halfEdges[eVmV2].vid = v2;
+            halfEdges[eVmV2].oeid = eV2Vm;
+            halfEdges[eVmV2].neid = e2;
+            halfEdges[eVmV2].peid = eV0Vm;
+            halfEdges[eVmV2].fid = f2;
 
             faces[f2].eid = e2;
-
-            vertices[vm].eid = e_vm_v0;
+            vertices[vm].eid = eVmV0;
         }
 
         void SplitIntersectingFaces(const Mesh& other)
         {
-            if (bvhNodes.empty() || other.bvhNodes.empty())
+            if (bvh.nodes.empty() || other.bvh.nodes.empty())
             {
                 return;
             }
@@ -619,7 +777,7 @@ namespace HEM
                 {
                     AABB aabb = GetFaceAABB(fid);
                     std::vector<FID> candidateFaces;
-                    other.QueryBVH(aabb, candidateFaces);
+                    other.bvh.Query(aabb, candidateFaces);
 
                     if (candidateFaces.empty())
                     {
@@ -668,12 +826,12 @@ namespace HEM
                 if (faces[i].eid != INVALID_ID && !faceSplit[i])
                 {
                     EID e0 = faces[i].eid;
-                    EID e1 = edges[e0].neid;
-                    EID e2 = edges[e0].peid;
+                    EID e1 = halfEdges[e0].neid;
+                    EID e2 = halfEdges[e0].peid;
                     newIndices.push_back(Eigen::Vector3i(
-                        (int)vertices[edges[e2].vid].pid,
-                        (int)vertices[edges[e0].vid].pid,
-                        (int)vertices[edges[e1].vid].pid
+                        (int)vertices[halfEdges[e2].vid].pid,
+                        (int)vertices[halfEdges[e0].vid].pid,
+                        (int)vertices[halfEdges[e1].vid].pid
                     ));
                 }
             }
@@ -684,13 +842,13 @@ namespace HEM
             {
                 std::vector<Eigen::Vector3i> currentTris;
                 EID e0 = faces[task.fid].eid;
-                EID e1 = edges[e0].neid;
-                EID e2 = edges[e0].peid;
+                EID e1 = halfEdges[e0].neid;
+                EID e2 = halfEdges[e0].peid;
 
                 currentTris.push_back(Eigen::Vector3i(
-                    (int)vertices[edges[e2].vid].pid,
-                    (int)vertices[edges[e0].vid].pid,
-                    (int)vertices[edges[e1].vid].pid
+                    (int)vertices[halfEdges[e2].vid].pid,
+                    (int)vertices[halfEdges[e0].vid].pid,
+                    (int)vertices[halfEdges[e1].vid].pid
                 ));
 
                 for (FID cutterFid : task.cuttingFaces)
@@ -764,12 +922,12 @@ namespace HEM
 
         bool IsPointInside(const Eigen::Vector3f& p) const
         {
-            if (bvhNodes.empty())
+            if (bvh.nodes.empty())
             {
                 return false;
             }
 
-            const AABB& rootAABB = bvhNodes[0].bounds;
+            const AABB& rootAABB = bvh.nodes[0].bounds;
             if (p.x() < rootAABB.minBound.x() || p.x() > rootAABB.maxBound.x() ||
                 p.y() < rootAABB.minBound.y() || p.y() > rootAABB.maxBound.y() ||
                 p.z() < rootAABB.minBound.z() || p.z() > rootAABB.maxBound.z())
@@ -791,7 +949,7 @@ namespace HEM
                 int nodeIdx = stack.back();
                 stack.pop_back();
 
-                const BVHNode& node = bvhNodes[nodeIdx];
+                const BVHNode& node = bvh.nodes[nodeIdx];
                 if (!IntersectRayAABB(p, invDir, node.bounds))
                 {
                     continue;
@@ -801,7 +959,7 @@ namespace HEM
                 {
                     for (int i = 0; i < node.faceCount; ++i)
                     {
-                        FID fid = bvhFaceIds[node.faceOffset + i];
+                        FID fid = bvh.faceIds[node.faceOffset + i];
                         Eigen::Vector3f v0, v1, v2;
                         GetFaceVertices(fid, v0, v1, v2);
 
@@ -848,23 +1006,23 @@ namespace HEM
                     Eigen::Vector3f normal = (v1 - v0).cross(v2 - v0).normalized();
                     Eigen::Vector3f centroid = (v0 + v1 + v2) / 3.0f;
 
-                    // Fix: +normal 방향으로 오프셋 (face 전면 기준 판정)
+                    // Offset in the +normal direction
                     Eigen::Vector3f offsetCentroid = centroid + (normal * 1e-4f);
 
-                    // 경계 근처 안정성을 위해 양방향 투표 추가
+                    // Bi-directional voting for stability near boundaries
                     bool frontInside = other.IsPointInside(offsetCentroid);
                     bool backInside = other.IsPointInside(centroid - (normal * 1e-4f));
 
-                    // 양쪽 모두 inside일 때만 inside로 분류
+                    // Classify as inside only if both sides are inside
                     bool isInside = frontInside && backInside;
 
                     EID e0 = faces[fid].eid;
-                    EID e1 = edges[e0].neid;
-                    EID e2 = edges[e0].peid;
+                    EID e1 = halfEdges[e0].neid;
+                    EID e2 = halfEdges[e0].peid;
                     Eigen::Vector3i tri(
-                        (int)vertices[edges[e2].vid].pid,
-                        (int)vertices[edges[e0].vid].pid,
-                        (int)vertices[edges[e1].vid].pid
+                        (int)vertices[halfEdges[e2].vid].pid,
+                        (int)vertices[halfEdges[e0].vid].pid,
+                        (int)vertices[halfEdges[e1].vid].pid
                     );
 
                     if (isInside)
@@ -905,22 +1063,22 @@ namespace HEM
                 {
                     FID currFid = queue[head++];
                     EID e0 = faces[currFid].eid;
-                    EID e1 = edges[e0].neid;
-                    EID e2 = edges[e0].peid;
+                    EID e1 = halfEdges[e0].neid;
+                    EID e2 = halfEdges[e0].peid;
 
                     componentIndices.push_back(Eigen::Vector3i(
-                        (int)vertices[edges[e2].vid].pid,
-                        (int)vertices[edges[e0].vid].pid,
-                        (int)vertices[edges[e1].vid].pid
+                        (int)vertices[halfEdges[e2].vid].pid,
+                        (int)vertices[halfEdges[e0].vid].pid,
+                        (int)vertices[halfEdges[e1].vid].pid
                     ));
 
                     EID edgesToCheck[3] = { e0, e1, e2 };
                     for (int k = 0; k < 3; ++k)
                     {
-                        EID oeid = edges[edgesToCheck[k]].oeid;
+                        EID oeid = halfEdges[edgesToCheck[k]].oeid;
                         if (oeid != INVALID_ID)
                         {
-                            FID adjFid = edges[oeid].fid;
+                            FID adjFid = halfEdges[oeid].fid;
                             if (adjFid != INVALID_ID && !visited[adjFid])
                             {
                                 visited[adjFid] = true;
@@ -948,9 +1106,9 @@ namespace HEM
             return vertices[vid];
         }
 
-        inline const Edge& GetEdge(EID eid) const
+        inline const HalfEdge& GetEdge(EID eid) const
         {
-            return edges[eid];
+            return halfEdges[eid];
         }
 
         inline const Face& GetFace(FID fid) const
@@ -968,9 +1126,9 @@ namespace HEM
             return vertices;
         }
 
-        inline const std::vector<Edge>& GetEdges() const
+        inline const std::vector<HalfEdge>& GetEdges() const
         {
-            return edges;
+            return halfEdges;
         }
 
         inline const std::vector<Face>& GetFaces() const
@@ -978,134 +1136,7 @@ namespace HEM
             return faces;
         }
 
-        Eigen::Vector3f GetCentroid() const
-        {
-            if (faces.empty()) return Eigen::Vector3f::Zero();
-
-            Eigen::Vector3f sum = Eigen::Vector3f::Zero();
-            int count = 0;
-
-            for (const auto& f : faces)
-            {
-                if (f.eid == INVALID_ID) continue;
-
-                EID e0 = f.eid;
-                EID e1 = edges[e0].neid;
-                EID e2 = edges[e0].peid;
-
-                sum += points[vertices[edges[e2].vid].pid];
-                sum += points[vertices[edges[e0].vid].pid];
-                sum += points[vertices[edges[e1].vid].pid];
-                count += 3;
-            }
-
-            if (count == 0) return Eigen::Vector3f::Zero();
-            return sum / (float)count;
-        }
-
-    protected:
-        void BuildBVH()
-        {
-            bvhNodes.clear();
-            bvhFaceIds.clear();
-
-            if (faces.empty())
-            {
-                return;
-            }
-
-            bvhFaceIds.reserve(faces.size());
-            for (FID i = 0; i < (FID)faces.size(); ++i)
-            {
-                if (faces[i].eid != INVALID_ID)
-                {
-                    bvhFaceIds.push_back(i);
-                }
-            }
-
-            if (bvhFaceIds.empty())
-            {
-                return;
-            }
-
-            BVHNode rootNode;
-            rootNode.faceOffset = 0;
-            rootNode.faceCount = (int)bvhFaceIds.size();
-            bvhNodes.push_back(rootNode);
-
-            UpdateNodeBounds(0);
-            SubdivideNode(0);
-        }
-
-        void UpdateNodeBounds(int nodeIndex)
-        {
-            BVHNode& node = bvhNodes[nodeIndex];
-            node.bounds = AABB();
-
-            for (int i = 0; i < node.faceCount; ++i)
-            {
-                FID fid = bvhFaceIds[node.faceOffset + i];
-                AABB faceBox = GetFaceAABB(fid);
-                node.bounds.Expand(faceBox);
-            }
-        }
-
-        void SubdivideNode(int nodeIndex)
-        {
-            int faceCount = bvhNodes[nodeIndex].faceCount;
-            if (faceCount <= 4)
-            {
-                return;
-            }
-
-            Eigen::Vector3f extent = bvhNodes[nodeIndex].bounds.maxBound - bvhNodes[nodeIndex].bounds.minBound;
-            int axis = 0;
-            if (extent.y() > extent.x())
-            {
-                axis = 1;
-            }
-            if (extent.z() > extent[axis])
-            {
-                axis = 2;
-            }
-
-            int faceOffset = bvhNodes[nodeIndex].faceOffset;
-            int middleIndex = faceOffset + faceCount / 2;
-
-            std::nth_element(
-                bvhFaceIds.begin() + faceOffset,
-                bvhFaceIds.begin() + middleIndex,
-                bvhFaceIds.begin() + faceOffset + faceCount,
-                [&](FID a, FID b)
-                {
-                    return GetFaceCentroid(a)[axis] < GetFaceCentroid(b)[axis];
-                });
-
-            int leftCount = middleIndex - faceOffset;
-            int rightCount = faceCount - leftCount;
-
-            int leftChildIdx = (int)bvhNodes.size();
-            bvhNodes.push_back(BVHNode());
-
-            int rightChildIdx = (int)bvhNodes.size();
-            bvhNodes.push_back(BVHNode());
-
-            bvhNodes[leftChildIdx].faceOffset = faceOffset;
-            bvhNodes[leftChildIdx].faceCount = leftCount;
-
-            bvhNodes[rightChildIdx].faceOffset = middleIndex;
-            bvhNodes[rightChildIdx].faceCount = rightCount;
-
-            bvhNodes[nodeIndex].leftChild = leftChildIdx;
-            bvhNodes[nodeIndex].rightChild = rightChildIdx;
-            bvhNodes[nodeIndex].faceCount = 0;
-
-            UpdateNodeBounds(leftChildIdx);
-            UpdateNodeBounds(rightChildIdx);
-
-            SubdivideNode(leftChildIdx);
-            SubdivideNode(rightChildIdx);
-        }
+        inline const BVH& GetBVH() const { return bvh; }
 
         AABB GetFaceAABB(FID fid) const
         {
@@ -1116,12 +1147,12 @@ namespace HEM
             }
 
             EID e0 = faces[fid].eid;
-            EID e1 = edges[e0].neid;
-            EID e2 = edges[e0].peid;
+            EID e1 = halfEdges[e0].neid;
+            EID e2 = halfEdges[e0].peid;
 
-            Eigen::Vector3f p0 = points[vertices[edges[e2].vid].pid];
-            Eigen::Vector3f p1 = points[vertices[edges[e0].vid].pid];
-            Eigen::Vector3f p2 = points[vertices[edges[e1].vid].pid];
+            Eigen::Vector3f p0 = points[vertices[halfEdges[e2].vid].pid];
+            Eigen::Vector3f p1 = points[vertices[halfEdges[e0].vid].pid];
+            Eigen::Vector3f p2 = points[vertices[halfEdges[e1].vid].pid];
 
             box.Expand(p0);
             box.Expand(p1);
@@ -1137,12 +1168,12 @@ namespace HEM
             }
 
             EID e0 = faces[fid].eid;
-            EID e1 = edges[e0].neid;
-            EID e2 = edges[e0].peid;
+            EID e1 = halfEdges[e0].neid;
+            EID e2 = halfEdges[e0].peid;
 
-            Eigen::Vector3f p0 = points[vertices[edges[e2].vid].pid];
-            Eigen::Vector3f p1 = points[vertices[edges[e0].vid].pid];
-            Eigen::Vector3f p2 = points[vertices[edges[e1].vid].pid];
+            Eigen::Vector3f p0 = points[vertices[halfEdges[e2].vid].pid];
+            Eigen::Vector3f p1 = points[vertices[halfEdges[e0].vid].pid];
+            Eigen::Vector3f p2 = points[vertices[halfEdges[e1].vid].pid];
 
             return (p0 + p1 + p2) / 3.0f;
         }
@@ -1150,14 +1181,40 @@ namespace HEM
         void GetFaceVertices(FID fid, Eigen::Vector3f& v0, Eigen::Vector3f& v1, Eigen::Vector3f& v2) const
         {
             EID e0 = faces[fid].eid;
-            EID e1 = edges[e0].neid;
-            EID e2 = edges[e0].peid;
+            EID e1 = halfEdges[e0].neid;
+            EID e2 = halfEdges[e0].peid;
 
-            v0 = points[vertices[edges[e2].vid].pid];
-            v1 = points[vertices[edges[e0].vid].pid];
-            v2 = points[vertices[edges[e1].vid].pid];
+            v0 = points[vertices[halfEdges[e2].vid].pid];
+            v1 = points[vertices[halfEdges[e0].vid].pid];
+            v2 = points[vertices[halfEdges[e1].vid].pid];
         }
 
+        Eigen::Vector3f GetCentroid() const
+        {
+            if (faces.empty()) return Eigen::Vector3f::Zero();
+
+            Eigen::Vector3f sum = Eigen::Vector3f::Zero();
+            int count = 0;
+
+            for (const auto& f : faces)
+            {
+                if (f.eid == INVALID_ID) continue;
+
+                EID e0 = f.eid;
+                EID e1 = halfEdges[e0].neid;
+                EID e2 = halfEdges[e0].peid;
+
+                sum += points[vertices[halfEdges[e2].vid].pid];
+                sum += points[vertices[halfEdges[e0].vid].pid];
+                sum += points[vertices[halfEdges[e1].vid].pid];
+                count += 3;
+            }
+
+            if (count == 0) return Eigen::Vector3f::Zero();
+            return sum / (float)count;
+        }
+
+    protected:
         bool IntersectRayAABB(const Eigen::Vector3f& orig, const Eigen::Vector3f& invDir, const AABB& bounds) const
         {
             float tx1 = (bounds.minBound.x() - orig.x()) * invDir.x();
@@ -1225,7 +1282,7 @@ namespace HEM
             float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
             float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
             return (u >= 0) && (v >= 0) && (u + v < 1);
-		}
+        }
 
         bool TriTriIntersect(const Eigen::Vector3f& p0, const Eigen::Vector3f& p1, const Eigen::Vector3f& p2, const Eigen::Vector3f& q0, const Eigen::Vector3f& q1, const Eigen::Vector3f& q2) const
         {
@@ -1473,10 +1530,153 @@ namespace HEM
 
         std::vector<Eigen::Vector3f> points;
         std::vector<Vertex> vertices;
-        std::vector<Edge> edges;
+        std::vector<HalfEdge> halfEdges;
         std::vector<Face> faces;
-
-        std::vector<BVHNode> bvhNodes;
-        std::vector<FID> bvhFaceIds;
+        BVH bvh;
     };
+
+    inline BVH::BVH() : mesh(nullptr)
+    {
+    }
+
+    inline void BVH::Build(const Mesh* targetMesh)
+    {
+        mesh = targetMesh;
+        nodes.clear();
+        faceIds.clear();
+
+        if (mesh->GetFaces().empty())
+        {
+            return;
+        }
+
+        faceIds.reserve(mesh->GetFaces().size());
+        for (FID i = 0; i < (FID)mesh->GetFaces().size(); ++i)
+        {
+            if (mesh->GetFaces()[i].eid != INVALID_ID)
+            {
+                faceIds.push_back(i);
+            }
+        }
+
+        if (faceIds.empty())
+        {
+            return;
+        }
+
+        BVHNode rootNode;
+        rootNode.faceOffset = 0;
+        rootNode.faceCount = (int)faceIds.size();
+        nodes.push_back(rootNode);
+
+        UpdateNodeBounds(0);
+        SubdivideNode(0);
+    }
+
+    inline void BVH::UpdateNodeBounds(int nodeIndex)
+    {
+        BVHNode& node = nodes[nodeIndex];
+        node.bounds = AABB();
+
+        for (int i = 0; i < node.faceCount; ++i)
+        {
+            FID fid = faceIds[node.faceOffset + i];
+            AABB faceBox = mesh->GetFaceAABB(fid);
+            node.bounds.Expand(faceBox);
+        }
+    }
+
+    inline void BVH::SubdivideNode(int nodeIndex)
+    {
+        int faceCount = nodes[nodeIndex].faceCount;
+        if (faceCount <= 4)
+        {
+            return;
+        }
+
+        Eigen::Vector3f extent = nodes[nodeIndex].bounds.maxBound - nodes[nodeIndex].bounds.minBound;
+        int axis = 0;
+        if (extent.y() > extent.x())
+        {
+            axis = 1;
+        }
+        if (extent.z() > extent[axis])
+        {
+            axis = 2;
+        }
+
+        int faceOffset = nodes[nodeIndex].faceOffset;
+        int middleIndex = faceOffset + faceCount / 2;
+
+        std::nth_element(
+            faceIds.begin() + faceOffset,
+            faceIds.begin() + middleIndex,
+            faceIds.begin() + faceOffset + faceCount,
+            [&](FID a, FID b)
+            {
+                return mesh->GetFaceCentroid(a)[axis] < mesh->GetFaceCentroid(b)[axis];
+            });
+
+        int leftCount = middleIndex - faceOffset;
+        int rightCount = faceCount - leftCount;
+
+        int leftChildIdx = (int)nodes.size();
+        nodes.push_back(BVHNode());
+
+        int rightChildIdx = (int)nodes.size();
+        nodes.push_back(BVHNode());
+
+        nodes[leftChildIdx].faceOffset = faceOffset;
+        nodes[leftChildIdx].faceCount = leftCount;
+
+        nodes[rightChildIdx].faceOffset = middleIndex;
+        nodes[rightChildIdx].faceCount = rightCount;
+
+        nodes[nodeIndex].leftChild = leftChildIdx;
+        nodes[nodeIndex].rightChild = rightChildIdx;
+        nodes[nodeIndex].faceCount = 0;
+
+        UpdateNodeBounds(leftChildIdx);
+        UpdateNodeBounds(rightChildIdx);
+
+        SubdivideNode(leftChildIdx);
+        SubdivideNode(rightChildIdx);
+    }
+
+    inline void BVH::Query(const AABB& queryBounds, std::vector<FID>& outFaces) const
+    {
+        if (nodes.empty())
+        {
+            return;
+        }
+
+        std::vector<int> stack;
+        stack.reserve(64);
+        stack.push_back(0);
+
+        while (!stack.empty())
+        {
+            int nodeIdx = stack.back();
+            stack.pop_back();
+
+            const BVHNode& node = nodes[nodeIdx];
+            if (!node.bounds.Intersects(queryBounds))
+            {
+                continue;
+            }
+
+            if (node.IsLeaf())
+            {
+                for (int i = 0; i < node.faceCount; ++i)
+                {
+                    outFaces.push_back(faceIds[node.faceOffset + i]);
+                }
+            }
+            else
+            {
+                stack.push_back(node.leftChild);
+                stack.push_back(node.rightChild);
+            }
+        }
+    }
 }
