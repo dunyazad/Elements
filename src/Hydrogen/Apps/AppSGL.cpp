@@ -18,14 +18,6 @@ using VD = VisualDebugging;
 
 #include "SimpleGeometryLibrary.hpp"
 
-namespace Eigen
-{
-    template <typename Type, int Size>
-    using Vector = Matrix<Type, Size, 1>;
-    using Vector3b = Vector<unsigned char, 3>;
-    using Vector3ui = Vector<unsigned int, 3>;
-}
-
 class HeliumMesh : public SGL::Mesh
 {
 public:
@@ -41,8 +33,8 @@ public:
 
     bool isDirty = true;
 
-    Eigen::Vector3f offset = Eigen::Vector3f::Zero();
-    Eigen::Vector4f color = Eigen::Vector4f(0.8f, 0.8f, 0.8f, 1.0f);
+    Eigen::Vector3f offset;
+    Eigen::Vector4f color = { 0.8f, 0.8f, 0.8f, 1.0f };
 
     void Update()
     {
@@ -112,50 +104,23 @@ public:
                         int pickedTriangleIndex = -1;
                         float pickedDistance = std::numeric_limits<float>::max();
 
-                        if (!bvh.nodes.empty())
+                        for (size_t i = 0; i < currentRenderable->GetNumberOfIndices() / 3; i++)
                         {
-                            Eigen::Vector3f localOrigin = ray.origin - offset;
-                            Eigen::Vector3f invDir(1.0f / ray.direction.x(), 1.0f / ray.direction.y(), 1.0f / ray.direction.z());
+                            auto i0 = currentRenderable->GetIndex(i * 3);
+                            auto i1 = currentRenderable->GetIndex(i * 3 + 1);
+                            auto i2 = currentRenderable->GetIndex(i * 3 + 2);
+                            Eigen::Vector3f v0 = currentRenderable->GetVertex(i0);
+                            Eigen::Vector3f v1 = currentRenderable->GetVertex(i1);
+                            Eigen::Vector3f v2 = currentRenderable->GetVertex(i2);
 
-                            std::vector<int> stack;
-                            stack.reserve(64);
-                            stack.push_back(0);
-
-                            while (!stack.empty())
+                            auto normal = (v1 - v0).normalized().cross((v2 - v0).normalized());
+                            float t = 0.0f;
+                            if (ray.IntersectTriangle(v0, v1, v2, t))
                             {
-                                int nodeIdx = stack.back();
-                                stack.pop_back();
-
-                                const SGL::BVHNode& node = bvh.nodes[nodeIdx];
-
-                                if (!IntersectRayAABB(localOrigin, invDir, node.bounds))
+                                if (t < pickedDistance)
                                 {
-                                    continue;
-                                }
-
-                                if (node.IsLeaf())
-                                {
-                                    for (int i = 0; i < node.faceCount; ++i)
-                                    {
-                                        SGL::FID fid = bvh.faceIds[node.faceOffset + i];
-                                        Eigen::Vector3f v0, v1, v2;
-                                        GetFaceVertices(fid, v0, v1, v2);
-
-                                        float t = 0.0f;
-                                        if (IntersectRayTriangle(localOrigin, ray.direction, v0, v1, v2, t))
-                                        {
-                                            if (t > 0.0f && t < pickedDistance)
-                                            {
-                                                pickedDistance = t;
-                                                pickedTriangleIndex = (int)fid;
-                                            }
-                                        }
-                                    }
-                                }
-                                else
-                                {
-                                    stack.push_back(node.leftChild);
-                                    stack.push_back(node.rightChild);
+                                    pickedDistance = t;
+                                    pickedTriangleIndex = (int)i;
                                 }
                             }
                         }
@@ -165,17 +130,28 @@ public:
                             VD::Clear("HitPoint");
                             VD::Clear("HitTriangle");
 
-                            Eigen::Vector3f localHitPoint = (ray.origin - offset) + ray.direction * pickedDistance;
+                            auto i0 = currentRenderable->GetIndex(pickedTriangleIndex * 3);
+                            auto i1 = currentRenderable->GetIndex(pickedTriangleIndex * 3 + 1);
+                            auto i2 = currentRenderable->GetIndex(pickedTriangleIndex * 3 + 2);
+                            Eigen::Vector3f v0 = currentRenderable->GetVertex(i0);
+                            Eigen::Vector3f v1 = currentRenderable->GetVertex(i1);
+                            Eigen::Vector3f v2 = currentRenderable->GetVertex(i2);
+                            auto normal = (v1 - v0).normalized().cross((v2 - v0).normalized());
 
-                            SplitFaceByPoint(pickedTriangleIndex, localHitPoint);
-                            RebuildBVH();
+                            Eigen::Vector3f hitPoint = ray.origin + ray.direction * pickedDistance;
+                            //VD::AddSphere("HitPoint", hitPoint, normal, 0.01f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
+
+                            //VD::AddTriangle("HitTriangle", v0, v1, v2, Eigen::Vector4f(0.0f, 1.0f, 0.0f, 1.0f));
+
+                            //color = Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f);
+
+                            SplitFaceByPoint(pickedTriangleIndex, hitPoint);
 
                             isDirty = true;
 
                             if (event.modifiers & static_cast<int>(KeyModifiers::Control))
                             {
-                                Eigen::Vector3f worldHitPoint = localHitPoint + offset;
-                                camera->SetTarget(worldHitPoint);
+                                camera->SetTarget(hitPoint);
                             }
                         }
                     }
@@ -187,7 +163,7 @@ public:
                 positions[i] = points[vertices[i].pid] + offset;
             }
 
-            std::vector<Eigen::Vector3f> normals(positions.size(), Eigen::Vector3f::Zero());
+            std::vector<Eigen::Vector3f> normals(positions.size(), Eigen::Vector3f());
 
             for (const auto& face : faces)
             {
@@ -203,8 +179,7 @@ public:
                 SGL::VID v0 = halfEdges[e2].vid;
                 SGL::VID v1 = halfEdges[e0].vid;
                 SGL::VID v2 = halfEdges[e1].vid;
-
-                Eigen::Vector3f normal = (positions[v1] - positions[v0]).cross(positions[v2] - positions[v0]).normalized();
+                Eigen::Vector3f normal = (positions[v1] - positions[v0]).normalized().cross((positions[v2] - positions[v0]).normalized());
                 normals[v0] += normal;
                 normals[v1] += normal;
                 normals[v2] += normal;
@@ -250,7 +225,7 @@ public:
                 positions[i] = points[vertices[i].pid] + offset;
             }
 
-            std::vector<Eigen::Vector3f> normals(positions.size(), Eigen::Vector3f::Zero());
+            std::vector<Eigen::Vector3f> normals(positions.size(), Eigen::Vector3f());
 
             for (const auto& face : faces)
             {
@@ -267,7 +242,7 @@ public:
                 SGL::VID v1 = halfEdges[e0].vid;
                 SGL::VID v2 = halfEdges[e1].vid;
 
-                Eigen::Vector3f normal = (positions[v1] - positions[v0]).cross(positions[v2] - positions[v0]).normalized();
+                Eigen::Vector3f normal = (positions[v1] - positions[v0]).normalized().cross((positions[v2] - positions[v0]).normalized());
                 normals[v0] += normal;
                 normals[v1] += normal;
                 normals[v2] += normal;
@@ -311,10 +286,10 @@ public:
     }
 };
 
-class AppHalfEdgeMesh : public App
+class AppSGL : public App
 {
 public:
-    void Execute_Basic()
+    virtual void Execute() override
     {
         meshes.emplace_back(std::make_unique<HeliumMesh>());
         HeliumMesh& mesh = *meshes.back();
@@ -329,124 +304,16 @@ public:
             mesh.Build(stl.GetPoints(), indices);
         }
 
-        //Helium.AddOnUpdateCallback([this](float timeDelta)
-        //    {
-        //        for (auto& m : this->meshes)
-        //        {
-        //            m->Update();
-        //        }
-        //    });
-
-        TS(BuildBSP);
-        mesh.BuildBSP();
-        TE(BuildBSP);
-
-		std::vector<SGL::Triangle> triangles;
-
-		int maxCoplanarFaces = 0;
-		auto& bsp = mesh.GetBSP();
-        std::function<void(const SGL::BSPNode*, int)> drawRecursive = [&] (const SGL::BSPNode* node, int depth) {
-            if (!node)
+        Helium.AddOnUpdateCallback([this](float timeDelta)
             {
-                return;
-            }
-
-			maxCoplanarFaces = std::max(maxCoplanarFaces, (int)node->coplanarFaces.size());
-            for (size_t i = 0; i < node->coplanarFaces.size(); i++)
-            {
-                Eigen::Vector3f v0;
-                Eigen::Vector3f v1;
-                Eigen::Vector3f v2;
-                mesh.GetFaceVertices(node->coplanarFaces[i], v0, v1, v2);
-
-				triangles.push_back({ v0, v1, v2 });
-
-                VD::AddTriangle(
-                    "BSP",
-                    v0 + mesh.offset,
-                    v1 + mesh.offset,
-                    v2 + mesh.offset,
-                    Eigen::Vector4f(0.8f, 0.8f, 0.8f, 1.0f)
-				);
-            }
-
-            if (node->front)
-            {
-                drawRecursive(node->front, depth + 1);
-            }
-            if (node->back)
-            {
-                drawRecursive(node->back, depth + 1);
-            }
-        };
-
-		drawRecursive(bsp.root, 0);
-
-		printf("Max coplanar faces in a BSP node: %d\n", maxCoplanarFaces);
-
-        //Save Triangles to STL
-        {
-            STLFormat stl;
-			stl.GetPoints().resize(triangles.size() * 3);
-            for (size_t i = 0; i < triangles.size(); i++)
-            {
-                stl.GetPoints()[i * 3] = triangles[i].v0;
-                stl.GetPoints()[i * 3 + 1] = triangles[i].v1;
-                stl.GetPoints()[i * 3 + 2] = triangles[i].v2;
-            }
-            stl.Serialize("D:\\Resources\\3D\\STL\\bsp_output.stl");
-		}
-    }
-
-    virtual void Execute_Boolean()
-    {
-        {
-            meshes.emplace_back(std::make_unique<HeliumMesh>());
-            HeliumMesh& mesh = *meshes.back();
-            {
-                STLFormat stl;
-                stl.Deserialize("D:\\Resources\\3D\\STL\\rabbit.stl");
-                std::vector<Eigen::Vector3i> indices;
-                for (size_t i = 0; i < stl.GetPoints().size() / 3; i++)
+                for (auto& m : this->meshes)
                 {
-                    indices.push_back(Eigen::Vector3i(i * 3, i * 3 + 1, i * 3 + 2));
+                    m->Update();
                 }
-                mesh.Build(stl.GetPoints(), indices);
-            }
-        }
-
-        {
-            meshes.emplace_back(std::make_unique<HeliumMesh>());
-            HeliumMesh& mesh = *meshes.back();
-            {
-                STLFormat stl;
-                stl.Deserialize("D:\\Resources\\3D\\STL\\rabbit_upside_down.stl");
-                std::vector<Eigen::Vector3i> indices;
-                for (size_t i = 0; i < stl.GetPoints().size() / 3; i++)
-                {
-                    indices.push_back(Eigen::Vector3i(i * 3, i * 3 + 1, i * 3 + 2));
-                }
-                mesh.Build(stl.GetPoints(), indices);
-            }
-        }
-
-        {
-            SGL::Mesh resultUnion = SGL::CSG::PerformCSG(meshes[0].get(), meshes[1].get(), SGL::CSGOperation::UNION);
-            if (resultUnion.ToSTL("D:\\Temp\\csg_union.stl"))
-            {
-                std::cout << "Saved: csg_union.stl" << std::endl;
-            }
-        }
-    }
-
-    virtual void Execute() override
-    {
-		//Execute_Basic();
-
-        Execute_Boolean();
+            });
     }
 
     std::vector<std::unique_ptr<HeliumMesh>> meshes;
 };
 
-REGISTER_APP(AppHalfEdgeMesh, "AppHalfEdgeMesh");
+REGISTER_APP(AppSGL, "AppSGL");
