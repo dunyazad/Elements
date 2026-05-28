@@ -860,17 +860,57 @@ namespace SGL
         {
             const float SNAP_EPS = 1e-4f;
 
+            // [핵심 최적화 1] 루프 시작 전의 총 면 개수를 기록해 둡니다.
+            // 이후 쪼개기(split)로 인해 맨 뒤에 추가된 '새로운 면'들만 별도로 추적하기 위함입니다.
+            int initial_face_count = static_cast<int>(n_faces());
+
             for (const auto& pt : polyline)
             {
                 OpenMesh::FaceHandle target_fh(-1);
                 OpenMesh::EdgeHandle target_eh(-1);
                 OpenMesh::VertexHandle target_vh(-1);
 
-                // 1. "미리 계산하지 않고", 매 점을 찌를 때마다 현재 업데이트된 메쉬에서 위치를 실시간으로 찾습니다.
-                for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+                // [핵심 최적화 2] 전체(faces_begin~end)를 순회하지 않고, 후보 면(Candidate Faces)만 수집합니다.
+                std::vector<OpenMesh::FaceHandle> candidate_faces;
+                candidate_faces.reserve(100);
+
+                // A. 기존 해시맵에서 점 주변(3x3x3 복셀)의 면들을 가져옵니다.
+                Eigen::Vector3f local_pos = pt - grid_min;
+                int cx = static_cast<int>(std::floor(local_pos.x() / grid_cell_size.x()));
+                int cy = static_cast<int>(std::floor(local_pos.y() / grid_cell_size.y()));
+                int cz = static_cast<int>(std::floor(local_pos.z() / grid_cell_size.z()));
+
+                for (int dz = -1; dz <= 1; ++dz) {
+                    for (int dy = -1; dy <= 1; ++dy) {
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            auto it = hash_map.find(Eigen::Vector3i(cx + dx, cy + dy, cz + dz));
+                            if (it != hash_map.end()) {
+                                for (int f_idx : it->second) {
+                                    auto fh = face_handle(f_idx);
+                                    // 삭제된 면이 아니라면 후보에 추가 (split으로 원본 면 모양이 바뀐 건 그대로 사용 가능)
+                                    if (!status(fh).deleted()) {
+                                        candidate_faces.push_back(fh);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // B. 이 polyline 루프가 도는 동안 '새롭게 생성된' 싱싱한 면들을 모두 후보에 추가합니다.
+                // OpenMesh는 새 면을 배열 끝에 추가하므로, initial_face_count 부터 현재 n_faces() 까지만 확인하면 됩니다.
+                int current_face_count = static_cast<int>(n_faces());
+                for (int i = initial_face_count; i < current_face_count; ++i) {
+                    auto fh = face_handle(i);
+                    if (!status(fh).deleted()) {
+                        candidate_faces.push_back(fh);
+                    }
+                }
+
+                for (auto fh : candidate_faces)
                 {
                     Eigen::Vector3f v0, v1, v2;
-                    GetFaceVertices(*f_it, v0, v1, v2);
+                    GetFaceVertices(fh, v0, v1, v2);
 
                     Eigen::Vector3f n = (v1 - v0).cross(v2 - v0);
                     if (n.squaredNorm() < 1e-8f) continue;
@@ -879,13 +919,11 @@ namespace SGL
                     // 평면에서 너무 멀면 패스
                     if (std::abs(n.dot(pt - v0)) > 1e-3f) continue;
 
-                    // 이 점이 속한 "현재 살아있는" 면(Face)을 발견!
                     if (IsPointInTriangle(pt, v0, v1, v2))
                     {
-                        target_fh = *f_it;
+                        target_fh = fh;
 
-                        // 2. 엣지나 정점에 가까우면 즉시 위상 승격(Promotion)하여 슬리버 방지
-                        for (auto fh_it = cfh_iter(*f_it); fh_it.is_valid(); ++fh_it)
+                        for (auto fh_it = cfh_iter(fh); fh_it.is_valid(); ++fh_it)
                         {
                             auto heh = *fh_it;
                             auto vh0 = from_vertex_handle(heh);
@@ -895,27 +933,26 @@ namespace SGL
 
                             if (DistanceToSegment(pt, ev0, ev1) < SNAP_EPS)
                             {
-                                target_fh = OpenMesh::FaceHandle(-1); // 면 취소
-                                target_eh = edge_handle(heh);         // 엣지 승격
+                                target_fh = OpenMesh::FaceHandle(-1);
+                                target_eh = edge_handle(heh);
 
                                 if ((pt - ev0).squaredNorm() < SNAP_EPS * SNAP_EPS) {
                                     target_eh = OpenMesh::EdgeHandle(-1);
-                                    target_vh = vh0; // 정점 승격
+                                    target_vh = vh0;
                                     break;
                                 }
                                 else if ((pt - ev1).squaredNorm() < SNAP_EPS * SNAP_EPS) {
                                     target_eh = OpenMesh::EdgeHandle(-1);
-                                    target_vh = vh1; // 정점 승격
+                                    target_vh = vh1;
                                     break;
                                 }
                             }
                         }
-                        break; // 올바른 타겟을 찾았으므로 탐색 종료
+                        break; // 타겟을 찾았으므로 즉시 종료
                     }
                 }
 
-                // 3. 찾은 싱싱한(?) 위상을 바탕으로 즉시 쪼개기 (Stale Handle 문제 원천 차단)
-                if (target_vh.is_valid()) continue; // 이미 있는 정점이면 통과
+                if (target_vh.is_valid()) continue;
 
                 if (target_eh.is_valid() || target_fh.is_valid())
                 {
@@ -924,12 +961,11 @@ namespace SGL
                         split(target_eh, new_v);
                     }
                     else if (target_fh.is_valid()) {
-                        split(target_fh, new_v); // 면이 쪼개지며 즉시 메쉬 토폴로지 업데이트 됨
+                        split(target_fh, new_v);
                     }
                 }
             }
 
-            // 모든 분할이 끝난 후 공간 해시맵 1회 업데이트
             garbage_collection();
             BuildSpatialHashMap();
         }
