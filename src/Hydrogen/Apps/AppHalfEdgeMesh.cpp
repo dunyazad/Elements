@@ -64,6 +64,13 @@ public:
     Eigen::Vector3f offset = Eigen::Vector3f::Zero();
     Eigen::Vector4f color = Eigen::Vector4f(0.8f, 0.8f, 0.8f, 1.0f);
 
+    enum OperationMode
+    {
+        None,
+        FlipEdge,
+		SplitFace,
+	} current_mode = None;
+
     void Update()
     {
         if (false == is_dirty) return;
@@ -78,7 +85,7 @@ public:
             renderable->AddShader(Helium.CreateShader("Default", File("../../res/Shaders/Default.vs"), File("../../res/Shaders/Default.fs")));
             renderable->SetFaceCullingMode(Renderable::NoCulling);
 
-            Helium.CreateEventCallback<KeyEvent>(entity, "Mesh", [](Entity e, const KeyEvent& event)
+            Helium.CreateEventCallback<KeyEvent>(entity, "Mesh", [this](Entity e, const KeyEvent& event)
                 {
                     auto current_renderable = Helium.GetComponent<Renderable>(e);
                     if (nullptr == current_renderable) return;
@@ -91,6 +98,12 @@ public:
                         current_renderable->SetDrawingMode(Renderable::WireFrameOverSolid);
                     else if (event.action == 1 && KeyCode::D4 == event.keyCode)
                         current_renderable->SetDrawingMode(Renderable::Point);
+                    else if (event.action == 1 && KeyCode::F1 == event.keyCode)
+						current_mode = OperationMode::None;
+                    else if (event.action == 1 && KeyCode::F2 == event.keyCode)
+                        current_mode = OperationMode::FlipEdge;
+                    else if (event.action == 1 && KeyCode::F3 == event.keyCode)
+                        current_mode = OperationMode::SplitFace;
                 });
 
             Helium.CreateEventCallback<MouseButtonEvent>(entity, "Mesh", [this](Entity e, const MouseButtonEvent& event)
@@ -124,68 +137,104 @@ public:
                         }
                         TE(Picking);
 
-                        if (picked_triangle.is_valid())
+                        if (OperationMode::FlipEdge == current_mode)
                         {
-                            auto picked_point = ray.origin + ray.direction * picked_distance;
-							if (event.IsCtrlPressed())
-							{
-								auto cameraEntity = Helium.GetEntityByName("MainCamera");
-								Helium.GetComponent<Camera>(cameraEntity)->SetTarget(picked_point);
-							}
-
-                            OpenMesh::EdgeHandle target_edge;
-                            float min_dist = std::numeric_limits<float>::max();
-                            Eigen::Vector3f target_v0, target_v1; // 디버깅 선을 그리기 위한 변수
-
-                            // 2. 면의 하프엣지(Halfedge)를 순회하며 엣지 선분과 교차점 사이의 거리를 정확히 측정
-                            for (auto fh_it = fh_iter(picked_triangle); fh_it.is_valid(); ++fh_it)
+                            if (picked_triangle.is_valid())
                             {
-                                // 해당 엣지의 진짜 양 끝점(Vertex)을 직접 가져옴 (순서 꼬임 원천 차단!)
-                                auto v0_handle = from_vertex_handle(*fh_it);
-                                auto v1_handle = to_vertex_handle(*fh_it);
-
-                                Eigen::Vector3f v0(point(v0_handle).data());
-                                Eigen::Vector3f v1(point(v1_handle).data());
-
-                                // 클릭한 교차점(hit_point)에서 엣지 선분(v0 ~ v1)까지의 거리 계산
-                                float dist = DistanceToSegment(picked_point, v0, v1);
-
-                                // 가장 가까운 엣지 찾기
-                                if (dist < min_dist)
+                                auto picked_point = ray.origin + ray.direction * picked_distance;
+                                if (event.IsCtrlPressed())
                                 {
-                                    min_dist = dist;
-                                    target_edge = edge_handle(*fh_it);
-                                    target_v0 = v0;
-                                    target_v1 = v1;
+                                    auto cameraEntity = Helium.GetEntityByName("MainCamera");
+                                    Helium.GetComponent<Camera>(cameraEntity)->SetTarget(picked_point);
                                 }
-                            }
 
-                            if (target_edge.is_valid())
+                                OpenMesh::EdgeHandle target_edge;
+                                float min_dist = std::numeric_limits<float>::max();
+                                Eigen::Vector3f target_v0, target_v1; // 디버깅 선을 그리기 위한 변수
+
+                                // 2. 면의 하프엣지(Halfedge)를 순회하며 엣지 선분과 교차점 사이의 거리를 정확히 측정
+                                for (auto fh_it = fh_iter(picked_triangle); fh_it.is_valid(); ++fh_it)
+                                {
+                                    // 해당 엣지의 진짜 양 끝점(Vertex)을 직접 가져옴 (순서 꼬임 원천 차단!)
+                                    auto v0_handle = from_vertex_handle(*fh_it);
+                                    auto v1_handle = to_vertex_handle(*fh_it);
+
+                                    Eigen::Vector3f v0(point(v0_handle).data());
+                                    Eigen::Vector3f v1(point(v1_handle).data());
+
+                                    // 클릭한 교차점(hit_point)에서 엣지 선분(v0 ~ v1)까지의 거리 계산
+                                    float dist = DistanceToSegment(picked_point, v0, v1);
+
+                                    // 가장 가까운 엣지 찾기
+                                    if (dist < min_dist)
+                                    {
+                                        min_dist = dist;
+                                        target_edge = edge_handle(*fh_it);
+                                        target_v0 = v0;
+                                        target_v1 = v1;
+                                    }
+                                }
+
+                                if (target_edge.is_valid())
+                                {
+                                    VD::Clear("Picked edge");
+                                    // 시각화할 때는 offset을 더해 다시 월드 좌표로 변환해 줍니다.
+                                    //VD::AddLine("Picked edge", target_v0 + offset, target_v1 + offset, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
+
+                                    if (is_flip_ok(target_edge) && IsConvexQuadrilateral(target_edge))
+                                    {
+                                        flip(target_edge);
+
+                                        TS(BuildSpatialHashMap);
+                                        BuildSpatialHashMap();
+                                        TE(BuildSpatialHashMap);
+
+                                        is_dirty = true;
+                                    }
+                                    else
+                                    {
+                                        // 외곽선(Boundary)이거나 위상 구조가 망가지는 경우 플립 방지
+                                        std::cout << "[Warning] Cannot flip this edge (Boundary or Non-manifold)." << std::endl;
+                                    }
+                                }
+
+                                VD::Clear("Picked");
+                                //VD::AddTriangle("Picked", v0 + offset, v1 + offset, v2 + offset, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
+                                VD::AddSphere("Picked", picked_point, { 0.0f, 0.0f, 1.0f }, 0.005f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
+                            }
+                        }
+                        else if (OperationMode::SplitFace == current_mode)
+                        {
+                            if (picked_triangle.is_valid())
                             {
-                                VD::Clear("Picked edge");
-                                // 시각화할 때는 offset을 더해 다시 월드 좌표로 변환해 줍니다.
-                                //VD::AddLine("Picked edge", target_v0 + offset, target_v1 + offset, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
-
-                                if (is_flip_ok(target_edge) && IsConvexQuadrilateral(target_edge))
+                                auto picked_point = ray.origin + ray.direction * picked_distance;
+                                if (event.IsCtrlPressed())
                                 {
-                                    flip(target_edge);
-
-                                    TS(BuildSpatialHashMap);
-                                    BuildSpatialHashMap();
-                                    TE(BuildSpatialHashMap);
-
-                                    is_dirty = true;
+                                    auto cameraEntity = Helium.GetEntityByName("MainCamera");
+                                    Helium.GetComponent<Camera>(cameraEntity)->SetTarget(picked_point);
                                 }
-                                else
-                                {
-                                    // 외곽선(Boundary)이거나 위상 구조가 망가지는 경우 플립 방지
-                                    std::cout << "[Warning] Cannot flip this edge (Boundary or Non-manifold)." << std::endl;
-                                }
+                                //OpenMesh::VertexHandle new_vertex = add_vertex(OpenMesh::Vec3f(picked_point.x(), picked_point.y(), picked_point.z()) - offset);
+                                //std::vector<OpenMesh::VertexHandle> face_vertices;
+                                //for (auto fv_it = cfv_iter(picked_triangle); fv_it.is_valid(); ++fv_it)
+                                //{
+                                //    face_vertices.push_back(*fv_it);
+                                //}
+                                //// 기존 삼각형을 3개의 새로운 삼각형으로 분할
+                                //add_face(face_vertices[0], face_vertices[1], new_vertex);
+                                //add_face(face_vertices[1], face_vertices[2], new_vertex);
+                                //add_face(face_vertices[2], face_vertices[0], new_vertex);
+                                //delete_face(picked_triangle);
+                                //TS(BuildSpatialHashMap);
+                                //BuildSpatialHashMap();
+                                //TE(BuildSpatialHashMap);
+                                //is_dirty = true;
+
+								split(picked_triangle, OpenMesh::Vec3f(picked_point.x(), picked_point.y(), picked_point.z()));
+                                TS(BuildSpatialHashMap);
+                                BuildSpatialHashMap();
+                                TE(BuildSpatialHashMap);
+                                is_dirty = true;
                             }
-
-                            VD::Clear("Picked");
-                            //VD::AddTriangle("Picked", v0 + offset, v1 + offset, v2 + offset, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
-                            VD::AddSphere("Picked", picked_point, {0.0f, 0.0f, 1.0f}, 0.005f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
                         }
                     }
                 });
@@ -248,7 +297,8 @@ public:
             HeliumMesh& mesh = *meshes.back();
             {
                 STLFormat stl;
-                stl.Deserialize("D:\\Resources\\3D\\STL\\maxilla_fixed.stl");
+                //stl.Deserialize("D:\\Resources\\3D\\STL\\maxilla_fixed.stl");
+                stl.Deserialize("D:\\Resources\\3D\\STL\\rabbit.stl");
 
                 const std::vector<Eigen::Vector3f>& stl_points = stl.GetPoints();
                 std::vector<Eigen::Vector3f> welded_points;

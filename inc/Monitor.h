@@ -164,14 +164,14 @@ inline void MaximizeWindowOnMonitor(HWND hwnd, int monitorIndex)
     }
 }
 
-inline void MaximizeWindowOnLargestMonitor(HWND windowHandle)
+inline int MaximizeWindowOnLargestMonitor(HWND windowHandle)
 {
     std::vector<MonitorInfo> monitors;
     EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, reinterpret_cast<LPARAM>(&monitors));
 
     if (monitors.empty())
     {
-        return;
+        return -1;
     }
 
     int largestMonitorIndex = 0;
@@ -192,6 +192,8 @@ inline void MaximizeWindowOnLargestMonitor(HWND windowHandle)
     }
 
     MaximizeWindowOnMonitor(windowHandle, largestMonitorIndex);
+
+	return largestMonitorIndex;
 }
 
 inline void MaximizeConsoleWindowOnMonitor(int monitorIndex)
