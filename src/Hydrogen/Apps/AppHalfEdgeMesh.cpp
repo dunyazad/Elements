@@ -18,8 +18,8 @@
 #include <Helium/VisualDebugging.h>
 using VD = VisualDebugging;
 
-// 방금 덮어씌운 헤더를 인클루드 합니다!
 #include "SimpleGeometryLibrary.hpp"
+#include <OpenMesh/Core/IO/MeshIO.hh>
 
 namespace Eigen
 {
@@ -29,9 +29,6 @@ namespace Eigen
     using Vector3ui = Vector<unsigned int, 3>;
 }
 
-// ---------------------------------------------------------
-// 해시 맵을 위한 Eigen::Vector3f 해시 및 동등 비교 연산자
-// ---------------------------------------------------------
 struct Vector3fHash {
     size_t operator()(const Eigen::Vector3f& v) const {
         long long x = static_cast<long long>(std::round(v.x() * 10000.0f));
@@ -51,7 +48,6 @@ struct Vector3fEqual {
         return (a - b).squaredNorm() < 1e-8f;
     }
 };
-// ---------------------------------------------------------
 
 class HeliumMesh : public SGL::Mesh
 {
@@ -62,14 +58,17 @@ public:
     Entity entity = InvalidEntity;
     bool is_dirty = true;
     Eigen::Vector3f offset = Eigen::Vector3f::Zero();
-    Eigen::Vector4f color = Eigen::Vector4f(0.8f, 0.8f, 0.8f, 1.0f);
+
+    // [버그 수정]: OpenMesh의 내부 color() 메서드와 이름 충돌(Shadowing)이 
+    // 발생하지 않도록 변수명을 mesh_color로 변경합니다!
+    Eigen::Vector4f mesh_color = Eigen::Vector4f(0.8f, 0.8f, 0.8f, 1.0f);
 
     enum OperationMode
     {
         None,
         FlipEdge,
-		SplitFace,
-	} current_mode = None;
+        SplitFace,
+    } current_mode = None;
 
     void Update()
     {
@@ -98,8 +97,10 @@ public:
                         current_renderable->SetDrawingMode(Renderable::WireFrameOverSolid);
                     else if (event.action == 1 && KeyCode::D4 == event.keyCode)
                         current_renderable->SetDrawingMode(Renderable::Point);
+                    else if (event.action == 1 && KeyCode::D5 == event.keyCode)
+                        current_renderable->SetDrawingMode(Renderable::None);
                     else if (event.action == 1 && KeyCode::F1 == event.keyCode)
-						current_mode = OperationMode::None;
+                        current_mode = OperationMode::None;
                     else if (event.action == 1 && KeyCode::F2 == event.keyCode)
                         current_mode = OperationMode::FlipEdge;
                     else if (event.action == 1 && KeyCode::F3 == event.keyCode)
@@ -125,47 +126,38 @@ public:
                             Helium.GetHeight()
                         );
 
-                        OpenMesh::FaceHandle picked_triangle(-1);
-                        float picked_distance = std::numeric_limits<float>::max();
-
                         Eigen::Vector3f local_origin = ray.origin - offset;
 
-                        int f_idx = -1;
-                        if (IntersectGridRay(local_origin, ray.direction, picked_distance, f_idx))
-                        {
-                            picked_triangle = face_handle(f_idx);
-                        }
+                        SGL::IntersectionResult hit_result;
+                        bool is_hit = IntersectGridRay(local_origin, ray.direction, hit_result);
                         TE(Picking);
 
-                        if (OperationMode::FlipEdge == current_mode)
+                        if (is_hit)
                         {
-                            if (picked_triangle.is_valid())
-                            {
-                                auto picked_point = ray.origin + ray.direction * picked_distance;
-                                if (event.IsCtrlPressed())
-                                {
-                                    auto cameraEntity = Helium.GetEntityByName("MainCamera");
-                                    Helium.GetComponent<Camera>(cameraEntity)->SetTarget(picked_point);
-                                }
+                            auto world_picked_point = hit_result.hit_point + offset;
 
+                            if (event.IsCtrlPressed())
+                            {
+                                auto cameraEntity = Helium.GetEntityByName("MainCamera");
+                                Helium.GetComponent<Camera>(cameraEntity)->SetTarget(world_picked_point);
+                            }
+
+                            if (OperationMode::FlipEdge == current_mode)
+                            {
                                 OpenMesh::EdgeHandle target_edge;
                                 float min_dist = std::numeric_limits<float>::max();
-                                Eigen::Vector3f target_v0, target_v1; // 디버깅 선을 그리기 위한 변수
+                                Eigen::Vector3f target_v0, target_v1;
 
-                                // 2. 면의 하프엣지(Halfedge)를 순회하며 엣지 선분과 교차점 사이의 거리를 정확히 측정
-                                for (auto fh_it = fh_iter(picked_triangle); fh_it.is_valid(); ++fh_it)
+                                for (auto fh_it = fh_iter(hit_result.fh); fh_it.is_valid(); ++fh_it)
                                 {
-                                    // 해당 엣지의 진짜 양 끝점(Vertex)을 직접 가져옴 (순서 꼬임 원천 차단!)
                                     auto v0_handle = from_vertex_handle(*fh_it);
                                     auto v1_handle = to_vertex_handle(*fh_it);
 
                                     Eigen::Vector3f v0(point(v0_handle).data());
                                     Eigen::Vector3f v1(point(v1_handle).data());
 
-                                    // 클릭한 교차점(hit_point)에서 엣지 선분(v0 ~ v1)까지의 거리 계산
-                                    float dist = DistanceToSegment(picked_point, v0, v1);
+                                    float dist = DistanceToSegment(hit_result.hit_point, v0, v1);
 
-                                    // 가장 가까운 엣지 찾기
                                     if (dist < min_dist)
                                     {
                                         min_dist = dist;
@@ -178,8 +170,6 @@ public:
                                 if (target_edge.is_valid())
                                 {
                                     VD::Clear("Picked edge");
-                                    // 시각화할 때는 offset을 더해 다시 월드 좌표로 변환해 줍니다.
-                                    //VD::AddLine("Picked edge", target_v0 + offset, target_v1 + offset, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
 
                                     if (is_flip_ok(target_edge) && IsConvexQuadrilateral(target_edge))
                                     {
@@ -193,48 +183,42 @@ public:
                                     }
                                     else
                                     {
-                                        // 외곽선(Boundary)이거나 위상 구조가 망가지는 경우 플립 방지
                                         std::cout << "[Warning] Cannot flip this edge (Boundary or Non-manifold)." << std::endl;
                                     }
                                 }
-
-                                VD::Clear("Picked");
-                                //VD::AddTriangle("Picked", v0 + offset, v1 + offset, v2 + offset, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
-                                VD::AddSphere("Picked", picked_point, { 0.0f, 0.0f, 1.0f }, 0.005f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
                             }
-                        }
-                        else if (OperationMode::SplitFace == current_mode)
-                        {
-                            if (picked_triangle.is_valid())
+                            else if (OperationMode::SplitFace == current_mode)
                             {
-                                auto picked_point = ray.origin + ray.direction * picked_distance;
-                                if (event.IsCtrlPressed())
+                                if (hit_result.type != SGL::IntersectionType::Vertex)
                                 {
-                                    auto cameraEntity = Helium.GetEntityByName("MainCamera");
-                                    Helium.GetComponent<Camera>(cameraEntity)->SetTarget(picked_point);
-                                }
-                                //OpenMesh::VertexHandle new_vertex = add_vertex(OpenMesh::Vec3f(picked_point.x(), picked_point.y(), picked_point.z()) - offset);
-                                //std::vector<OpenMesh::VertexHandle> face_vertices;
-                                //for (auto fv_it = cfv_iter(picked_triangle); fv_it.is_valid(); ++fv_it)
-                                //{
-                                //    face_vertices.push_back(*fv_it);
-                                //}
-                                //// 기존 삼각형을 3개의 새로운 삼각형으로 분할
-                                //add_face(face_vertices[0], face_vertices[1], new_vertex);
-                                //add_face(face_vertices[1], face_vertices[2], new_vertex);
-                                //add_face(face_vertices[2], face_vertices[0], new_vertex);
-                                //delete_face(picked_triangle);
-                                //TS(BuildSpatialHashMap);
-                                //BuildSpatialHashMap();
-                                //TE(BuildSpatialHashMap);
-                                //is_dirty = true;
+                                    OpenMesh::VertexHandle new_v = add_vertex(Point(hit_result.hit_point.x(), hit_result.hit_point.y(), hit_result.hit_point.z()));
 
-								split(picked_triangle, OpenMesh::Vec3f(picked_point.x(), picked_point.y(), picked_point.z()));
-                                TS(BuildSpatialHashMap);
-                                BuildSpatialHashMap();
-                                TE(BuildSpatialHashMap);
-                                is_dirty = true;
+                                    if (hit_result.type == SGL::IntersectionType::Face)
+                                    {
+                                        split(hit_result.fh, new_v);
+                                        is_dirty = true;
+                                    }
+                                    else if (hit_result.type == SGL::IntersectionType::Edge)
+                                    {
+                                        split(hit_result.eh, new_v);
+                                        is_dirty = true;
+                                    }
+
+                                    if (is_dirty)
+                                    {
+                                        TS(BuildSpatialHashMap);
+                                        BuildSpatialHashMap();
+                                        TE(BuildSpatialHashMap);
+                                    }
+                                }
+                                else
+                                {
+                                    std::cout << "[Info] Snapped to existing vertex. Split aborted to prevent degenerate faces." << std::endl;
+                                }
                             }
+
+                            VD::Clear("Picked");
+                            VD::AddSphere("Picked", world_picked_point, { 0.0f, 0.0f, 1.0f }, 0.005f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
                         }
                     }
                 });
@@ -278,7 +262,9 @@ public:
 
             renderable->SetVertices(positions);
             renderable->SetNormals(normals);
-            renderable->SetColors4(std::vector<Eigen::Vector4f>(positions.size(), color));
+
+            // [버그 수정]: 변경된 변수명 mesh_color를 적용합니다.
+            renderable->SetColors4(std::vector<Eigen::Vector4f>(positions.size(), mesh_color));
             renderable->SetIndices(indices);
             renderable->Update();
         }
@@ -297,7 +283,6 @@ public:
             HeliumMesh& mesh = *meshes.back();
             {
                 STLFormat stl;
-                //stl.Deserialize("D:\\Resources\\3D\\STL\\maxilla_fixed.stl");
                 stl.Deserialize("D:\\Resources\\3D\\STL\\rabbit.stl");
 
                 const std::vector<Eigen::Vector3f>& stl_points = stl.GetPoints();
@@ -338,9 +323,142 @@ public:
             }
         }
 
+        {
+            meshes.emplace_back(std::make_unique<HeliumMesh>());
+            HeliumMesh& mesh = *meshes.back();
+            {
+                STLFormat stl;
+                stl.Deserialize("D:\\Resources\\3D\\STL\\rabbit_upside_down.stl");
+
+                const std::vector<Eigen::Vector3f>& stl_points = stl.GetPoints();
+                std::vector<Eigen::Vector3f> welded_points;
+                std::vector<Eigen::Vector3i> welded_indices;
+
+                robin_hood::unordered_map<Eigen::Vector3f, int, Vector3fHash, Vector3fEqual> vertex_map;
+
+                for (size_t i = 0; i < stl_points.size(); i += 3)
+                {
+                    Eigen::Vector3i face_indices;
+
+                    for (int j = 0; j < 3; ++j)
+                    {
+                        const Eigen::Vector3f& p = stl_points[i + j];
+                        auto it = vertex_map.find(p);
+
+                        if (it != vertex_map.end()) {
+                            face_indices[j] = it->second;
+                        }
+                        else {
+                            int new_idx = static_cast<int>(welded_points.size());
+                            welded_points.push_back(p);
+                            vertex_map[p] = new_idx;
+                            face_indices[j] = new_idx;
+                        }
+                    }
+
+                    if (face_indices[0] != face_indices[1] &&
+                        face_indices[1] != face_indices[2] &&
+                        face_indices[2] != face_indices[0])
+                    {
+                        welded_indices.push_back(face_indices);
+                    }
+                }
+
+                mesh.Build(welded_points, welded_indices);
+            }
+        }
+
+        // ====================================================================
+        // [핵심 로직] 추출 -> 용접 -> 연결 -> 상호 재분할 (Co-refinement)
+        // ====================================================================
+
+        TS(ExtractIntersectionSegments);
+        auto raw_segments = meshes[0]->ExtractIntersectionSegments(*meshes[1]);
+        auto welded_segments = meshes[0]->WeldSegments(raw_segments, 1e-4f);
+        auto linked_segments = meshes[0]->LinkSegments(welded_segments);
+        TE(ExtractIntersectionSegments);
+
+        TS(MutualCoRefinement);
+        auto BuildCutNodesForMesh = [](HeliumMesh& mesh, const std::vector<Eigen::Vector3f>& polyline) {
+            std::vector<SGL::Mesh::CutNode> nodes;
+            for (const auto& pt : polyline) {
+                SGL::Mesh::CutNode node(pt);
+
+                OpenMesh::FaceHandle best_face = mesh.FindFaceAtPosition(pt);
+
+                if (best_face.is_valid()) {
+                    node.fh = best_face;
+                    mesh.PromoteTopology(node, 1e-4f);
+                }
+                nodes.push_back(node);
+            }
+            return nodes;
+            };
+
+        for (const auto& ring : linked_segments) {
+            auto nodes_A = BuildCutNodesForMesh(*meshes[0], ring);
+            meshes[0]->SplitMeshDynamic(ring);
+            meshes[0]->is_dirty = true;
+
+            auto nodes_B = BuildCutNodesForMesh(*meshes[1], ring);
+            meshes[1]->SplitMeshDynamic(ring);
+            meshes[1]->is_dirty = true;
+        }
+        TE(MutualCoRefinement);
+
+        // ====================================================================
+        // [추가된 로직] 완벽하게 쪼개진 메쉬를 STL 및 PLY 파일로 내보내기
+        // ====================================================================
+        TS(ExportMeshes);
+
+        if (meshes.size() >= 2)
+        {
+            // [버그 수정]: HeliumMesh 자체의 변수 충돌을 방지하기 위해 기본 클래스(SGL::OMMesh)로 명시적 캐스팅합니다.
+            SGL::OMMesh& base_mesh0 = *meshes[0];
+            SGL::OMMesh& base_mesh1 = *meshes[1];
+
+            if (OpenMesh::IO::write_mesh(base_mesh0, "D:\\Temp\\CutResult_Mesh0.stl")) {
+                std::cout << "[Export Success] CutResult_Mesh0.stl 저장 완료!" << std::endl;
+            }
+            if (OpenMesh::IO::write_mesh(base_mesh0, "D:\\Temp\\CutResult_Mesh0.ply")) {
+                std::cout << "[Export Success] CutResult_Mesh0.ply 저장 완료!" << std::endl;
+            }
+
+            if (OpenMesh::IO::write_mesh(base_mesh1, "D:\\Temp\\CutResult_Mesh1.stl")) {
+                std::cout << "[Export Success] CutResult_Mesh1.stl 저장 완료!" << std::endl;
+            }
+            if (OpenMesh::IO::write_mesh(base_mesh1, "D:\\Temp\\CutResult_Mesh1.ply")) {
+                std::cout << "[Export Success] CutResult_Mesh1.ply 저장 완료!" << std::endl;
+            }
+        }
+
+        TE(ExportMeshes);
+        // ====================================================================
+
+        VD::Clear("CutLines");
+        for (const auto& ring : linked_segments)
+        {
+            auto red = Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f);
+            auto blue = Eigen::Vector4f(0.0f, 0.0f, 1.0f, 1.0f);
+            for (size_t i = 0; i < ring.size(); ++i)
+            {
+                auto color_line = red * (1.0f - static_cast<float>(i) / ring.size()) + blue * (static_cast<float>(i) / ring.size());
+
+                const auto& v0 = ring[i];
+                const auto& v1 = ring[(i + 1) % ring.size()];
+                VD::AddLine("CutLines", v0, v1, color_line);
+            }
+        }
+
         Helium.AddOnUpdateCallback([this](float time_delta)
             {
                 for (auto& m : this->meshes) m->Update();
+
+                if (meshes.size() >= 2)
+                {
+                    auto renderable_A = Helium.GetComponent<Renderable>(meshes[0]->entity);
+                    if (nullptr != renderable_A) { renderable_A->SetVisible(false); }
+                }
             });
     }
 
