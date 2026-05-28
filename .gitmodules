@@ -22,3 +22,6 @@
 [submodule "External/cccl"]
 	path = External/cccl
 	url = https://github.com/NVIDIA/cccl.git
+[submodule "External/OpenMesh"]
+	path = External/OpenMesh
+	url = https://gitlab.vci.rwth-aachen.de:9000/OpenMesh/OpenMesh.git

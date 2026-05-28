@@ -104,17 +104,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 	if ("000906A3BFEBFBFF" == cpuId)
 	{
+		auto largestMonitorIndex = MaximizeWindowOnLargestMonitor(hWnd);
+
 		AllocConsole();
 		freopen("CONOUT$", "w", stdout);
-		MaximizeConsoleWindowOnMonitor(3);
-		MaximizeWindowOnLargestMonitor(hWnd);
+		MaximizeConsoleWindowOnMonitor(largestMonitorIndex - 1);
 	}
 	else
 	{
+		auto largestMonitorIndex = MaximizeWindowOnLargestMonitor(hWnd);
+
 		AllocConsole();
 		freopen("CONOUT$", "w", stdout);
-		SetConsoleToHalfOfScreen(0, 1);
-		MaximizeWindowOnLargestMonitor(hWnd);
+		MaximizeConsoleWindowOnMonitor(largestMonitorIndex - 1);
 	}
 
 	std::cout << "CPU Vendor: " << vendor << std::endl;

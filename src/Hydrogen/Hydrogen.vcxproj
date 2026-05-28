@@ -117,7 +117,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;$(SolutionDir)External\nvapi510\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;$(SolutionDir)src\Hydrogen\Apps;$(SolutionDir)inc\robin_hood;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;$(SolutionDir)External\nvapi510\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;$(SolutionDir)src\Hydrogen\Apps;$(SolutionDir)inc\robin_hood;$(SolutionDir)External\OpenMesh\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <DisableSpecificWarnings>4819</DisableSpecificWarnings>
       <OpenMPSupport>true</OpenMPSupport>
@@ -125,8 +125,8 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\;$(CudaToolkitLibDir);$(SolutionDir)External\Manifold\lib\$(Configuration)\;$(SolutionDir)External\nvapi510\amd64</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Helium.lib;Copper.lib;cudart.lib;manifold.lib;nvapi64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\;$(CudaToolkitLibDir);$(SolutionDir)External\Manifold\lib\$(Configuration)\;$(SolutionDir)External\nvapi510\amd64;$(SolutionDir)External\OpenMesh\build\Build\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Helium.lib;Copper.lib;cudart.lib;manifold.lib;nvapi64.lib;OpenMeshCore.lib;OpenMeshTools.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
     </Link>
     <CudaCompile>
@@ -148,7 +148,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;$(SolutionDir)External\nvapi510\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;$(SolutionDir)src\Hydrogen\Apps;$(SolutionDir)inc\robin_hood;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;$(SolutionDir)External\nvapi510\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;$(SolutionDir)src\Hydrogen\Apps;$(SolutionDir)inc\robin_hood;$(SolutionDir)External\OpenMesh\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <DisableSpecificWarnings>4819</DisableSpecificWarnings>
@@ -157,8 +157,8 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\;$(CudaToolkitLibDir);$(SolutionDir)External\Manifold\lib\$(Configuration)\;$(SolutionDir)External\nvapi510\amd64</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Helium.lib;Copper.lib;cudart.lib;manifold.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\;$(CudaToolkitLibDir);$(SolutionDir)External\Manifold\lib\$(Configuration)\;$(SolutionDir)External\nvapi510\amd64;$(SolutionDir)External\OpenMesh\build\Build\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Helium.lib;Copper.lib;cudart.lib;manifold.lib;OpenMeshCored.lib;OpenMeshToolsd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
     </Link>
     <CudaCompile>
@@ -206,7 +206,6 @@
     <ClCompile Include="Apps\AppMorphology.cpp" />
     <ClCompile Include="Apps\AppMorphologyDebug.cpp" />
     <ClCompile Include="Apps\AppSDFFiltering.cpp" />
-    <ClCompile Include="Apps\AppSGL.cpp" />
     <ClCompile Include="Apps\AppSTL.cpp" />
     <ClCompile Include="Apps\AppTSDF.cpp" />
     <ClCompile Include="Apps\AppTSDFDevice.cpp" />

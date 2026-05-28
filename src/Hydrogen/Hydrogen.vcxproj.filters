@@ -143,9 +143,6 @@
     <ClCompile Include="Apps\AppManifold.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
-    <ClCompile Include="Apps\AppSGL.cpp">
-      <Filter>Apps</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Hydrogen.rc">
