@@ -300,10 +300,12 @@ public:
                         const Eigen::Vector3f& p = stl_points[i + j];
                         auto it = vertex_map.find(p);
 
-                        if (it != vertex_map.end()) {
+                        if (it != vertex_map.end())
+                        {
                             face_indices[j] = it->second;
                         }
-                        else {
+                        else
+                        {
                             int new_idx = static_cast<int>(welded_points.size());
                             welded_points.push_back(p);
                             vertex_map[p] = new_idx;
@@ -345,10 +347,12 @@ public:
                         const Eigen::Vector3f& p = stl_points[i + j];
                         auto it = vertex_map.find(p);
 
-                        if (it != vertex_map.end()) {
+                        if (it != vertex_map.end())
+                        {
                             face_indices[j] = it->second;
                         }
-                        else {
+                        else
+                        {
                             int new_idx = static_cast<int>(welded_points.size());
                             welded_points.push_back(p);
                             vertex_map[p] = new_idx;
@@ -367,91 +371,157 @@ public:
                 mesh.Build(welded_points, welded_indices);
             }
         }
-        
-        // ====================================================================
-        // [1] 시각화용 절단선(linked_segments) 유지 + 동시에 충돌 면 마킹!
-        // ====================================================================
+
         TS(ExtractIntersectionSegments);
         std::vector<char> cut_faces_mask;
-
-        // 추출하면서 마스크 포인터를 넘기면 부딪힌 면들이 cut_faces_mask에 기록됩니다.
         auto raw_segments = meshes[0]->ExtractIntersectionSegments(*meshes[1], &cut_faces_mask);
         auto welded_segments = meshes[0]->WeldSegments(raw_segments, 5e-3f);
         auto linked_segments = meshes[0]->LinkSegments(welded_segments, 5e-3f);
 
-        // 시각화를 위해 선 닫기 처리
-        for (auto& ring : linked_segments) {
-            if (ring.size() > 2 && (ring.front() - ring.back()).norm() > 1e-6f) {
+        for (auto& ring : linked_segments)
+        {
+            if (ring.size() > 2 && (ring.front() - ring.back()).norm() > 1e-6f)
+            {
                 ring.push_back(ring.front());
             }
         }
         TE(ExtractIntersectionSegments);
 
-        // ====================================================================
-        // [2] 마킹된 면을 즉시 삭제 (Trench Cut)
-        // ====================================================================
-        TS(TrenchCut);
         meshes[0]->DeleteMarkedFaces(cut_faces_mask);
         meshes[0]->is_dirty = true;
-        TE(TrenchCut);
 
-        // ====================================================================
-        // [3] 순수 Flood Fill 로 파편 분리 (이전에 만드신 SeparateDisconnectedMeshes)
-        // ====================================================================
-        TS(SeparateAndExport);
         auto separated_parts = meshes[0]->SeparateDisconnectedMeshes();
-
         std::cout << "[Info] Mesh separated into " << separated_parts.size() << " parts." << std::endl;
 
-        if (separated_parts.size() >= 2)
-        {
-            std::vector<Eigen::Vector4f> colors = {
-                Eigen::Vector4f(0.9f, 0.4f, 0.4f, 1.0f),
-                Eigen::Vector4f(0.4f, 0.8f, 0.4f, 1.0f),
-                Eigen::Vector4f(0.4f, 0.5f, 0.9f, 1.0f),
-                Eigen::Vector4f(0.8f, 0.8f, 0.3f, 1.0f)
-            };
-
-            for (size_t i = 0; i < separated_parts.size(); ++i)
-            {
-                std::string filename_stl = "D:\\Temp\\Separated_Part_" + std::to_string(i) + ".stl";
-                if (OpenMesh::IO::write_mesh(*separated_parts[i], filename_stl)) {
-                    std::cout << "[Export Success] " << filename_stl << " 저장 완료!" << std::endl;
-                }
-
-                auto new_helium_mesh = std::make_unique<HeliumMesh>();
-                new_helium_mesh->assign(*separated_parts[i]);
-                new_helium_mesh->BuildSpatialHashMap();
-                new_helium_mesh->mesh_color = colors[i % colors.size()];
-                new_helium_mesh->is_dirty = true;
-                meshes.push_back(std::move(new_helium_mesh));
-            }
-        }
-        TE(SeparateAndExport);
-
-        // ====================================================================
-        // [4] 보존된 linked_segments 로 노란색 절단선 시각화
-        // ====================================================================
         VD::Clear("CutLines");
-        for (const auto& ring : linked_segments)
+        VD::Clear("MatchedBoundaries");
+        VD::Clear("StartPoints");
+
+        for (size_t r = 0; r < linked_segments.size(); ++r)
         {
+            const auto& ring = linked_segments[r];
             for (size_t i = 0; i < ring.size() - 1; ++i)
             {
                 VD::AddLine("CutLines", ring[i], ring[i + 1], Eigen::Vector4f(1.0f, 1.0f, 0.0f, 1.0f));
             }
         }
 
-        // 렌더링 업데이트 시 원본 메쉬 숨기기
+        std::vector<Eigen::Vector4f> part_colors = {
+            Eigen::Vector4f(0.9f, 0.5f, 0.5f, 1.0f),
+            Eigen::Vector4f(0.5f, 0.9f, 0.5f, 1.0f),
+            Eigen::Vector4f(0.5f, 0.6f, 0.9f, 1.0f),
+            Eigen::Vector4f(0.8f, 0.6f, 0.9f, 1.0f)
+        };
+
+        std::vector<Eigen::Vector4f> border_colors = {
+            Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f),
+            Eigen::Vector4f(0.0f, 1.0f, 0.0f, 1.0f),
+            Eigen::Vector4f(0.0f, 0.0f, 1.0f, 1.0f),
+            Eigen::Vector4f(0.6f, 0.0f, 1.0f, 1.0f)
+        };
+
+        if (separated_parts.size() >= 2)
+        {
+            for (size_t i = 0; i < separated_parts.size(); ++i)
+            {
+                auto& part = separated_parts[i];
+
+                std::string filename = "D:\\Temp\\separated_part_" + std::to_string(i) + ".stl";
+                OpenMesh::IO::write_mesh(*part, filename);
+
+                auto boundaries = part->ExtractBoundaryLoops();
+
+                Eigen::Vector4f mesh_color = part_colors[i % part_colors.size()];
+                Eigen::Vector4f border_color = border_colors[i % border_colors.size()];
+
+                std::map<int, std::vector<OpenMesh::VertexHandle>> best_boundary_for_ring;
+
+                for (const auto& boundary : boundaries)
+                {
+                    int matched_ring_idx = part->MatchBoundaryToRing(boundary, linked_segments);
+
+                    if (matched_ring_idx != -1)
+                    {
+                        if (best_boundary_for_ring.find(matched_ring_idx) == best_boundary_for_ring.end() ||
+                            boundary.size() > best_boundary_for_ring[matched_ring_idx].size())
+                        {
+                            best_boundary_for_ring[matched_ring_idx] = boundary;
+                        }
+                    }
+                }
+
+                for (const auto& pair : best_boundary_for_ring)
+                {
+                    const auto& boundary = pair.second;
+                    int ring_idx = pair.first;
+                    const auto& ring = linked_segments[ring_idx];
+
+                    for (size_t b = 0; b < boundary.size(); ++b)
+                    {
+                        Eigen::Vector3f p1(part->point(boundary[b]).data());
+                        Eigen::Vector3f p2(part->point(boundary[(b + 1) % boundary.size()]).data());
+                        VD::AddLine("MatchedBoundaries", p1, p2, border_color);
+                    }
+
+                    int start_a = 0;
+                    int start_b = 0;
+                    float min_dist = std::numeric_limits<float>::max();
+
+                    int num_a = static_cast<int>(boundary.size());
+                    int num_b_original = static_cast<int>(ring.size());
+                    int num_b = (ring.front() - ring.back()).norm() < 1e-6f ? num_b_original - 1 : num_b_original;
+
+                    for (int n = 0; n < num_a; ++n)
+                    {
+                        Eigen::Vector3f p_a(part->point(boundary[n]).data());
+                        for (int m = 0; m < num_b; ++m)
+                        {
+                            float d = (p_a - ring[m]).squaredNorm();
+                            if (d < min_dist)
+                            {
+                                min_dist = d;
+                                start_a = n;
+                                start_b = m;
+                            }
+                        }
+                    }
+
+                    Eigen::Vector3f p_a0(part->point(boundary[start_a]).data());
+                    Eigen::Vector3f p_b0 = ring[start_b];
+
+                    VD::AddSphere("StartPoints", p_a0, { 0.0f, 0.0f, 1.0f }, 0.05f, mesh_color);
+                    VD::AddSphere("StartPoints", p_b0, { 0.0f, 0.0f, 1.0f }, 0.05f, border_color);
+                    VD::AddLine("StartPoints", p_a0, p_b0, mesh_color);
+                }
+
+                auto new_helium_mesh = std::make_unique<HeliumMesh>();
+                new_helium_mesh->assign(*part);
+                new_helium_mesh->BuildSpatialHashMap();
+                new_helium_mesh->mesh_color = mesh_color;
+                new_helium_mesh->is_dirty = true;
+                meshes.push_back(std::move(new_helium_mesh));
+            }
+        }
+
         Helium.AddOnUpdateCallback([this](float time_delta)
             {
-                for (auto& m : this->meshes) m->Update();
+                for (auto& m : this->meshes)
+                {
+                    m->Update();
+                }
 
                 if (meshes.size() >= 3)
                 {
-                    auto renderable_A = Helium.GetComponent<Renderable>(meshes[0]->entity);
-                    auto renderable_B = Helium.GetComponent<Renderable>(meshes[1]->entity);
-                    if (nullptr != renderable_A) renderable_A->SetVisible(false);
-                    if (nullptr != renderable_B) renderable_B->SetVisible(false);
+                    auto renderable_a = Helium.GetComponent<Renderable>(meshes[0]->entity);
+                    auto renderable_b = Helium.GetComponent<Renderable>(meshes[1]->entity);
+                    if (nullptr != renderable_a)
+                    {
+                        renderable_a->SetVisible(false);
+                    }
+                    if (nullptr != renderable_b)
+                    {
+                        renderable_b->SetVisible(false);
+                    }
                 }
             });
     }

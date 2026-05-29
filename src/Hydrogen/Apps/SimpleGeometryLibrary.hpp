@@ -92,6 +92,7 @@ namespace SGL
         {
             request_vertex_status();
             request_edge_status();
+            request_halfedge_status();
             request_face_status();
 
             std::vector<VertexHandle> v_handles;
@@ -1066,7 +1067,8 @@ namespace SGL
                     added_faces++;
                 }
 
-                if (added_faces > 0)
+                // 면이 1개 이하인(삼각형 하나짜리) 찌꺼기 메쉬는 반환 리스트에서 무시합니다.
+                if (added_faces > 1)
                 {
                     new_mesh->BuildSpatialHashMap();
                     result_meshes.push_back(std::move(new_mesh));
@@ -1075,6 +1077,154 @@ namespace SGL
 
             return result_meshes;
         }
+
+        // ---------------------------------------------------------
+        // 1. 메쉬에 뚫려있는 모든 경계선(Boundary Loops)을 추출
+        // ---------------------------------------------------------
+        std::vector<std::vector<OpenMesh::VertexHandle>> ExtractBoundaryLoops() const
+        {
+            std::vector<std::vector<OpenMesh::VertexHandle>> boundaries;
+            std::vector<bool> visited_he(n_halfedges(), false);
+
+            for (auto h_it = halfedges_begin(); h_it != halfedges_end(); ++h_it)
+            {
+                // [버그 수정] status(*h_it) 대신 안전한 status(edge_handle(*h_it))를 사용합니다!
+                if (status(edge_handle(*h_it)).deleted() || !is_boundary(*h_it) || visited_he[h_it->idx()]) continue;
+
+                std::vector<OpenMesh::VertexHandle> loop;
+                auto current_he = *h_it;
+
+                do {
+                    visited_he[current_he.idx()] = true;
+                    loop.push_back(to_vertex_handle(current_he));
+                    current_he = next_halfedge_handle(current_he);
+                } while (current_he.is_valid() && current_he != *h_it && is_boundary(current_he));
+
+                if (loop.size() >= 3) {
+                    boundaries.push_back(loop);
+                }
+            }
+            return boundaries;
+        }
+
+        // ---------------------------------------------------------
+        // 2. 특정 경계선(Boundary)이 어떤 절단선(Ring)과 짝인지 찾아주는 함수
+        // ---------------------------------------------------------
+        int MatchBoundaryToRing(const std::vector<OpenMesh::VertexHandle>& boundary_loop,
+            const std::vector<std::vector<Eigen::Vector3f>>& polylines) const
+        {
+            int best_ring_idx = -1;
+            float min_avg_dist = std::numeric_limits<float>::max();
+
+            for (size_t r = 0; r < polylines.size(); ++r)
+            {
+                const auto& ring = polylines[r];
+                if (ring.empty()) continue;
+
+                float total_dist = 0.0f;
+                // 경계선 정점들이 현재 검사 중인 ring과 얼마나 떨어져 있는지 평균 거리를 계산
+                for (auto vh : boundary_loop)
+                {
+                    Eigen::Vector3f p(point(vh).data());
+                    float min_d_sq = std::numeric_limits<float>::max();
+
+                    for (size_t i = 0; i < ring.size() - 1; ++i) {
+                        float d_sq = DistanceToSegmentSquared(p, ring[i], ring[i + 1]);
+                        if (d_sq < min_d_sq) min_d_sq = d_sq;
+                    }
+                    total_dist += std::sqrt(min_d_sq);
+                }
+
+                float avg_dist = total_dist / boundary_loop.size();
+
+                // 가장 평균 거리가 짧은(가장 찰딱 붙어있는) Ring을 이 구멍의 주인으로 판정!
+                if (avg_dist < min_avg_dist) {
+                    min_avg_dist = avg_dist;
+                    best_ring_idx = static_cast<int>(r);
+                }
+            }
+            return best_ring_idx;
+        }
+
+        // ---------------------------------------------------------
+        // 최종 완성형: 방향 동기화 + 최단 거리 시작점 매핑 + 비율 지퍼링
+        // ---------------------------------------------------------
+        void StitchToCutline(std::vector<OpenMesh::VertexHandle> loop_A,
+            const std::vector<Eigen::Vector3f>& ring_points)
+        {
+            if (loop_A.empty() || ring_points.size() < 3) return;
+
+            int N_A = static_cast<int>(loop_A.size());
+            int N_B_original = static_cast<int>(ring_points.size());
+            int N_B = (ring_points.front() - ring_points.back()).norm() < 1e-6f ? N_B_original - 1 : N_B_original;
+
+            // [1] 절단선 정점들을 메쉬의 정점으로 추가
+            std::vector<OpenMesh::VertexHandle> loop_B;
+            for (int i = 0; i < N_B; ++i) {
+                loop_B.push_back(add_vertex(OMMesh::Point(ring_points[i].x(), ring_points[i].y(), ring_points[i].z())));
+            }
+
+            // [2] 가장 가까운 시작점 쌍 찾기
+            int best_start_A = 0;
+            int best_start_B = 0;
+            float min_abs_dist = std::numeric_limits<float>::max();
+
+            for (int i = 0; i < N_A; ++i) {
+                Eigen::Vector3f p_A(point(loop_A[i]).data());
+                for (int j = 0; j < N_B; ++j) {
+                    float d = (p_A - ring_points[j]).squaredNorm();
+                    if (d < min_abs_dist) {
+                        min_abs_dist = d;
+                        best_start_A = i;
+                        best_start_B = j;
+                    }
+                }
+            }
+
+            std::rotate(loop_A.begin(), loop_A.begin() + best_start_A, loop_A.end());
+            std::rotate(loop_B.begin(), loop_B.begin() + best_start_B, loop_B.end());
+
+            // [3] 방향 동기화 (두 루프의 방향이 일치하는지 확인)
+            Eigen::Vector3f vA0 = Eigen::Vector3f(point(loop_A[0]).data());
+            Eigen::Vector3f vA1 = Eigen::Vector3f(point(loop_A[1]).data());
+            Eigen::Vector3f vB0 = ring_points[0];
+            Eigen::Vector3f vB1 = ring_points[1 % N_B];
+
+            if ((vA1 - vA0).normalized().dot((vB1 - vB0).normalized()) < 0.0f) {
+                std::reverse(loop_B.begin() + 1, loop_B.end());
+            }
+
+            // [4] 호의 길이 계산
+            std::vector<float> arc_A(N_A + 1, 0.0f);
+            for (int i = 0; i < N_A; ++i) arc_A[i + 1] = arc_A[i] + (Eigen::Vector3f(point(loop_A[(i + 1) % N_A]).data()) - Eigen::Vector3f(point(loop_A[i]).data())).norm();
+            float L_A = arc_A.back();
+
+            std::vector<float> arc_B(N_B + 1, 0.0f);
+            for (int i = 0; i < N_B; ++i) arc_B[i + 1] = arc_B[i] + (ring_points[(i + 1) % N_B] - ring_points[i]).norm();
+            float L_B = arc_B.back();
+
+            // [5] 비율 기반 지퍼링
+            int count_A = 0, count_B = 0;
+            while (count_A < N_A || count_B < N_B)
+            {
+                bool advance_A = (count_A < N_A && count_B < N_B) ? (arc_A[count_A + 1] / L_A <= arc_B[count_B + 1] / L_B) : (count_A < N_A);
+
+                int curr_A = count_A % N_A;
+                int next_A = (count_A + 1) % N_A;
+                int curr_B = count_B % N_B;
+                int next_B = (count_B + 1) % N_B;
+
+                if (advance_A) {
+                    add_face(loop_A[next_A], loop_A[curr_A], loop_B[curr_B]); // CCW 유지
+                    count_A++;
+                }
+                else {
+                    add_face(loop_B[next_B], loop_B[curr_B], loop_A[curr_A]); // CCW 유지
+                    count_B++;
+                }
+            }
+        }
+
 
 
 
