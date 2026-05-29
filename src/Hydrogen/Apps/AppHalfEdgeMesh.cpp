@@ -29,26 +29,6 @@ namespace Eigen
     using Vector3ui = Vector<unsigned int, 3>;
 }
 
-struct Vector3fHash {
-    size_t operator()(const Eigen::Vector3f& v) const {
-        long long x = static_cast<long long>(std::round(v.x() * 10000.0f));
-        long long y = static_cast<long long>(std::round(v.y() * 10000.0f));
-        long long z = static_cast<long long>(std::round(v.z() * 10000.0f));
-
-        size_t h1 = std::hash<long long>{}(x);
-        size_t h2 = std::hash<long long>{}(y);
-        size_t h3 = std::hash<long long>{}(z);
-
-        return h1 ^ (h2 << 1) ^ (h3 << 2);
-    }
-};
-
-struct Vector3fEqual {
-    bool operator()(const Eigen::Vector3f& a, const Eigen::Vector3f& b) const {
-        return (a - b).squaredNorm() < 1e-8f;
-    }
-};
-
 class HeliumMesh : public SGL::Mesh
 {
 public:
@@ -289,7 +269,7 @@ public:
                 std::vector<Eigen::Vector3f> welded_points;
                 std::vector<Eigen::Vector3i> welded_indices;
 
-                robin_hood::unordered_map<Eigen::Vector3f, int, Vector3fHash, Vector3fEqual> vertex_map;
+                robin_hood::unordered_map<Eigen::Vector3f, int, SGL::Vector3fHash, SGL::Vector3fEqual> vertex_map;
 
                 for (size_t i = 0; i < stl_points.size(); i += 3)
                 {
@@ -336,7 +316,7 @@ public:
                 std::vector<Eigen::Vector3f> welded_points;
                 std::vector<Eigen::Vector3i> welded_indices;
 
-                robin_hood::unordered_map<Eigen::Vector3f, int, Vector3fHash, Vector3fEqual> vertex_map;
+                robin_hood::unordered_map<Eigen::Vector3f, int, SGL::Vector3fHash, SGL::Vector3fEqual> vertex_map;
 
                 for (size_t i = 0; i < stl_points.size(); i += 3)
                 {
@@ -539,7 +519,7 @@ public:
                 std::vector<Eigen::Vector3f> welded_points;
                 std::vector<Eigen::Vector3i> welded_indices;
 
-                robin_hood::unordered_map<Eigen::Vector3f, int, Vector3fHash, Vector3fEqual> vertex_map;
+                robin_hood::unordered_map<Eigen::Vector3f, int, SGL::Vector3fHash, SGL::Vector3fEqual> vertex_map;
 
                 for (size_t i = 0; i < stl_points.size(); i += 3)
                 {
@@ -586,7 +566,7 @@ public:
                 std::vector<Eigen::Vector3f> welded_points;
                 std::vector<Eigen::Vector3i> welded_indices;
 
-                robin_hood::unordered_map<Eigen::Vector3f, int, Vector3fHash, Vector3fEqual> vertex_map;
+                robin_hood::unordered_map<Eigen::Vector3f, int, SGL::Vector3fHash, SGL::Vector3fEqual> vertex_map;
 
                 for (size_t i = 0; i < stl_points.size(); i += 3)
                 {
@@ -817,9 +797,333 @@ public:
             });
     }
 
+    enum class BooleanOperation
+    {
+        Union,        // 합집합 (A ∪ B)
+        Intersection, // 교집합 (A ∩ B)
+        Difference    // 차집합 (A - B)
+    };
+
+    void ExecuteBooleanOperation()
+    {
+        BooleanOperation current_op = BooleanOperation::Union;
+
+        // ---------------------------------------------------------
+        // 1. Mesh A, Mesh B 로드
+        // ---------------------------------------------------------
+        {
+            meshes.emplace_back(std::make_unique<HeliumMesh>());
+            HeliumMesh& mesh = *meshes.back();
+            STLFormat stl;
+            stl.Deserialize("D:\\Resources\\3D\\STL\\Gadget.stl");
+
+            const std::vector<Eigen::Vector3f>& stl_points = stl.GetPoints();
+            std::vector<Eigen::Vector3f> welded_points;
+            std::vector<Eigen::Vector3i> welded_indices;
+            robin_hood::unordered_map<Eigen::Vector3f, int, SGL::Vector3fHash, SGL::Vector3fEqual> vertex_map;
+
+            for (size_t i = 0; i < stl_points.size(); i += 3)
+            {
+                Eigen::Vector3i face_indices;
+                for (int j = 0; j < 3; ++j)
+                {
+                    const Eigen::Vector3f& p = stl_points[i + j];
+                    auto it = vertex_map.find(p);
+                    if (it != vertex_map.end()) {
+                        face_indices[j] = it->second;
+                    }
+                    else {
+                        int new_idx = static_cast<int>(welded_points.size());
+                        welded_points.push_back(p);
+                        vertex_map[p] = new_idx;
+                        face_indices[j] = new_idx;
+                    }
+                }
+                if (face_indices[0] != face_indices[1] && face_indices[1] != face_indices[2] && face_indices[2] != face_indices[0]) {
+                    welded_indices.push_back(face_indices);
+                }
+            }
+            mesh.Build(welded_points, welded_indices);
+        }
+
+        {
+            meshes.emplace_back(std::make_unique<HeliumMesh>());
+            HeliumMesh& mesh = *meshes.back();
+            STLFormat stl;
+            stl.Deserialize("D:\\Resources\\3D\\STL\\Doughnut.stl");
+
+            const std::vector<Eigen::Vector3f>& stl_points = stl.GetPoints();
+            std::vector<Eigen::Vector3f> welded_points;
+            std::vector<Eigen::Vector3i> welded_indices;
+            robin_hood::unordered_map<Eigen::Vector3f, int, SGL::Vector3fHash, SGL::Vector3fEqual> vertex_map;
+
+            for (size_t i = 0; i < stl_points.size(); i += 3)
+            {
+                Eigen::Vector3i face_indices;
+                for (int j = 0; j < 3; ++j)
+                {
+                    const Eigen::Vector3f& p = stl_points[i + j];
+                    auto it = vertex_map.find(p);
+                    if (it != vertex_map.end()) {
+                        face_indices[j] = it->second;
+                    }
+                    else {
+                        int new_idx = static_cast<int>(welded_points.size());
+                        welded_points.push_back(p);
+                        vertex_map[p] = new_idx;
+                        face_indices[j] = new_idx;
+                    }
+                }
+                if (face_indices[0] != face_indices[1] && face_indices[1] != face_indices[2] && face_indices[2] != face_indices[0]) {
+                    welded_indices.push_back(face_indices);
+                }
+            }
+            mesh.Build(welded_points, welded_indices);
+        }
+
+        // ---------------------------------------------------------
+        // 2. 원본 메쉬 백업 (Ray-Casting Inside/Outside 판별용)
+        // ---------------------------------------------------------
+        HeliumMesh originalA; originalA.assign(*meshes[0]); originalA.BuildSpatialHashMap();
+        HeliumMesh originalB; originalB.assign(*meshes[1]); originalB.BuildSpatialHashMap();
+
+        // ---------------------------------------------------------
+        // 3. 교차선 추출 및 양쪽 마스크 생성
+        // ---------------------------------------------------------
+        TS(ExtractIntersectionSegments);
+        std::vector<char> maskA, maskB;
+        auto raw_segments = meshes[0]->ExtractIntersectionSegments(*meshes[1], &maskA);
+        meshes[1]->ExtractIntersectionSegments(*meshes[0], &maskB);
+
+        auto welded_segments = meshes[0]->WeldSegments(raw_segments, 5e-3f);
+        auto linked_segments = meshes[0]->LinkSegments(welded_segments, 5e-3f);
+
+        for (auto& ring : linked_segments)
+        {
+            if (ring.size() > 2 && (ring.front() - ring.back()).norm() > 1e-6f) {
+                ring.push_back(ring.front());
+            }
+        }
+        TE(ExtractIntersectionSegments);
+
+        // ---------------------------------------------------------
+        // 4. 물리적 절단 및 분리
+        // ---------------------------------------------------------
+        meshes[0]->DeleteMarkedFaces(maskA);
+        meshes[1]->DeleteMarkedFaces(maskB);
+
+        auto partsA = meshes[0]->SeparateDisconnectedMeshes();
+        auto partsB = meshes[1]->SeparateDisconnectedMeshes();
+
+        // ---------------------------------------------------------
+        // 5. 구멍 메우기 + Boolean 분류기 (람다 캡처에 current_op 추가)
+        // ---------------------------------------------------------
+        auto ProcessAndBooleanParts = [&](std::vector<std::unique_ptr<SGL::Mesh>>& parts,
+            const HeliumMesh& original_other,
+            bool is_mesh_A)
+            {
+                std::vector<std::unique_ptr<HeliumMesh>> result_meshes;
+
+                for (size_t i = 0; i < parts.size(); ++i)
+                {
+                    auto& part = parts[i];
+                    if (part->n_faces() <= 1) continue;
+
+                    // [Zippering 로직]
+                    auto boundaries = part->ExtractBoundaryLoops();
+                    for (const auto& boundary : boundaries)
+                    {
+                        if (boundary.size() < 3) continue;
+                        int best_ring_index = part->FindBestMatchingRing(boundary, linked_segments);
+                        if (best_ring_index == -1) continue;
+
+                        const auto& original_ring = linked_segments[best_ring_index];
+                        int number_b_original = static_cast<int>(original_ring.size());
+                        int number_b = (original_ring.front() - original_ring.back()).norm() < 1e-6f ? number_b_original - 1 : number_b_original;
+
+                        std::vector<Eigen::Vector3f> unique_ring;
+                        for (int k = 0; k < number_b; ++k) unique_ring.push_back(original_ring[k]);
+
+                        std::vector<OpenMesh::VertexHandle> loop_a = boundary;
+                        int number_a = static_cast<int>(loop_a.size());
+
+                        int best_a = 0, best_b = 0;
+                        part->FindBestStartPoints(loop_a, unique_ring, best_a, best_b);
+                        std::rotate(loop_a.begin(), loop_a.begin() + best_a, loop_a.end());
+
+                        std::vector<Eigen::Vector3f> ring_forward, ring_reverse;
+                        for (int k = 0; k < number_b; ++k) {
+                            ring_forward.push_back(unique_ring[(best_b + k) % number_b]);
+                            ring_reverse.push_back(unique_ring[(best_b - k + number_b) % number_b]);
+                        }
+
+                        std::vector<int> path_forward, path_reverse;
+                        float cost_forward = part->CalculateDPCost(loop_a, ring_forward, path_forward);
+                        float cost_reverse = part->CalculateDPCost(loop_a, ring_reverse, path_reverse);
+
+                        std::vector<Eigen::Vector3f> optimal_ring = (cost_forward <= cost_reverse) ? ring_forward : ring_reverse;
+                        std::vector<int> optimal_path = (cost_forward <= cost_reverse) ? path_forward : path_reverse;
+
+                        std::vector<OpenMesh::VertexHandle> loop_b;
+                        loop_b.reserve(number_b);
+                        for (const auto& pt : optimal_ring) {
+                            loop_b.push_back(part->add_vertex(SGL::OMMesh::Point(pt.x(), pt.y(), pt.z())));
+                        }
+
+                        if (!part->ValidateLoopData(loop_a, loop_b)) continue;
+
+                        int index_a = 0, index_b = 0;
+                        for (int step : optimal_path) {
+                            if (step == 1) {
+                                part->AddFaceWithLog(loop_a[(index_a + 1) % number_a], loop_a[index_a], loop_b[index_b % number_b]);
+                                index_a++;
+                            }
+                            else {
+                                part->AddFaceWithLog(loop_b[(index_b + 1) % number_b], loop_b[index_b], loop_a[index_a % number_a]);
+                                index_b++;
+                            }
+                        }
+                    }
+
+                    part->garbage_collection();
+                    part->BuildSpatialHashMap();
+
+                    // ---------------------------------------------------------
+                    // [Boolean 필터링 로직]
+                    // ---------------------------------------------------------
+                    Eigen::Vector3f sample_pt = part->GetSafeSamplePoint();
+                    bool is_inside = original_other.IsPointInside(sample_pt);
+
+                    bool should_keep = false;
+                    bool should_flip = false;
+
+                    switch (current_op)
+                    {
+                    case BooleanOperation::Union: // 합집합 (A ∪ B)
+                        if (is_mesh_A) {
+                            if (!is_inside) should_keep = true; // A 외부 유지
+                        }
+                        else {
+                            if (!is_inside) should_keep = true; // B 외부 유지
+                        }
+                        break;
+
+                    case BooleanOperation::Intersection: // 교집합 (A ∩ B)
+                        if (is_mesh_A) {
+                            if (is_inside) should_keep = true; // A 내부 유지
+                        }
+                        else {
+                            if (is_inside) should_keep = true; // B 내부 유지
+                        }
+                        break;
+
+                    case BooleanOperation::Difference: // 차집합 (A - B)
+                        if (is_mesh_A) {
+                            if (!is_inside) should_keep = true; // A 외부 유지
+                        }
+                        else {
+                            if (is_inside) {
+                                should_keep = true;             // B 내부 유지
+                                should_flip = true;             // 파인 면이므로 노멀 뒤집기
+                            }
+                        }
+                        break;
+                    }
+
+                    // 조건에 맞는 조각만 최종 결과에 추가
+                    if (should_keep)
+                    {
+                        if (should_flip) part->FlipAllFaces();
+
+                        auto final_mesh = std::make_unique<HeliumMesh>();
+                        final_mesh->assign(*part);
+                        final_mesh->BuildSpatialHashMap();
+
+                        // Mesh A 출신은 연두색, Mesh B 출신은 붉은색으로 시각화하여 어디서 왔는지 구별
+                        final_mesh->mesh_color = is_mesh_A ? Eigen::Vector4f(0.5f, 0.9f, 0.5f, 1.0f) : Eigen::Vector4f(0.9f, 0.5f, 0.5f, 1.0f);
+                        final_mesh->is_dirty = true;
+
+                        result_meshes.push_back(std::move(final_mesh));
+                    }
+                }
+
+                return result_meshes;
+            };
+
+        // ---------------------------------------------------------
+        // 6. 결과 취합 및 렌더링 세팅
+        // ---------------------------------------------------------
+        auto final_A_parts = ProcessAndBooleanParts(partsA, originalB, true);
+        auto final_B_parts = ProcessAndBooleanParts(partsB, originalA, false);
+
+        meshes.clear(); // 화면에 원본이 남지 않도록 기존 배열 비우기
+
+        for (auto& m : final_A_parts) meshes.push_back(std::move(m));
+        for (auto& m : final_B_parts) meshes.push_back(std::move(m));
+
+        Helium.AddOnUpdateCallback([this](float time_delta)
+            {
+                for (auto& m : this->meshes)
+                {
+                    m->Update();
+                }
+            });
+
+        std::cout << "[Boolean] Operation Complete! Assembled " << meshes.size() << " parts." << std::endl;
+
+        HeliumMesh merged_result;
+
+        for (const auto& m : meshes)
+        {
+            // 원본 파편 메쉬의 Vertex ID -> 병합된 메쉬의 Vertex ID 매핑 배열
+            std::vector<OpenMesh::VertexHandle> vmap(m->n_vertices(), OpenMesh::VertexHandle(-1));
+
+            for (auto f_it = m->faces_begin(); f_it != m->faces_end(); ++f_it)
+            {
+                if (m->status(*f_it).deleted()) continue;
+
+                std::vector<OpenMesh::VertexHandle> face_vhandles;
+                for (auto fv_it = m->cfv_iter(*f_it); fv_it.is_valid(); ++fv_it)
+                {
+                    int old_idx = fv_it->idx();
+
+                    // 아직 병합된 메쉬에 추가되지 않은 정점이라면 새로 추가
+                    if (!vmap[old_idx].is_valid())
+                    {
+                        Eigen::Vector3f pos(m->point(*fv_it).data());
+                        vmap[old_idx] = merged_result.add_vertex(SGL::OMMesh::Point(pos.x(), pos.y(), pos.z()));
+                    }
+                    face_vhandles.push_back(vmap[old_idx]);
+                }
+                merged_result.add_face(face_vhandles);
+            }
+        }
+
+        // 현재 진행한 연산 종류에 따라 파일 이름 동적 지정
+        std::string filename = "D:\\Temp\\boolean_result_";
+        switch (current_op)
+        {
+        case BooleanOperation::Union:        filename += "union.stl"; break;
+        case BooleanOperation::Intersection: filename += "intersection.stl"; break;
+        case BooleanOperation::Difference:   filename += "difference.stl"; break;
+        }
+
+        // 단일 메쉬로 병합된 결과를 파일로 출력
+        if (OpenMesh::IO::write_mesh(merged_result, filename))
+        {
+            std::cout << "[Info] Successfully saved boolean result to: " << filename << std::endl;
+        }
+        else
+        {
+            std::cout << "[Error] Failed to save boolean result." << std::endl;
+        }
+    }
+
     virtual void Execute() override
     {
-        ExecuteBasic();
+        //ExecuteBasic();
+
+		ExecuteBooleanOperation();
     }
 
     std::vector<std::unique_ptr<HeliumMesh>> meshes;

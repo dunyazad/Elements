@@ -55,6 +55,26 @@ namespace SGL
         }
     };
 
+    struct Vector3fHash {
+        size_t operator()(const Eigen::Vector3f& v) const {
+            long long x = static_cast<long long>(std::round(v.x() * 10000.0f));
+            long long y = static_cast<long long>(std::round(v.y() * 10000.0f));
+            long long z = static_cast<long long>(std::round(v.z() * 10000.0f));
+
+            size_t h1 = std::hash<long long>{}(x);
+            size_t h2 = std::hash<long long>{}(y);
+            size_t h3 = std::hash<long long>{}(z);
+
+            return h1 ^ (h2 << 1) ^ (h3 << 2);
+        }
+    };
+
+    struct Vector3fEqual {
+        bool operator()(const Eigen::Vector3f& a, const Eigen::Vector3f& b) const {
+            return (a - b).squaredNorm() < 1e-8f;
+        }
+    };
+
     enum class IntersectionType
     {
         None,
@@ -75,6 +95,14 @@ namespace SGL
     class Mesh : public OMMesh
     {
     public:
+        Mesh()
+        {
+            request_vertex_status();
+            request_edge_status();
+            request_halfedge_status();
+            request_face_status();
+        }
+
         // ---------------------------------------------------------
         // 위상 정보를 담은 절대 좌표 노드 (Co-refinement 용)
         // ---------------------------------------------------------
@@ -90,11 +118,6 @@ namespace SGL
 
         void Build(const std::vector<Eigen::Vector3f>& points, const std::vector<Eigen::Vector3i>& indices)
         {
-            request_vertex_status();
-            request_edge_status();
-            request_halfedge_status();
-            request_face_status();
-
             std::vector<VertexHandle> v_handles;
             v_handles.reserve(points.size());
             for (const auto& p : points)
@@ -1043,6 +1066,7 @@ namespace SGL
                 auto new_mesh = std::make_unique<Mesh>();
                 new_mesh->request_vertex_status();
                 new_mesh->request_edge_status();
+                new_mesh->request_halfedge_status();
                 new_mesh->request_face_status();
 
                 std::vector<OpenMesh::VertexHandle> vmap(n_vertices(), OpenMesh::VertexHandle(-1));
@@ -1555,15 +1579,6 @@ namespace SGL
             }
         }
 
-
-
-
-
-
-
-
-
-
         OpenMesh::FaceHandle FindFaceAtPosition(const Eigen::Vector3f& pt) const
         {
             if (hash_map.empty()) return OpenMesh::FaceHandle(-1);
@@ -1618,6 +1633,174 @@ namespace SGL
                 }
             }
             return best_face;
+        }
+
+        // ---------------------------------------------------------
+        // (Boolean) 특정 점(pt)이 '이 메쉬(this)' 내부에 있는지 판별 (Even-Odd Rule)
+        // ---------------------------------------------------------
+        bool IsPointInside(const Eigen::Vector3f& pt) const
+        {
+            Eigen::Vector3f dir(0.8523f, 0.3432f, 0.3951f);
+            dir.normalize();
+
+            int hit_count = CountRayIntersections(pt, dir);
+
+            return (hit_count % 2) != 0;
+        }
+
+        int CountRayIntersections(const Eigen::Vector3f& origin, const Eigen::Vector3f& dir) const
+        {
+            if (hash_map.empty()) return 0;
+
+            // 기존 IntersectGridRay의 고속 DDA(Digital Differential Analyzer) 알고리즘 재활용
+            Eigen::Vector3f inv_dir;
+            inv_dir.x() = std::abs(dir.x()) < 1e-8f ? (dir.x() < 0.0f ? -1e8f : 1e8f) : 1.0f / dir.x();
+            inv_dir.y() = std::abs(dir.y()) < 1e-8f ? (dir.y() < 0.0f ? -1e8f : 1e8f) : 1.0f / dir.y();
+            inv_dir.z() = std::abs(dir.z()) < 1e-8f ? (dir.z() < 0.0f ? -1e8f : 1e8f) : 1.0f / dir.z();
+
+            Eigen::Vector3f t0 = (grid_min - origin).cwiseProduct(inv_dir);
+            Eigen::Vector3f t1 = (grid_max - origin).cwiseProduct(inv_dir);
+            Eigen::Vector3f tmin = t0.cwiseMin(t1);
+            Eigen::Vector3f tmax = t0.cwiseMax(t1);
+
+            float t_enter = tmin.maxCoeff();
+            float t_exit = tmax.minCoeff();
+
+            // 광선이 그리드 바운딩 박스를 아예 벗어났다면 충돌 0회
+            if (t_enter > t_exit || t_exit < 0.0f) return 0;
+
+            t_enter = std::max(0.0f, t_enter);
+            Eigen::Vector3f start_pos = origin + dir * t_enter;
+            Eigen::Vector3f local_pos = start_pos - grid_min;
+
+            int cx = static_cast<int>(std::floor(local_pos.x() / grid_cell_size.x()));
+            int cy = static_cast<int>(std::floor(local_pos.y() / grid_cell_size.y()));
+            int cz = static_cast<int>(std::floor(local_pos.z() / grid_cell_size.z()));
+
+            int stepX = (dir.x() > 0.0f) ? 1 : -1;
+            int stepY = (dir.y() > 0.0f) ? 1 : -1;
+            int stepZ = (dir.z() > 0.0f) ? 1 : -1;
+
+            float tDeltaX = std::abs(grid_cell_size.x() * inv_dir.x());
+            float tDeltaY = std::abs(grid_cell_size.y() * inv_dir.y());
+            float tDeltaZ = std::abs(grid_cell_size.z() * inv_dir.z());
+
+            float tMaxX = t_enter + ((stepX > 0) ? ((cx + 1) * grid_cell_size.x() - local_pos.x()) * std::abs(inv_dir.x()) : (local_pos.x() - cx * grid_cell_size.x()) * std::abs(inv_dir.x()));
+            float tMaxY = t_enter + ((stepY > 0) ? ((cy + 1) * grid_cell_size.y() - local_pos.y()) * std::abs(inv_dir.y()) : (local_pos.y() - cy * grid_cell_size.y()) * std::abs(inv_dir.y()));
+            float tMaxZ = t_enter + ((stepZ > 0) ? ((cz + 1) * grid_cell_size.z() - local_pos.z()) * std::abs(inv_dir.z()) : (local_pos.z() - cz * grid_cell_size.z()) * std::abs(inv_dir.z()));
+
+            float max_t_search = t_exit + 0.1f;
+            float current_t = t_enter;
+
+            std::vector<bool> tested_faces(n_faces(), false);
+            std::vector<float> hit_t_values;
+
+            while (current_t <= max_t_search)
+            {
+                Eigen::Vector3i cell_pos(cx, cy, cz);
+                auto it = hash_map.find(cell_pos);
+                if (it != hash_map.end())
+                {
+                    for (int f_idx : it->second)
+                    {
+                        if (tested_faces[f_idx]) continue;
+                        tested_faces[f_idx] = true; // 중복 검사 방지
+
+                        auto fh = face_handle(f_idx);
+                        if (status(fh).deleted()) continue;
+
+                        IntersectionResult res = IntersectRayFaceWithSnap(origin, dir, fh);
+                        if (res.type != IntersectionType::None && res.t > 1e-5f) // origin과 너무 가까운 충돌은 무시
+                        {
+                            // Edge나 Vertex에 맞았을 경우 인접한 Face들에 의해 중복 카운트되는 것을 방지합니다.
+                            bool is_duplicate = false;
+                            for (float t : hit_t_values) {
+                                if (std::abs(t - res.t) < 1e-4f) {
+                                    is_duplicate = true;
+                                    break;
+                                }
+                            }
+                            if (!is_duplicate) {
+                                hit_t_values.push_back(res.t);
+                            }
+                        }
+                    }
+                }
+
+                // DDA Step
+                if (tMaxX < tMaxY) {
+                    if (tMaxX < tMaxZ) { cx += stepX; current_t = tMaxX; tMaxX += tDeltaX; }
+                    else { cz += stepZ; current_t = tMaxZ; tMaxZ += tDeltaZ; }
+                }
+                else {
+                    if (tMaxY < tMaxZ) { cy += stepY; current_t = tMaxY; tMaxY += tDeltaY; }
+                    else { cz += stepZ; current_t = tMaxZ; tMaxZ += tDeltaZ; }
+                }
+            }
+
+            return static_cast<int>(hit_t_values.size());
+        }
+
+        Eigen::Vector3f GetSafeSamplePoint() const
+        {
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (!status(*f_it).deleted())
+                {
+                    Eigen::Vector3f v0, v1, v2;
+                    GetFaceVertices(*f_it, v0, v1, v2);
+                    // 삼각형의 무게중심(Centroid) 반환
+                    return (v0 + v1 + v2) / 3.0f;
+                }
+            }
+            return Eigen::Vector3f::Zero(); // 폴백
+        }
+
+        // ---------------------------------------------------------
+        // 메쉬의 모든 면(Face)을 뒤집는 함수 (완전 재구축 방식 - 절대 안 터짐)
+        // ---------------------------------------------------------
+        void FlipAllFaces()
+        {
+            std::vector<Eigen::Vector3f> new_points;
+            std::vector<Eigen::Vector3i> new_indices;
+
+            // 기존 정점 좌표를 재활용하기 위한 해시맵
+            robin_hood::unordered_map<Eigen::Vector3f, int, Vector3fHash, Vector3fEqual> vertex_map;
+
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (status(*f_it).deleted()) continue;
+
+                std::vector<Eigen::Vector3f> pts;
+                for (auto fv_it = cfv_iter(*f_it); fv_it.is_valid(); ++fv_it) {
+                    pts.push_back(Eigen::Vector3f(point(*fv_it).data()));
+                }
+
+                // 면이 3각형이 아니면 건너뜀 (안전 장치)
+                if (pts.size() != 3) continue;
+
+                Eigen::Vector3i face_indices;
+                // 법선(Normal)을 뒤집기 위해 정점 순서를 역순(2, 1, 0)으로 삽입
+                for (int k = 2; k >= 0; --k)
+                {
+                    const Eigen::Vector3f& p = pts[k];
+                    auto it = vertex_map.find(p);
+                    if (it != vertex_map.end()) {
+                        face_indices[2 - k] = it->second;
+                    }
+                    else {
+                        int new_idx = static_cast<int>(new_points.size());
+                        new_points.push_back(p);
+                        vertex_map[p] = new_idx;
+                        face_indices[2 - k] = new_idx;
+                    }
+                }
+                new_indices.push_back(face_indices);
+            }
+
+            // 기존 메쉬 데이터를 싹 날리고 안전하게 재조립
+            this->clear();
+            this->Build(new_points, new_indices);
         }
 
     protected:
