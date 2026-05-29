@@ -276,7 +276,7 @@ public:
 class AppHalfEdgeMesh : public App
 {
 public:
-    void ExecuteBasic()
+    void ExecuteBasic_visualize_border()
     {
         {
             meshes.emplace_back(std::make_unique<HeliumMesh>());
@@ -493,6 +493,297 @@ public:
                     VD::AddSphere("StartPoints", p_b0, { 0.0f, 0.0f, 1.0f }, 0.05f, border_color);
                     VD::AddLine("StartPoints", p_a0, p_b0, mesh_color);
                 }
+
+                auto new_helium_mesh = std::make_unique<HeliumMesh>();
+                new_helium_mesh->assign(*part);
+                new_helium_mesh->BuildSpatialHashMap();
+                new_helium_mesh->mesh_color = mesh_color;
+                new_helium_mesh->is_dirty = true;
+                meshes.push_back(std::move(new_helium_mesh));
+            }
+        }
+
+        Helium.AddOnUpdateCallback([this](float time_delta)
+            {
+                for (auto& m : this->meshes)
+                {
+                    m->Update();
+                }
+
+                if (meshes.size() >= 3)
+                {
+                    auto renderable_a = Helium.GetComponent<Renderable>(meshes[0]->entity);
+                    auto renderable_b = Helium.GetComponent<Renderable>(meshes[1]->entity);
+                    if (nullptr != renderable_a)
+                    {
+                        renderable_a->SetVisible(false);
+                    }
+                    if (nullptr != renderable_b)
+                    {
+                        renderable_b->SetVisible(false);
+                    }
+                }
+            });
+    }
+
+    void ExecuteBasic()
+    {
+        {
+            meshes.emplace_back(std::make_unique<HeliumMesh>());
+            HeliumMesh& mesh = *meshes.back();
+            {
+                STLFormat stl;
+                stl.Deserialize("D:\\Resources\\3D\\STL\\rabbit.stl");
+
+                const std::vector<Eigen::Vector3f>& stl_points = stl.GetPoints();
+                std::vector<Eigen::Vector3f> welded_points;
+                std::vector<Eigen::Vector3i> welded_indices;
+
+                robin_hood::unordered_map<Eigen::Vector3f, int, Vector3fHash, Vector3fEqual> vertex_map;
+
+                for (size_t i = 0; i < stl_points.size(); i += 3)
+                {
+                    Eigen::Vector3i face_indices;
+
+                    for (int j = 0; j < 3; ++j)
+                    {
+                        const Eigen::Vector3f& p = stl_points[i + j];
+                        auto it = vertex_map.find(p);
+
+                        if (it != vertex_map.end())
+                        {
+                            face_indices[j] = it->second;
+                        }
+                        else
+                        {
+                            int new_idx = static_cast<int>(welded_points.size());
+                            welded_points.push_back(p);
+                            vertex_map[p] = new_idx;
+                            face_indices[j] = new_idx;
+                        }
+                    }
+
+                    if (face_indices[0] != face_indices[1] &&
+                        face_indices[1] != face_indices[2] &&
+                        face_indices[2] != face_indices[0])
+                    {
+                        welded_indices.push_back(face_indices);
+                    }
+                }
+
+                mesh.Build(welded_points, welded_indices);
+            }
+        }
+
+        {
+            meshes.emplace_back(std::make_unique<HeliumMesh>());
+            HeliumMesh& mesh = *meshes.back();
+            {
+                STLFormat stl;
+                stl.Deserialize("D:\\Resources\\3D\\STL\\rabbit_upside_down.stl");
+
+                const std::vector<Eigen::Vector3f>& stl_points = stl.GetPoints();
+                std::vector<Eigen::Vector3f> welded_points;
+                std::vector<Eigen::Vector3i> welded_indices;
+
+                robin_hood::unordered_map<Eigen::Vector3f, int, Vector3fHash, Vector3fEqual> vertex_map;
+
+                for (size_t i = 0; i < stl_points.size(); i += 3)
+                {
+                    Eigen::Vector3i face_indices;
+
+                    for (int j = 0; j < 3; ++j)
+                    {
+                        const Eigen::Vector3f& p = stl_points[i + j];
+                        auto it = vertex_map.find(p);
+
+                        if (it != vertex_map.end())
+                        {
+                            face_indices[j] = it->second;
+                        }
+                        else
+                        {
+                            int new_idx = static_cast<int>(welded_points.size());
+                            welded_points.push_back(p);
+                            vertex_map[p] = new_idx;
+                            face_indices[j] = new_idx;
+                        }
+                    }
+
+                    if (face_indices[0] != face_indices[1] &&
+                        face_indices[1] != face_indices[2] &&
+                        face_indices[2] != face_indices[0])
+                    {
+                        welded_indices.push_back(face_indices);
+                    }
+                }
+
+                mesh.Build(welded_points, welded_indices);
+            }
+        }
+
+        TS(ExtractIntersectionSegments);
+        std::vector<char> cut_faces_mask;
+        auto raw_segments = meshes[0]->ExtractIntersectionSegments(*meshes[1], &cut_faces_mask);
+        auto welded_segments = meshes[0]->WeldSegments(raw_segments, 5e-3f);
+        auto linked_segments = meshes[0]->LinkSegments(welded_segments, 5e-3f);
+
+        for (auto& ring : linked_segments)
+        {
+            if (ring.size() > 2 && (ring.front() - ring.back()).norm() > 1e-6f)
+            {
+                ring.push_back(ring.front());
+            }
+        }
+        TE(ExtractIntersectionSegments);
+
+        meshes[0]->DeleteMarkedFaces(cut_faces_mask);
+        meshes[0]->is_dirty = true;
+
+        auto separated_parts = meshes[0]->SeparateDisconnectedMeshes();
+
+        VD::Clear("CutLines");
+
+        for (size_t r = 0; r < linked_segments.size(); ++r)
+        {
+            const auto& ring = linked_segments[r];
+            for (size_t i = 0; i < ring.size() - 1; ++i)
+            {
+                VD::AddLine("CutLines", ring[i], ring[i + 1], Eigen::Vector4f(1.0f, 1.0f, 0.0f, 1.0f));
+            }
+        }
+
+        std::vector<Eigen::Vector4f> part_colors = {
+            Eigen::Vector4f(0.9f, 0.5f, 0.5f, 1.0f),
+            Eigen::Vector4f(0.5f, 0.9f, 0.5f, 1.0f),
+            Eigen::Vector4f(0.5f, 0.6f, 0.9f, 1.0f),
+            Eigen::Vector4f(0.8f, 0.6f, 0.9f, 1.0f)
+        };
+
+        if (separated_parts.size() >= 2)
+        {
+            for (size_t i = 0; i < separated_parts.size(); ++i)
+            {
+                auto& part = separated_parts[i];
+
+                if (part->n_faces() <= 1)
+                {
+                    continue;
+                }
+
+                auto boundaries = part->ExtractBoundaryLoops();
+
+                //std::cout << "\n=============================================" << std::endl;
+                //std::cout << "[StitchLog] Starting Mesh Processing for Part " << i << std::endl;
+                //std::cout << "=============================================" << std::endl;
+
+                for (const auto& boundary : boundaries)
+                {
+                    if (boundary.size() < 3)
+                    {
+                        continue;
+                    }
+
+                    int best_ring_index = part->FindBestMatchingRing(boundary, linked_segments);
+                    if (best_ring_index == -1)
+                    {
+                        continue;
+                    }
+
+                    const auto& original_ring = linked_segments[best_ring_index];
+                    int number_b_original = static_cast<int>(original_ring.size());
+                    int number_b = (original_ring.front() - original_ring.back()).norm() < 1e-6f ? number_b_original - 1 : number_b_original;
+
+                    std::vector<Eigen::Vector3f> unique_ring;
+                    for (int k = 0; k < number_b; ++k)
+                    {
+                        unique_ring.push_back(original_ring[k]);
+                    }
+
+                    std::vector<OpenMesh::VertexHandle> loop_a = boundary;
+                    int number_a = static_cast<int>(loop_a.size());
+
+                    int best_a = 0;
+                    int best_b = 0;
+                    part->FindBestStartPoints(loop_a, unique_ring, best_a, best_b);
+
+                    std::rotate(loop_a.begin(), loop_a.begin() + best_a, loop_a.end());
+
+                    std::vector<Eigen::Vector3f> ring_forward;
+                    std::vector<Eigen::Vector3f> ring_reverse;
+
+                    for (int k = 0; k < number_b; ++k)
+                    {
+                        ring_forward.push_back(unique_ring[(best_b + k) % number_b]);
+                        ring_reverse.push_back(unique_ring[(best_b - k + number_b) % number_b]);
+                    }
+
+                    //std::cout << "[Step 3 & 4] Calculating DP Paths for Forward and Reverse Directions..." << std::endl;
+
+                    std::vector<int> path_forward;
+                    float cost_forward = part->CalculateDPCost(loop_a, ring_forward, path_forward);
+
+                    std::vector<int> path_reverse;
+                    float cost_reverse = part->CalculateDPCost(loop_a, ring_reverse, path_reverse);
+
+                    std::vector<Eigen::Vector3f> optimal_ring;
+                    std::vector<int> optimal_path;
+
+                    if (cost_forward <= cost_reverse)
+                    {
+                        //std::cout << "[StitchLog] Selected Direction: Forward (Cost: " << cost_forward << " vs " << cost_reverse << ")" << std::endl;
+                        optimal_ring = ring_forward;
+                        optimal_path = path_forward;
+                    }
+                    else
+                    {
+                        //std::cout << "[StitchLog] Selected Direction: Reverse (Cost: " << cost_reverse << " vs " << cost_forward << ")" << std::endl;
+                        optimal_ring = ring_reverse;
+                        optimal_path = path_reverse;
+                    }
+
+                    std::vector<OpenMesh::VertexHandle> loop_b;
+                    loop_b.reserve(number_b);
+                    for (const auto& pt : optimal_ring)
+                    {
+                        loop_b.push_back(part->add_vertex(SGL::OMMesh::Point(pt.x(), pt.y(), pt.z())));
+                    }
+
+                    if (!part->ValidateLoopData(loop_a, loop_b))
+                    {
+                        //std::cout << "[StitchLog] Face creation aborted due to validation failure." << std::endl;
+                        continue;
+                    }
+
+                    //std::cout << "[Step 5] Creating Faces from DP Path..." << std::endl;
+                    int index_a = 0;
+                    int index_b = 0;
+
+                    for (int step : optimal_path)
+                    {
+                        if (step == 1)
+                        {
+                            int next_a = (index_a + 1) % number_a;
+                            part->AddFaceWithLog(loop_a[next_a], loop_a[index_a], loop_b[index_b % number_b]);
+                            index_a++;
+                        }
+                        else
+                        {
+                            int next_b = (index_b + 1) % number_b;
+                            part->AddFaceWithLog(loop_b[next_b], loop_b[index_b], loop_a[index_a % number_a]);
+                            index_b++;
+                        }
+                    }
+                    //std::cout << "[StitchLog] Zippering completed for current ring." << std::endl;
+                }
+
+                part->garbage_collection();
+                part->BuildSpatialHashMap();
+
+                std::string filename = "D:\\Temp\\separated_part_" + std::to_string(i) + ".stl";
+                OpenMesh::IO::write_mesh(*part, filename);
+
+                Eigen::Vector4f mesh_color = part_colors[i % part_colors.size()];
 
                 auto new_helium_mesh = std::make_unique<HeliumMesh>();
                 new_helium_mesh->assign(*part);

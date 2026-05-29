@@ -1146,542 +1146,424 @@ namespace SGL
             return best_ring_idx;
         }
 
-        // ---------------------------------------------------------
-        // 최종 완성형: 방향 동기화 + 최단 거리 시작점 매핑 + 비율 지퍼링
-        // ---------------------------------------------------------
-        void StitchToCutline(std::vector<OpenMesh::VertexHandle> loop_A,
-            const std::vector<Eigen::Vector3f>& ring_points)
+        void FillHolesWithEarcut(const std::vector<std::vector<OpenMesh::VertexHandle>>& boundaries,
+            const std::vector<std::vector<Eigen::Vector3f>>& polylines)
         {
-            if (loop_A.empty() || ring_points.size() < 3) return;
-
-            int N_A = static_cast<int>(loop_A.size());
-            int N_B_original = static_cast<int>(ring_points.size());
-            int N_B = (ring_points.front() - ring_points.back()).norm() < 1e-6f ? N_B_original - 1 : N_B_original;
-
-            // [1] 절단선 정점들을 메쉬의 정점으로 추가
-            std::vector<OpenMesh::VertexHandle> loop_B;
-            for (int i = 0; i < N_B; ++i) {
-                loop_B.push_back(add_vertex(OMMesh::Point(ring_points[i].x(), ring_points[i].y(), ring_points[i].z())));
-            }
-
-            // [2] 가장 가까운 시작점 쌍 찾기
-            int best_start_A = 0;
-            int best_start_B = 0;
-            float min_abs_dist = std::numeric_limits<float>::max();
-
-            for (int i = 0; i < N_A; ++i) {
-                Eigen::Vector3f p_A(point(loop_A[i]).data());
-                for (int j = 0; j < N_B; ++j) {
-                    float d = (p_A - ring_points[j]).squaredNorm();
-                    if (d < min_abs_dist) {
-                        min_abs_dist = d;
-                        best_start_A = i;
-                        best_start_B = j;
-                    }
-                }
-            }
-
-            std::rotate(loop_A.begin(), loop_A.begin() + best_start_A, loop_A.end());
-            std::rotate(loop_B.begin(), loop_B.begin() + best_start_B, loop_B.end());
-
-            // [3] 방향 동기화 (두 루프의 방향이 일치하는지 확인)
-            Eigen::Vector3f vA0 = Eigen::Vector3f(point(loop_A[0]).data());
-            Eigen::Vector3f vA1 = Eigen::Vector3f(point(loop_A[1]).data());
-            Eigen::Vector3f vB0 = ring_points[0];
-            Eigen::Vector3f vB1 = ring_points[1 % N_B];
-
-            if ((vA1 - vA0).normalized().dot((vB1 - vB0).normalized()) < 0.0f) {
-                std::reverse(loop_B.begin() + 1, loop_B.end());
-            }
-
-            // [4] 호의 길이 계산
-            std::vector<float> arc_A(N_A + 1, 0.0f);
-            for (int i = 0; i < N_A; ++i) arc_A[i + 1] = arc_A[i] + (Eigen::Vector3f(point(loop_A[(i + 1) % N_A]).data()) - Eigen::Vector3f(point(loop_A[i]).data())).norm();
-            float L_A = arc_A.back();
-
-            std::vector<float> arc_B(N_B + 1, 0.0f);
-            for (int i = 0; i < N_B; ++i) arc_B[i + 1] = arc_B[i] + (ring_points[(i + 1) % N_B] - ring_points[i]).norm();
-            float L_B = arc_B.back();
-
-            // [5] 비율 기반 지퍼링
-            int count_A = 0, count_B = 0;
-            while (count_A < N_A || count_B < N_B)
+            for (const auto& boundary : boundaries)
             {
-                bool advance_A = (count_A < N_A && count_B < N_B) ? (arc_A[count_A + 1] / L_A <= arc_B[count_B + 1] / L_B) : (count_A < N_A);
+                if (boundary.size() < 3) continue;
 
-                int curr_A = count_A % N_A;
-                int next_A = (count_A + 1) % N_A;
-                int curr_B = count_B % N_B;
-                int next_B = (count_B + 1) % N_B;
+                // 1. 해당 구멍(Boundary)과 짝이 맞는 절단선(Ring) 찾기
+                int matched_ring_idx = MatchBoundaryToRing(boundary, polylines);
+                if (matched_ring_idx == -1) continue;
 
-                if (advance_A) {
-                    add_face(loop_A[next_A], loop_A[curr_A], loop_B[curr_B]); // CCW 유지
-                    count_A++;
-                }
-                else {
-                    add_face(loop_B[next_B], loop_B[curr_B], loop_A[curr_A]); // CCW 유지
-                    count_B++;
-                }
-            }
-        }
+                const auto& ring = polylines[matched_ring_idx];
 
+                // 2. 시작점 찾기 (절단선과 가장 가까운 경계선 상의 정점)
+                int start_idx = 0;
+                float min_dist = std::numeric_limits<float>::max();
 
+                int num_b_original = static_cast<int>(ring.size());
+                int num_b = (ring.front() - ring.back()).norm() < 1e-6f ? num_b_original - 1 : num_b_original;
 
-
-        // 결정론적 메쉬 강제 분할 (Deterministic Split)
-        void SplitMeshDeterministic(const std::vector<CutNode>& polyline)
-        {
-            std::vector<OpenMesh::VertexHandle> path_vertices;
-            std::vector<OpenMesh::FaceHandle> faces_to_delete;
-
-            for (const auto& node : polyline)
-            {
-                OpenMesh::VertexHandle vh;
-                if (node.vh.is_valid()) {
-                    vh = node.vh;
-                }
-                else {
-                    vh = add_vertex(OMMesh::Point(node.pos.x(), node.pos.y(), node.pos.z()));
-                }
-                path_vertices.push_back(vh);
-
-                if (node.fh.is_valid()) faces_to_delete.push_back(node.fh);
-                if (node.eh.is_valid()) {
-                    faces_to_delete.push_back(face_handle(halfedge_handle(node.eh, 0)));
-                    faces_to_delete.push_back(face_handle(halfedge_handle(node.eh, 1)));
-                }
-            }
-
-            std::sort(faces_to_delete.begin(), faces_to_delete.end());
-            faces_to_delete.erase(std::unique(faces_to_delete.begin(), faces_to_delete.end()), faces_to_delete.end());
-
-            for (auto fh : faces_to_delete)
-            {
-                if (!fh.is_valid()) continue;
-
-                Eigen::Vector3f v0, v1, v2;
-                GetFaceVertices(fh, v0, v1, v2);
-                Eigen::Vector3f normal = (v1 - v0).cross(v2 - v0).normalized();
-
-                // [핵심 1] 원본 삼각형의 무게 중심과 기준 방향축 도출
-                Eigen::Vector3f center = (v0 + v1 + v2) / 3.0f;
-                Eigen::Vector3f ref_dir = (v0 - center).normalized();
-
-                std::vector<OpenMesh::VertexHandle> new_polygon;
-                for (auto fv_it = cfv_iter(fh); fv_it.is_valid(); ++fv_it) {
-                    new_polygon.push_back(*fv_it);
-                }
-
-                delete_face(fh, false);
-
-                for (auto vh : path_vertices) {
-                    Eigen::Vector3f p(point(vh).data());
-                    if (DistanceToSegment(p, v0, v1) < 1e-3f || DistanceToSegment(p, v1, v2) < 1e-3f || DistanceToSegment(p, v2, v0) < 1e-3f || IsPointInTriangle(p, v0, v1, v2)) {
-                        if (std::find(new_polygon.begin(), new_polygon.end(), vh) == new_polygon.end()) {
-                            new_polygon.push_back(vh);
+                for (size_t n = 0; n < boundary.size(); ++n)
+                {
+                    Eigen::Vector3f p_a(point(boundary[n]).data());
+                    for (int m = 0; m < num_b; ++m)
+                    {
+                        float d = (p_a - ring[m]).squaredNorm();
+                        if (d < min_dist)
+                        {
+                            min_dist = d;
+                            start_idx = static_cast<int>(n);
                         }
                     }
                 }
 
-                // [핵심 2] 방사형 정렬 (Radial Sort) - 꼬인 폴리곤을 완벽하게 풀어줌!
-                std::sort(new_polygon.begin(), new_polygon.end(), [&](OpenMesh::VertexHandle a, OpenMesh::VertexHandle b) {
-                    Eigen::Vector3f pa = Eigen::Vector3f(point(a).data());
-                    Eigen::Vector3f pb = Eigen::Vector3f(point(b).data());
+                // 3. Earcut(귀 자르기)를 위해 시작점을 기준으로 배열(Loop) 재정렬 (Rotate)
+                std::vector<OpenMesh::VertexHandle> ordered_boundary = boundary;
+                std::rotate(ordered_boundary.begin(), ordered_boundary.begin() + start_idx, ordered_boundary.end());
 
-                    // 너무 중앙에 가까운 점은 각도 계산이 터지므로 예외 처리
-                    if ((pa - center).squaredNorm() < 1e-8f) return true;
-                    if ((pb - center).squaredNorm() < 1e-8f) return false;
+                // 4. 구멍을 덮을 다각형의 법선 벡터 계산 (Newell's Method)
+                Eigen::Vector3f normal = Eigen::Vector3f::Zero();
+                for (size_t i = 0; i < ordered_boundary.size(); ++i)
+                {
+                    Eigen::Vector3f p0(point(ordered_boundary[i]).data());
+                    Eigen::Vector3f p1(point(ordered_boundary[(i + 1) % ordered_boundary.size()]).data());
+                    normal.x() += (p0.y() - p1.y()) * (p0.z() + p1.z());
+                    normal.y() += (p0.z() - p1.z()) * (p0.x() + p1.x());
+                    normal.z() += (p0.x() - p1.x()) * (p0.y() + p1.y());
+                }
 
-                    Eigen::Vector3f da = (pa - center).normalized();
-                    Eigen::Vector3f db = (pb - center).normalized();
+                if (normal.squaredNorm() > 1e-8f)
+                {
+                    normal.normalize();
+                }
 
-                    // 중심점을 기준으로 0~360도(2*PI) 각도 계산
-                    float angle_a = std::atan2(normal.dot(ref_dir.cross(da)), ref_dir.dot(da));
-                    float angle_b = std::atan2(normal.dot(ref_dir.cross(db)), ref_dir.dot(db));
-
-                    if (angle_a < 0.0f) angle_a += 2.0f * static_cast<float>(M_PI);
-                    if (angle_b < 0.0f) angle_b += 2.0f * static_cast<float>(M_PI);
-
-                    // 각도가 거의 같다면 중심에서 더 가까운 놈을 먼저 (선형 겹침 방지)
-                    if (std::abs(angle_a - angle_b) < 1e-4f) {
-                        return (pa - center).squaredNorm() < (pb - center).squaredNorm();
-                    }
-
-                    return angle_a < angle_b;
-                    });
-
-                // 꼬임이 완벽히 풀린 다각형으로 다시 귀 자르기 실행
-                TriangulatePolygon(new_polygon, normal);
+                // 5. 정렬된 폴리곤 배열과 법선 벡터를 이용해 Earcut 실행
+                TriangulatePolygon(ordered_boundary, normal);
             }
 
+            // 구멍을 메운 후 내부 데이터 구조 갱신
             garbage_collection();
             BuildSpatialHashMap();
         }
 
-        // ---------------------------------------------------------
-        // (NEW) 완벽한 동적 위상 추적 분할 (Dynamic Topology Tracking Split)
-        // ---------------------------------------------------------
-        void SplitMeshDynamic(const std::vector<Eigen::Vector3f>& polyline)
+        bool ValidateLoopData(const std::vector<OpenMesh::VertexHandle>& loop_a, const std::vector<OpenMesh::VertexHandle>& loop_b) const
         {
-            const float SNAP_EPS = 1e-4f;
-
-            // [핵심 최적화 1] 루프 시작 전의 총 면 개수를 기록해 둡니다.
-            // 이후 쪼개기(split)로 인해 맨 뒤에 추가된 '새로운 면'들만 별도로 추적하기 위함입니다.
-            int initial_face_count = static_cast<int>(n_faces());
-
-            for (const auto& pt : polyline)
+            //std::cout << "[Validation] Checking Loop Data..." << std::endl;
+            if (loop_a.size() < 3 || loop_b.size() < 3)
             {
-                OpenMesh::FaceHandle target_fh(-1);
-                OpenMesh::EdgeHandle target_eh(-1);
-                OpenMesh::VertexHandle target_vh(-1);
+                //std::cout << "[Validation Error] Loop size is too small. Loop A: " << loop_a.size() << ", Loop B: " << loop_b.size() << std::endl;
+                return false;
+            }
 
-                // [핵심 최적화 2] 전체(faces_begin~end)를 순회하지 않고, 후보 면(Candidate Faces)만 수집합니다.
-                std::vector<OpenMesh::FaceHandle> candidate_faces;
-                candidate_faces.reserve(100);
-
-                // A. 기존 해시맵에서 점 주변(3x3x3 복셀)의 면들을 가져옵니다.
-                Eigen::Vector3f local_pos = pt - grid_min;
-                int cx = static_cast<int>(std::floor(local_pos.x() / grid_cell_size.x()));
-                int cy = static_cast<int>(std::floor(local_pos.y() / grid_cell_size.y()));
-                int cz = static_cast<int>(std::floor(local_pos.z() / grid_cell_size.z()));
-
-                for (int dz = -1; dz <= 1; ++dz) {
-                    for (int dy = -1; dy <= 1; ++dy) {
-                        for (int dx = -1; dx <= 1; ++dx) {
-                            auto it = hash_map.find(Eigen::Vector3i(cx + dx, cy + dy, cz + dz));
-                            if (it != hash_map.end()) {
-                                for (int f_idx : it->second) {
-                                    auto fh = face_handle(f_idx);
-                                    // 삭제된 면이 아니라면 후보에 추가 (split으로 원본 면 모양이 바뀐 건 그대로 사용 가능)
-                                    if (!status(fh).deleted()) {
-                                        candidate_faces.push_back(fh);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // B. 이 polyline 루프가 도는 동안 '새롭게 생성된' 싱싱한 면들을 모두 후보에 추가합니다.
-                // OpenMesh는 새 면을 배열 끝에 추가하므로, initial_face_count 부터 현재 n_faces() 까지만 확인하면 됩니다.
-                int current_face_count = static_cast<int>(n_faces());
-                for (int i = initial_face_count; i < current_face_count; ++i) {
-                    auto fh = face_handle(i);
-                    if (!status(fh).deleted()) {
-                        candidate_faces.push_back(fh);
-                    }
-                }
-
-                for (auto fh : candidate_faces)
+            for (auto vh : loop_a)
+            {
+                if (!vh.is_valid())
                 {
-                    Eigen::Vector3f v0, v1, v2;
-                    GetFaceVertices(fh, v0, v1, v2);
-
-                    Eigen::Vector3f n = (v1 - v0).cross(v2 - v0);
-                    if (n.squaredNorm() < 1e-8f) continue;
-                    n.normalize();
-
-                    // 평면에서 너무 멀면 패스
-                    if (std::abs(n.dot(pt - v0)) > 1e-3f) continue;
-
-                    if (IsPointInTriangle(pt, v0, v1, v2))
-                    {
-                        target_fh = fh;
-
-                        for (auto fh_it = cfh_iter(fh); fh_it.is_valid(); ++fh_it)
-                        {
-                            auto heh = *fh_it;
-                            auto vh0 = from_vertex_handle(heh);
-                            auto vh1 = to_vertex_handle(heh);
-                            Eigen::Vector3f ev0(point(vh0).data());
-                            Eigen::Vector3f ev1(point(vh1).data());
-
-                            if (DistanceToSegment(pt, ev0, ev1) < SNAP_EPS)
-                            {
-                                target_fh = OpenMesh::FaceHandle(-1);
-                                target_eh = edge_handle(heh);
-
-                                if ((pt - ev0).squaredNorm() < SNAP_EPS * SNAP_EPS) {
-                                    target_eh = OpenMesh::EdgeHandle(-1);
-                                    target_vh = vh0;
-                                    break;
-                                }
-                                else if ((pt - ev1).squaredNorm() < SNAP_EPS * SNAP_EPS) {
-                                    target_eh = OpenMesh::EdgeHandle(-1);
-                                    target_vh = vh1;
-                                    break;
-                                }
-                            }
-                        }
-                        break; // 타겟을 찾았으므로 즉시 종료
-                    }
-                }
-
-                if (target_vh.is_valid()) continue;
-
-                if (target_eh.is_valid() || target_fh.is_valid())
-                {
-                    auto new_v = add_vertex(OMMesh::Point(pt.x(), pt.y(), pt.z()));
-                    if (target_eh.is_valid()) {
-                        split(target_eh, new_v);
-                    }
-                    else if (target_fh.is_valid()) {
-                        split(target_fh, new_v);
-                    }
+                    //std::cout << "[Validation Error] Invalid VertexHandle in Loop A." << std::endl;
+                    return false;
                 }
             }
 
-            garbage_collection();
-            BuildSpatialHashMap();
+            for (auto vh : loop_b)
+            {
+                if (!vh.is_valid())
+                {
+                    //std::cout << "[Validation Error] Invalid VertexHandle in Loop B." << std::endl;
+                    return false;
+                }
+            }
+
+            //std::cout << "[Validation Success] Loop Data is valid." << std::endl;
+            return true;
         }
 
-        // ---------------------------------------------------------
-        // (NEW) 진짜 위상 분할: 교차하는 면을 삭제하고 내부 엣지가 포함된 삼각형으로 재구성
-        // ---------------------------------------------------------
-        void SplitMeshExact(const std::vector<std::vector<Eigen::Vector3f>>& polylines)
+        OpenMesh::FaceHandle AddFaceWithLog(OpenMesh::VertexHandle v0, OpenMesh::VertexHandle v1, OpenMesh::VertexHandle v2)
         {
-            const float EPS = 1e-5f;
-
-            for (const auto& ring : polylines)
+            OpenMesh::FaceHandle face_handle = add_face(v0, v1, v2);
+            if (face_handle.is_valid())
             {
-                for (size_t i = 0; i < ring.size(); ++i)
+                //std::cout << "[StitchLog] Face SUCCESS: (" << v0.idx() << ", " << v1.idx() << ", " << v2.idx() << ")" << std::endl;
+            }
+            else
+            {
+                //std::cout << "[StitchLog] Face ERROR: Reversing winding order for (" << v0.idx() << ", " << v1.idx() << ", " << v2.idx() << ")" << std::endl;
+                face_handle = add_face(v0, v2, v1);
+                if (face_handle.is_valid())
                 {
-                    Eigen::Vector3f p0 = ring[i];
-                    Eigen::Vector3f p1 = ring[(i + 1) % ring.size()];
-                    Eigen::Vector3f dir = p1 - p0;
-                    float len = dir.norm();
-                    if (len < EPS) continue;
-                    dir /= len;
-
-                    // 1. 현재 선분(p0 -> p1)이 관통하는 모든 면(Face)을 찾습니다.
-                    std::vector<OpenMesh::FaceHandle> faces_to_cut;
-                    for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
-                    {
-                        if (status(*f_it).deleted()) continue;
-
-                        Eigen::Vector3f v0, v1, v2;
-                        GetFaceVertices(*f_it, v0, v1, v2);
-
-                        // 면을 관통하는지 수학적으로 검사 (Ray-Triangle 근사)
-                        Eigen::Vector3f center = (v0 + v1 + v2) / 3.0f;
-                        if (DistanceToSegmentSquared(center, p0, p1) < 1e-4f)
-                        {
-                            faces_to_cut.push_back(*f_it);
-                        }
-                    }
-
-                    // 2. 관통당한 면들을 하나씩 정확하게 3조각으로 쪼갭니다.
-                    for (auto fh : faces_to_cut)
-                    {
-                        if (status(fh).deleted()) continue;
-
-                        // 원래 삼각형의 정점 가져오기
-                        auto fv_it = cfv_iter(fh);
-                        OpenMesh::VertexHandle vh0 = *fv_it++;
-                        OpenMesh::VertexHandle vh1 = *fv_it++;
-                        OpenMesh::VertexHandle vh2 = *fv_it;
-
-                        Eigen::Vector3f v0(point(vh0).data());
-                        Eigen::Vector3f v1(point(vh1).data());
-                        Eigen::Vector3f v2(point(vh2).data());
-
-                        // (단순화를 위한 로직) 선분이 V0-V1 엣지와 V0-V2 엣지를 지나간다고 가정할 때의 교차점 계산
-                        // 실제 상용 코드에서는 어느 엣지를 지나가는지 정확히 판별해야 합니다.
-                        Eigen::Vector3f cut_pt1 = p0; // V0-V1 위로 투영된 점이라 가정
-                        Eigen::Vector3f cut_pt2 = p1; // V0-V2 위로 투영된 점이라 가정
-
-                        // 새로운 정점 생성
-                        OpenMesh::VertexHandle new_vh1 = add_vertex(OMMesh::Point(cut_pt1.x(), cut_pt1.y(), cut_pt1.z()));
-                        OpenMesh::VertexHandle new_vh2 = add_vertex(OMMesh::Point(cut_pt2.x(), cut_pt2.y(), cut_pt2.z()));
-
-                        // [핵심] 원본 면을 삭제합니다!
-                        delete_face(fh, false);
-
-                        // [핵심] 절단 엣지(new_vh1 -> new_vh2)가 포함된 3개의 새로운 삼각형을 직접 추가합니다.
-                        // 1번 삼각형: 고립된 꼭짓점과 절단선
-                        add_face(vh0, new_vh1, new_vh2);
-
-                        // 2번 삼각형: 아래쪽 사각형을 쪼갠 첫 번째 삼각형
-                        add_face(new_vh1, vh1, vh2);
-
-                        // 3번 삼각형: 아래쪽 사각형을 쪼갠 두 번째 삼각형
-                        add_face(new_vh1, vh2, new_vh2);
-                    }
+                    //std::cout << "[StitchLog] Face SUCCESS (Reversed): (" << v0.idx() << ", " << v2.idx() << ", " << v1.idx() << ")" << std::endl;
+                }
+                else
+                {
+                    //std::cout << "[StitchLog] Face FATAL: Failed both winding orders!" << std::endl;
                 }
             }
-
-            // 삭제된 면과 고립된 엣지를 완전히 정리하여 위상을 깔끔하게 만듭니다.
-            garbage_collection();
-            BuildSpatialHashMap();
+            return face_handle;
         }
 
-        // ---------------------------------------------------------
-        // (PERFECT BARRIER) 빈틈없는 철벽 방어막 + 영역 확장(Dilation) 초고속 분할
-        // ---------------------------------------------------------
-        std::vector<std::unique_ptr<Mesh>> SeparateMeshesAlongCutlines(const std::vector<std::vector<Eigen::Vector3f>>& polylines)
+        int FindBestMatchingRing(const std::vector<OpenMesh::VertexHandle>& boundary, const std::vector<std::vector<Eigen::Vector3f>>& polylines) const
         {
-            // 방어막 두께를 약간 더 넉넉하게 줍니다 (스케일에 따라 조절).
-            float barrier_tol = 4.0e-3f;
-            float barrier_tol_sq = barrier_tol * barrier_tol;
+            //std::cout << "\n[Step 1] Finding Best Matching Ring (Dynamic Scale)..." << std::endl;
 
-            std::vector<bool> is_barrier_face(n_faces(), false);
+            // 1. 모델의 전체 바운딩 박스를 계산하여 스케일을 파악합니다.
+            Eigen::Vector3f b_min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+            Eigen::Vector3f b_max(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
 
-            // [STEP 1] 절단선 주변 면들을 철벽 방어막으로 마킹
-            for (const auto& ring : polylines)
+            for (auto v_it = vertices_begin(); v_it != vertices_end(); ++v_it)
             {
-                for (size_t i = 0; i < ring.size(); ++i)
-                {
-                    Eigen::Vector3f p0 = ring[i];
-                    Eigen::Vector3f p1 = ring[(i + 1) % ring.size()];
-
-                    Eigen::Vector3f min_pt = p0.cwiseMin(p1) - Eigen::Vector3f::Constant(barrier_tol);
-                    Eigen::Vector3f max_pt = p0.cwiseMax(p1) + Eigen::Vector3f::Constant(barrier_tol);
-
-                    Eigen::Vector3f local_min = min_pt - grid_min;
-                    Eigen::Vector3f local_max = max_pt - grid_min;
-
-                    int min_x = static_cast<int>(std::floor(local_min.x() / grid_cell_size.x()));
-                    int min_y = static_cast<int>(std::floor(local_min.y() / grid_cell_size.y()));
-                    int min_z = static_cast<int>(std::floor(local_min.z() / grid_cell_size.z()));
-
-                    int max_x = static_cast<int>(std::floor(local_max.x() / grid_cell_size.x()));
-                    int max_y = static_cast<int>(std::floor(local_max.y() / grid_cell_size.y()));
-                    int max_z = static_cast<int>(std::floor(local_max.z() / grid_cell_size.z()));
-
-                    for (int cz = min_z; cz <= max_z; ++cz) {
-                        for (int cy = min_y; cy <= max_y; ++cy) {
-                            for (int cx = min_x; cx <= max_x; ++cx) {
-                                auto it = hash_map.find(Eigen::Vector3i(cx, cy, cz));
-                                if (it != hash_map.end()) {
-                                    for (int f_idx : it->second) {
-                                        if (is_barrier_face[f_idx]) continue;
-
-                                        auto fh = face_handle(f_idx);
-                                        if (status(fh).deleted()) continue;
-
-                                        Eigen::Vector3f v0, v1, v2;
-                                        GetFaceVertices(fh, v0, v1, v2);
-
-                                        // 면 중심 및 엣지 중점 계산
-                                        Eigen::Vector3f c = (v0 + v1 + v2) / 3.0f;
-                                        Eigen::Vector3f m0 = (v0 + v1) * 0.5f;
-                                        Eigen::Vector3f m1 = (v1 + v2) * 0.5f;
-                                        Eigen::Vector3f m2 = (v2 + v0) * 0.5f;
-
-                                        // [핵심] 꼭짓점, 중심점, 엣지 중점 중 하나라도 닿으면 즉시 차단! (누수 확률 0%)
-                                        if (DistanceToSegmentSquared(c, p0, p1) < barrier_tol_sq ||
-                                            DistanceToSegmentSquared(v0, p0, p1) < barrier_tol_sq ||
-                                            DistanceToSegmentSquared(v1, p0, p1) < barrier_tol_sq ||
-                                            DistanceToSegmentSquared(v2, p0, p1) < barrier_tol_sq ||
-                                            DistanceToSegmentSquared(m0, p0, p1) < barrier_tol_sq ||
-                                            DistanceToSegmentSquared(m1, p0, p1) < barrier_tol_sq ||
-                                            DistanceToSegmentSquared(m2, p0, p1) < barrier_tol_sq)
-                                        {
-                                            is_barrier_face[f_idx] = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                Eigen::Vector3f p(point(*v_it).data());
+                b_min = b_min.cwiseMin(p);
+                b_max = b_max.cwiseMax(p);
             }
 
-            // [STEP 2] Flood Fill (철벽 방어막을 피해 안전한 영역끼리 파티셔닝)
-            std::vector<int> face_partition(n_faces(), -1);
-            int current_partition = 0;
+            // 모델의 대각선 길이를 기준으로 동적 임계값을 설정합니다 (예: 전체 크기의 5%)
+            float model_diagonal = (b_max - b_min).norm();
+            float dynamic_threshold = model_diagonal * 0.05f;
 
-            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            //std::cout << "[StitchLog] Model Diagonal: " << model_diagonal << ", Dynamic Threshold: " << dynamic_threshold << std::endl;
+
+            int best_ring_index = -1;
+            float min_average_distance = std::numeric_limits<float>::max();
+
+            // 2. 모든 절단선과의 평균 거리를 계산합니다.
+            for (size_t r = 0; r < polylines.size(); ++r)
             {
-                if (status(*f_it).deleted() || face_partition[f_it->idx()] != -1 || is_barrier_face[f_it->idx()]) continue;
-
-                std::vector<OpenMesh::FaceHandle> queue;
-                queue.push_back(*f_it);
-                face_partition[f_it->idx()] = current_partition;
-
-                size_t head = 0;
-                while (head < queue.size())
+                const auto& ring = polylines[r];
+                if (ring.size() < 3)
                 {
-                    auto current_fh = queue[head++];
-                    for (auto ff_it = cff_iter(current_fh); ff_it.is_valid(); ++ff_it)
+                    continue;
+                }
+
+                float total_distance = 0.0f;
+                for (auto vh : boundary)
+                {
+                    Eigen::Vector3f pa(point(vh).data());
+                    float min_d = std::numeric_limits<float>::max();
+                    for (const auto& pb : ring)
                     {
-                        if (!status(*ff_it).deleted() && face_partition[ff_it->idx()] == -1 && !is_barrier_face[ff_it->idx()])
-                        {
-                            face_partition[ff_it->idx()] = current_partition;
-                            queue.push_back(*ff_it);
-                        }
+                        min_d = std::min(min_d, (pa - pb).norm());
                     }
+                    total_distance += min_d;
                 }
-                current_partition++;
+                float average_distance = total_distance / static_cast<float>(boundary.size());
+
+                //std::cout << "[StitchLog] Ring " << r << " Average Distance: " << average_distance << std::endl;
+
+                if (average_distance < min_average_distance)
+                {
+                    min_average_distance = average_distance;
+                    best_ring_index = static_cast<int>(r);
+                }
             }
 
-            // [STEP 3] Dilation (영역 확장) : 비무장지대(Barrier)였던 면들을 근처 파티션에 흡수
-            bool changed = true;
-            int max_iters = 100;
-            while (changed && max_iters-- > 0)
+            // 3. 고정값이 아닌, 모델 스케일에 비례하는 동적 임계값으로 필터링합니다.
+            if (min_average_distance > dynamic_threshold)
             {
-                changed = false;
-                for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
-                {
-                    if (status(*f_it).deleted() || face_partition[f_it->idx()] != -1) continue;
-
-                    for (auto ff_it = cff_iter(*f_it); ff_it.is_valid(); ++ff_it)
-                    {
-                        int neighbor_p = face_partition[ff_it->idx()];
-                        if (neighbor_p != -1)
-                        {
-                            face_partition[f_it->idx()] = neighbor_p;
-                            changed = true;
-                            break;
-                        }
-                    }
-                }
+                //std::cout << "[StitchLog] No valid ring found. Minimum average distance (" << min_average_distance << ") exceeds dynamic threshold (" << dynamic_threshold << ")." << std::endl;
+                return -1;
             }
 
-            // [STEP 4] 파티션 번호에 따라 새로운 Mesh 생성
-            std::vector<std::unique_ptr<Mesh>> result_meshes;
-            for (int p = 0; p < current_partition; ++p)
-            {
-                auto new_mesh = std::make_unique<Mesh>();
-                new_mesh->request_vertex_status();
-                new_mesh->request_edge_status();
-                new_mesh->request_face_status();
-
-                std::vector<OpenMesh::VertexHandle> vmap(n_vertices(), OpenMesh::VertexHandle(-1));
-                int added_faces = 0;
-
-                for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
-                {
-                    if (status(*f_it).deleted() || face_partition[f_it->idx()] != p) continue;
-
-                    std::vector<OpenMesh::VertexHandle> face_vhandles;
-                    for (auto fv_it = cfv_iter(*f_it); fv_it.is_valid(); ++fv_it)
-                    {
-                        int old_idx = fv_it->idx();
-                        if (!vmap[old_idx].is_valid())
-                        {
-                            Eigen::Vector3f pos(point(*fv_it).data());
-                            vmap[old_idx] = new_mesh->add_vertex(OMMesh::Point(pos.x(), pos.y(), pos.z()));
-                        }
-                        face_vhandles.push_back(vmap[old_idx]);
-                    }
-                    new_mesh->add_face(face_vhandles);
-                    added_faces++;
-                }
-
-                if (added_faces > 0)
-                {
-                    new_mesh->BuildSpatialHashMap();
-                    result_meshes.push_back(std::move(new_mesh));
-                }
-            }
-
-            return result_meshes;
+            //std::cout << "[StitchLog] Selected Ring Index: " << best_ring_index << std::endl;
+            return best_ring_index;
         }
 
-        // ---------------------------------------------------------
-        // (NEW) 해시 맵을 활용한 O(1) 초고속 점 소속 면(Face) 탐색
-        // ---------------------------------------------------------
+        void FindBestStartPoints(const std::vector<OpenMesh::VertexHandle>& loop_a, const std::vector<Eigen::Vector3f>& loop_b, int& out_best_a, int& out_best_b) const
+        {
+            //std::cout << "[Step 2] Finding Best Start Points..." << std::endl;
+            out_best_a = 0;
+            out_best_b = 0;
+            float min_start_distance = std::numeric_limits<float>::max();
+
+            int number_a = static_cast<int>(loop_a.size());
+            int number_b = static_cast<int>(loop_b.size());
+
+            for (int i = 0; i < number_a; ++i)
+            {
+                Eigen::Vector3f pa(point(loop_a[i]).data());
+                for (int j = 0; j < number_b; ++j)
+                {
+                    float distance = (pa - loop_b[j]).squaredNorm();
+                    if (distance < min_start_distance)
+                    {
+                        min_start_distance = distance;
+                        out_best_a = i;
+                        out_best_b = j;
+                    }
+                }
+            }
+            //std::cout << "[StitchLog] Start Points Found -> Loop A Index: " << out_best_a << ", Loop B Index: " << out_best_b << " (Squared Distance: " << min_start_distance << ")" << std::endl;
+        }
+
+        float CalculateDPCost(const std::vector<OpenMesh::VertexHandle>& loop_a, const std::vector<Eigen::Vector3f>& loop_b, std::vector<int>& out_path) const
+        {
+            int number_a = static_cast<int>(loop_a.size());
+            int number_b = static_cast<int>(loop_b.size());
+
+            std::vector<float> dp((number_a + 1) * (number_b + 1), 0.0f);
+            std::vector<int> choice((number_a + 1) * (number_b + 1), 0);
+
+            auto get_distance = [&](int i, int j) -> float
+                {
+                    Eigen::Vector3f pa(point(loop_a[i % number_a]).data());
+                    Eigen::Vector3f pb = loop_b[j % number_b];
+                    return (pa - pb).norm();
+                };
+
+            dp[0] = 0.0f;
+            for (int i = 1; i <= number_a; ++i)
+            {
+                dp[i * (number_b + 1) + 0] = dp[(i - 1) * (number_b + 1) + 0] + get_distance(i, 0);
+                choice[i * (number_b + 1) + 0] = 1;
+            }
+
+            for (int j = 1; j <= number_b; ++j)
+            {
+                dp[0 * (number_b + 1) + j] = dp[0 * (number_b + 1) + (j - 1)] + get_distance(0, j);
+                choice[0 * (number_b + 1) + j] = 2;
+            }
+
+            for (int i = 1; i <= number_a; ++i)
+            {
+                for (int j = 1; j <= number_b; ++j)
+                {
+                    float cost_a = dp[(i - 1) * (number_b + 1) + j];
+                    float cost_b = dp[i * (number_b + 1) + (j - 1)];
+
+                    float current_distance = get_distance(i, j);
+
+                    if (cost_a < cost_b)
+                    {
+                        dp[i * (number_b + 1) + j] = cost_a + current_distance;
+                        choice[i * (number_b + 1) + j] = 1;
+                    }
+                    else
+                    {
+                        dp[i * (number_b + 1) + j] = cost_b + current_distance;
+                        choice[i * (number_b + 1) + j] = 2;
+                    }
+                }
+            }
+
+            out_path.clear();
+            int current_i = number_a;
+            int current_j = number_b;
+
+            while (current_i > 0 || current_j > 0)
+            {
+                int step = choice[current_i * (number_b + 1) + current_j];
+                out_path.push_back(step);
+
+                if (step == 1)
+                {
+                    current_i--;
+                }
+                else
+                {
+                    current_j--;
+                }
+            }
+            std::reverse(out_path.begin(), out_path.end());
+
+            return dp[number_a * (number_b + 1) + number_b];
+        }
+
+        std::vector<Eigen::Vector3f> DetermineOptimalRingDirection(const std::vector<OpenMesh::VertexHandle>& loop_a, const std::vector<Eigen::Vector3f>& original_ring, int best_b) const
+        {
+            int number_a = static_cast<int>(loop_a.size());
+            int number_b = static_cast<int>(original_ring.size());
+
+            std::vector<Eigen::Vector3f> ring_forward;
+            std::vector<Eigen::Vector3f> ring_reverse;
+
+            for (int i = 0; i < number_b; ++i)
+            {
+                ring_forward.push_back(original_ring[(best_b + i) % number_b]);
+                ring_reverse.push_back(original_ring[(best_b - i + number_b) % number_b]);
+            }
+
+            if (number_a < 3 || number_b < 3)
+            {
+                return ring_forward;
+            }
+
+            int step_a = std::max(1, number_a / 10);
+            int step_b = std::max(1, number_b / 10);
+
+            Eigen::Vector3f start_point_a(point(loop_a[0]).data());
+            Eigen::Vector3f target_point_a(point(loop_a[step_a]).data());
+            Eigen::Vector3f direction_a = (target_point_a - start_point_a).normalized();
+
+            Eigen::Vector3f start_point_b = ring_forward[0];
+
+            Eigen::Vector3f target_point_b_forward = ring_forward[step_b];
+            Eigen::Vector3f direction_b_forward = (target_point_b_forward - start_point_b).normalized();
+
+            Eigen::Vector3f target_point_b_reverse = ring_reverse[step_b];
+            Eigen::Vector3f direction_b_reverse = (target_point_b_reverse - start_point_b).normalized();
+
+            if (direction_a.dot(direction_b_forward) >= direction_a.dot(direction_b_reverse))
+            {
+                return ring_forward;
+            }
+            else
+            {
+                return ring_reverse;
+            }
+        }
+
+        void PerformParameterizationZippering(const std::vector<OpenMesh::VertexHandle>& loop_a, const std::vector<OpenMesh::VertexHandle>& loop_b)
+        {
+            int number_a = static_cast<int>(loop_a.size());
+            int number_b = static_cast<int>(loop_b.size());
+
+            std::vector<float> parameters_a(number_a, 0.0f);
+            float current_length_a = 0.0f;
+            for (int i = 0; i < number_a; ++i)
+            {
+                parameters_a[i] = current_length_a;
+                current_length_a += (Eigen::Vector3f(point(loop_a[(i + 1) % number_a]).data()) - Eigen::Vector3f(point(loop_a[i]).data())).norm();
+            }
+            if (current_length_a > 1e-6f)
+            {
+                for (int i = 0; i < number_a; ++i)
+                {
+                    parameters_a[i] /= current_length_a;
+                }
+            }
+
+            std::vector<float> parameters_b(number_b, 0.0f);
+            float current_length_b = 0.0f;
+            for (int i = 0; i < number_b; ++i)
+            {
+                parameters_b[i] = current_length_b;
+                current_length_b += (Eigen::Vector3f(point(loop_b[(i + 1) % number_b]).data()) - Eigen::Vector3f(point(loop_b[i]).data())).norm();
+            }
+            if (current_length_b > 1e-6f)
+            {
+                for (int i = 0; i < number_b; ++i)
+                {
+                    parameters_b[i] /= current_length_b;
+                }
+            }
+
+            int index_a = 0;
+            int index_b = 0;
+
+            while (index_a < number_a || index_b < number_b)
+            {
+                int next_a = (index_a + 1) % number_a;
+                int next_b = (index_b + 1) % number_b;
+
+                bool advance_a = false;
+
+                if (index_a == number_a)
+                {
+                    advance_a = false;
+                }
+                else if (index_b == number_b)
+                {
+                    advance_a = true;
+                }
+                else
+                {
+                    float parameter_next_a = (next_a == 0) ? 1.0f : parameters_a[next_a];
+                    float parameter_next_b = (next_b == 0) ? 1.0f : parameters_b[next_b];
+                    advance_a = (parameter_next_a <= parameter_next_b);
+                }
+
+                OpenMesh::FaceHandle face_handle;
+                if (advance_a)
+                {
+                    face_handle = add_face(loop_a[next_a], loop_a[index_a % number_a], loop_b[index_b % number_b]);
+                    if (!face_handle.is_valid())
+                    {
+                        add_face(loop_a[index_a % number_a], loop_a[next_a], loop_b[index_b % number_b]);
+                    }
+                    index_a++;
+                }
+                else
+                {
+                    face_handle = add_face(loop_b[next_b], loop_b[index_b % number_b], loop_a[index_a % number_a]);
+                    if (!face_handle.is_valid())
+                    {
+                        add_face(loop_b[index_b % number_b], loop_b[next_b], loop_a[index_a % number_a]);
+                    }
+                    index_b++;
+                }
+            }
+        }
+
+
+
+
+
+
+
+
+
+
         OpenMesh::FaceHandle FindFaceAtPosition(const Eigen::Vector3f& pt) const
         {
             if (hash_map.empty()) return OpenMesh::FaceHandle(-1);
@@ -1694,7 +1576,6 @@ namespace SGL
             OpenMesh::FaceHandle best_face(-1);
             float min_dist = std::numeric_limits<float>::max();
 
-            // 점이 위치한 복셀 및 인접 복셀(3x3x3=27칸)만 탐색 (전체 7만 개 탐색 -> 평균 10~20개 탐색으로 단축)
             for (int dz = -1; dz <= 1; ++dz) {
                 for (int dy = -1; dy <= 1; ++dy) {
                     for (int dx = -1; dx <= 1; ++dx) {
