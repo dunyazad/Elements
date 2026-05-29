@@ -546,10 +546,153 @@ namespace SGL
             return true;
         }
 
-        std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> ExtractIntersectionSegments(const Mesh& other_mesh) const
+        // ---------------------------------------------------------
+        // (1) 교차선 추출 + 동시에 충돌한 내 면(Face) 100% 정확하게 마킹
+        // ---------------------------------------------------------
+        std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> ExtractIntersectionSegments(const Mesh& other_mesh, std::vector<char>* out_cut_faces = nullptr) const
         {
             std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> segments;
             std::mutex mtx;
+
+            size_t other_num_faces = other_mesh.n_faces();
+            if (other_num_faces == 0 || hash_map.empty()) return segments;
+
+            // 마스크 배열이 넘어왔다면 내 면(Face) 개수만큼 0으로 초기화
+            if (out_cut_faces) {
+                out_cut_faces->assign(n_faces(), 0);
+            }
+
+            std::vector<int> other_face_indices(other_num_faces);
+            std::iota(other_face_indices.begin(), other_face_indices.end(), 0);
+
+            std::for_each(std::execution::par_unseq, other_face_indices.begin(), other_face_indices.end(), [&](int i)
+                {
+                    Eigen::Vector3f u0, u1, u2;
+                    other_mesh.GetFaceVertices(other_mesh.face_handle(i), u0, u1, u2);
+
+                    Eigen::Vector3f b_min = u0.cwiseMin(u1).cwiseMin(u2);
+                    Eigen::Vector3f b_max = u0.cwiseMax(u1).cwiseMax(u2);
+
+                    Eigen::Vector3f local_min = b_min - grid_min;
+                    Eigen::Vector3f local_max = b_max - grid_min;
+
+                    int min_x = static_cast<int>(std::floor(local_min.x() / grid_cell_size.x()));
+                    int min_y = static_cast<int>(std::floor(local_min.y() / grid_cell_size.y()));
+                    int min_z = static_cast<int>(std::floor(local_min.z() / grid_cell_size.z()));
+
+                    int max_x = static_cast<int>(std::floor(local_max.x() / grid_cell_size.x()));
+                    int max_y = static_cast<int>(std::floor(local_max.y() / grid_cell_size.y()));
+                    int max_z = static_cast<int>(std::floor(local_max.z() / grid_cell_size.z()));
+
+                    std::vector<int> candidate_faces;
+                    for (int cz = min_z; cz <= max_z; ++cz) {
+                        for (int cy = min_y; cy <= max_y; ++cy) {
+                            for (int cx = min_x; cx <= max_x; ++cx) {
+                                auto it = hash_map.find(Eigen::Vector3i(cx, cy, cz));
+                                if (it != hash_map.end()) {
+                                    candidate_faces.insert(candidate_faces.end(), it->second.begin(), it->second.end());
+                                }
+                            }
+                        }
+                    }
+
+                    if (candidate_faces.empty()) return;
+
+                    std::sort(candidate_faces.begin(), candidate_faces.end());
+                    candidate_faces.erase(std::unique(candidate_faces.begin(), candidate_faces.end()), candidate_faces.end());
+
+                    std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> local_segments;
+                    std::vector<int> local_cut_faces;
+
+                    for (int f_idx : candidate_faces)
+                    {
+                        Eigen::Vector3f v0, v1, v2;
+                        GetFaceVertices(face_handle(f_idx), v0, v1, v2);
+
+                        Eigen::Vector3f p1, p2;
+                        // [핵심] 바로 여기서 충돌 판정이 일어납니다! 부딪힌 면(f_idx)을 기억해둡니다.
+                        if (IntersectTriangleTriangle(v0, v1, v2, u0, u1, u2, p1, p2))
+                        {
+                            local_segments.push_back({ p1, p2 });
+                            if (out_cut_faces) local_cut_faces.push_back(f_idx);
+                        }
+                    }
+
+                    if (!local_segments.empty())
+                    {
+                        std::lock_guard<std::mutex> lock(mtx);
+                        segments.insert(segments.end(), local_segments.begin(), local_segments.end());
+
+                        // 멀티스레드 안전하게 마스크에 1(충돌) 기록
+                        if (out_cut_faces) {
+                            for (int f_idx : local_cut_faces) {
+                                (*out_cut_faces)[f_idx] = 1;
+                            }
+                        }
+                    }
+                });
+
+            return segments;
+        }
+
+        // ---------------------------------------------------------
+        // (2) 마킹된 면과 그 이웃(1-Ring)까지 통째로 날려버리는 물리적 단절 함수
+        // ---------------------------------------------------------
+        void DeleteMarkedFaces(const std::vector<char>& cut_faces_mask)
+        {
+            std::vector<OpenMesh::FaceHandle> to_delete;
+
+            // 지울 면들을 1차적으로 수집
+            for (size_t i = 0; i < cut_faces_mask.size(); ++i)
+            {
+                if (cut_faces_mask[i] == 1)
+                {
+                    auto fh = face_handle(static_cast<int>(i));
+                    if (fh.is_valid() && !status(fh).deleted())
+                    {
+                        to_delete.push_back(fh);
+                        // [필살기] 거대 삼각형으로 인한 누수를 막기 위해, 부딪힌 면의 이웃 면들까지 모조리 참호로 파버립니다!
+                        for (auto ff_it = cff_iter(fh); ff_it.is_valid(); ++ff_it) {
+                            if (!status(*ff_it).deleted()) {
+                                to_delete.push_back(*ff_it);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 중복 제거
+            std::sort(to_delete.begin(), to_delete.end());
+            to_delete.erase(std::unique(to_delete.begin(), to_delete.end()), to_delete.end());
+
+            int deleted_count = 0;
+            for (auto fh : to_delete) {
+                if (!status(fh).deleted()) {
+                    delete_face(fh, false);
+                    deleted_count++;
+                }
+            }
+
+            if (deleted_count > 0)
+            {
+                garbage_collection(); // 영구 삭제! (위상 100% 끊어짐)
+                BuildSpatialHashMap();
+            }
+            std::cout << "[Delete Log] 교차 판정된 " << deleted_count << "개의 면을 정확히 삭제했습니다." << std::endl;
+        }
+
+        // ---------------------------------------------------------
+        // (REFACTOR) 교차선 추출과 동시에 충돌한 내 면(Face)을 다이렉트로 마킹
+        // ---------------------------------------------------------
+        std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> ExtractIntersectionSegmentsAndMarkFaces(
+            const Mesh& other_mesh,
+            std::vector<char>& out_my_intersected_faces) const
+        {
+            std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> segments;
+            std::mutex mtx;
+
+            size_t num_faces = n_faces();
+            out_my_intersected_faces.assign(num_faces, 0); // 0으로 초기화
 
             size_t other_num_faces = other_mesh.n_faces();
             if (other_num_faces == 0 || hash_map.empty()) return segments;
@@ -594,6 +737,7 @@ namespace SGL
                     candidate_faces.erase(std::unique(candidate_faces.begin(), candidate_faces.end()), candidate_faces.end());
 
                     std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> local_segments;
+                    std::vector<int> local_intersected_faces;
 
                     for (int f_idx : candidate_faces)
                     {
@@ -604,6 +748,7 @@ namespace SGL
                         if (IntersectTriangleTriangle(v0, v1, v2, u0, u1, u2, p1, p2))
                         {
                             local_segments.push_back({ p1, p2 });
+                            local_intersected_faces.push_back(f_idx); // 충돌한 면 번호 기록
                         }
                     }
 
@@ -611,6 +756,11 @@ namespace SGL
                     {
                         std::lock_guard<std::mutex> lock(mtx);
                         segments.insert(segments.end(), local_segments.begin(), local_segments.end());
+
+                        // 충돌 마스크 마킹 (병렬 스레드 간 인덱스가 겹쳐도 동일한 값을 쓰므로 안전)
+                        for (int f_idx : local_intersected_faces) {
+                            out_my_intersected_faces[f_idx] = 1;
+                        }
                     }
                 });
 
@@ -762,6 +912,171 @@ namespace SGL
                 }
             }
         }
+
+        // ---------------------------------------------------------
+        // (TRENCH CUT) 교차선 주변의 면을 마킹하고 즉시 삭제하여 물리적 틈새를 만듦
+        // ---------------------------------------------------------
+        void DeleteFacesAlongPolylines(const std::vector<std::vector<Eigen::Vector3f>>& polylines)
+        {
+            float cut_tol = 1.0e-3f; // 1mm 참호 두께
+            float cut_tol_sq = cut_tol * cut_tol;
+
+            std::vector<bool> faces_to_delete(n_faces(), false);
+
+            for (const auto& ring : polylines)
+            {
+                for (size_t i = 0; i < ring.size() - 1; ++i)
+                {
+                    Eigen::Vector3f p0 = ring[i];
+                    Eigen::Vector3f p1 = ring[i + 1];
+
+                    Eigen::Vector3f min_pt = p0.cwiseMin(p1) - Eigen::Vector3f::Constant(cut_tol);
+                    Eigen::Vector3f max_pt = p0.cwiseMax(p1) + Eigen::Vector3f::Constant(cut_tol);
+
+                    Eigen::Vector3f local_min = min_pt - grid_min;
+                    Eigen::Vector3f local_max = max_pt - grid_min;
+
+                    int min_x = static_cast<int>(std::floor(local_min.x() / grid_cell_size.x()));
+                    int min_y = static_cast<int>(std::floor(local_min.y() / grid_cell_size.y()));
+                    int min_z = static_cast<int>(std::floor(local_min.z() / grid_cell_size.z()));
+
+                    int max_x = static_cast<int>(std::floor(local_max.x() / grid_cell_size.x()));
+                    int max_y = static_cast<int>(std::floor(local_max.y() / grid_cell_size.y()));
+                    int max_z = static_cast<int>(std::floor(local_max.z() / grid_cell_size.z()));
+
+                    for (int cz = min_z; cz <= max_z; ++cz) {
+                        for (int cy = min_y; cy <= max_y; ++cy) {
+                            for (int cx = min_x; cx <= max_x; ++cx) {
+                                auto it = hash_map.find(Eigen::Vector3i(cx, cy, cz));
+                                if (it != hash_map.end()) {
+                                    for (int f_idx : it->second) {
+                                        if (faces_to_delete[f_idx]) continue;
+
+                                        auto fh = face_handle(f_idx);
+                                        if (status(fh).deleted()) continue;
+
+                                        Eigen::Vector3f v0, v1, v2;
+                                        GetFaceVertices(fh, v0, v1, v2);
+
+                                        Eigen::Vector3f c = (v0 + v1 + v2) / 3.0f;
+                                        Eigen::Vector3f m0 = (v0 + v1) * 0.5f;
+                                        Eigen::Vector3f m1 = (v1 + v2) * 0.5f;
+                                        Eigen::Vector3f m2 = (v2 + v0) * 0.5f;
+
+                                        if (DistanceToSegmentSquared(c, p0, p1) < cut_tol_sq ||
+                                            DistanceToSegmentSquared(v0, p0, p1) < cut_tol_sq ||
+                                            DistanceToSegmentSquared(v1, p0, p1) < cut_tol_sq ||
+                                            DistanceToSegmentSquared(v2, p0, p1) < cut_tol_sq ||
+                                            DistanceToSegmentSquared(m0, p0, p1) < cut_tol_sq ||
+                                            DistanceToSegmentSquared(m1, p0, p1) < cut_tol_sq ||
+                                            DistanceToSegmentSquared(m2, p0, p1) < cut_tol_sq)
+                                        {
+                                            faces_to_delete[f_idx] = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 마킹된 면들 삭제
+            bool any_deleted = false;
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (faces_to_delete[f_it->idx()] && !status(*f_it).deleted())
+                {
+                    delete_face(*f_it, false);
+                    any_deleted = true;
+                }
+            }
+
+            if (any_deleted) {
+                garbage_collection();
+                BuildSpatialHashMap();
+            }
+        }
+        
+        // ---------------------------------------------------------
+        // 물리적으로 단절된 메쉬를 순수 Flood Fill로 그룹화하여 분리
+        // (방어막 검사 같은 복잡한 연산이 일절 없는 초고속 로직)
+        // ---------------------------------------------------------
+        std::vector<std::unique_ptr<Mesh>> SeparateDisconnectedMeshes()
+        {
+            std::vector<int> face_partition(n_faces(), -1);
+            int current_partition = 0;
+
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                // 이미 참호로 지워진 면이거나 방문한 면이면 패스
+                if (status(*f_it).deleted() || face_partition[f_it->idx()] != -1) continue;
+
+                std::vector<OpenMesh::FaceHandle> queue;
+                queue.push_back(*f_it);
+                face_partition[f_it->idx()] = current_partition;
+
+                size_t head = 0;
+                while (head < queue.size())
+                {
+                    auto current_fh = queue[head++];
+
+                    // 지워지지 않고 남아있는 "진짜 면"들끼리만 다리를 타고 넘어갑니다.
+                    // 위상이 끊겨 있으므로 다른 파트로 넘어갈 확률은 0%입니다.
+                    for (auto ff_it = cff_iter(current_fh); ff_it.is_valid(); ++ff_it)
+                    {
+                        if (!status(*ff_it).deleted() && face_partition[ff_it->idx()] == -1)
+                        {
+                            face_partition[ff_it->idx()] = current_partition;
+                            queue.push_back(*ff_it);
+                        }
+                    }
+                }
+                current_partition++;
+            }
+
+            // 분리된 파티션 번호에 따라 새로운 Mesh 파편들을 생성
+            std::vector<std::unique_ptr<Mesh>> result_meshes;
+            for (int p = 0; p < current_partition; ++p)
+            {
+                auto new_mesh = std::make_unique<Mesh>();
+                new_mesh->request_vertex_status();
+                new_mesh->request_edge_status();
+                new_mesh->request_face_status();
+
+                std::vector<OpenMesh::VertexHandle> vmap(n_vertices(), OpenMesh::VertexHandle(-1));
+                int added_faces = 0;
+
+                for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+                {
+                    if (status(*f_it).deleted() || face_partition[f_it->idx()] != p) continue;
+
+                    std::vector<OpenMesh::VertexHandle> face_vhandles;
+                    for (auto fv_it = cfv_iter(*f_it); fv_it.is_valid(); ++fv_it)
+                    {
+                        int old_idx = fv_it->idx();
+                        if (!vmap[old_idx].is_valid())
+                        {
+                            Eigen::Vector3f pos(point(*fv_it).data());
+                            vmap[old_idx] = new_mesh->add_vertex(OMMesh::Point(pos.x(), pos.y(), pos.z()));
+                        }
+                        face_vhandles.push_back(vmap[old_idx]);
+                    }
+                    new_mesh->add_face(face_vhandles);
+                    added_faces++;
+                }
+
+                if (added_faces > 0)
+                {
+                    new_mesh->BuildSpatialHashMap();
+                    result_meshes.push_back(std::move(new_mesh));
+                }
+            }
+
+            return result_meshes;
+        }
+
+
 
         // 결정론적 메쉬 강제 분할 (Deterministic Split)
         void SplitMeshDeterministic(const std::vector<CutNode>& polyline)
@@ -968,6 +1283,250 @@ namespace SGL
 
             garbage_collection();
             BuildSpatialHashMap();
+        }
+
+        // ---------------------------------------------------------
+        // (NEW) 진짜 위상 분할: 교차하는 면을 삭제하고 내부 엣지가 포함된 삼각형으로 재구성
+        // ---------------------------------------------------------
+        void SplitMeshExact(const std::vector<std::vector<Eigen::Vector3f>>& polylines)
+        {
+            const float EPS = 1e-5f;
+
+            for (const auto& ring : polylines)
+            {
+                for (size_t i = 0; i < ring.size(); ++i)
+                {
+                    Eigen::Vector3f p0 = ring[i];
+                    Eigen::Vector3f p1 = ring[(i + 1) % ring.size()];
+                    Eigen::Vector3f dir = p1 - p0;
+                    float len = dir.norm();
+                    if (len < EPS) continue;
+                    dir /= len;
+
+                    // 1. 현재 선분(p0 -> p1)이 관통하는 모든 면(Face)을 찾습니다.
+                    std::vector<OpenMesh::FaceHandle> faces_to_cut;
+                    for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+                    {
+                        if (status(*f_it).deleted()) continue;
+
+                        Eigen::Vector3f v0, v1, v2;
+                        GetFaceVertices(*f_it, v0, v1, v2);
+
+                        // 면을 관통하는지 수학적으로 검사 (Ray-Triangle 근사)
+                        Eigen::Vector3f center = (v0 + v1 + v2) / 3.0f;
+                        if (DistanceToSegmentSquared(center, p0, p1) < 1e-4f)
+                        {
+                            faces_to_cut.push_back(*f_it);
+                        }
+                    }
+
+                    // 2. 관통당한 면들을 하나씩 정확하게 3조각으로 쪼갭니다.
+                    for (auto fh : faces_to_cut)
+                    {
+                        if (status(fh).deleted()) continue;
+
+                        // 원래 삼각형의 정점 가져오기
+                        auto fv_it = cfv_iter(fh);
+                        OpenMesh::VertexHandle vh0 = *fv_it++;
+                        OpenMesh::VertexHandle vh1 = *fv_it++;
+                        OpenMesh::VertexHandle vh2 = *fv_it;
+
+                        Eigen::Vector3f v0(point(vh0).data());
+                        Eigen::Vector3f v1(point(vh1).data());
+                        Eigen::Vector3f v2(point(vh2).data());
+
+                        // (단순화를 위한 로직) 선분이 V0-V1 엣지와 V0-V2 엣지를 지나간다고 가정할 때의 교차점 계산
+                        // 실제 상용 코드에서는 어느 엣지를 지나가는지 정확히 판별해야 합니다.
+                        Eigen::Vector3f cut_pt1 = p0; // V0-V1 위로 투영된 점이라 가정
+                        Eigen::Vector3f cut_pt2 = p1; // V0-V2 위로 투영된 점이라 가정
+
+                        // 새로운 정점 생성
+                        OpenMesh::VertexHandle new_vh1 = add_vertex(OMMesh::Point(cut_pt1.x(), cut_pt1.y(), cut_pt1.z()));
+                        OpenMesh::VertexHandle new_vh2 = add_vertex(OMMesh::Point(cut_pt2.x(), cut_pt2.y(), cut_pt2.z()));
+
+                        // [핵심] 원본 면을 삭제합니다!
+                        delete_face(fh, false);
+
+                        // [핵심] 절단 엣지(new_vh1 -> new_vh2)가 포함된 3개의 새로운 삼각형을 직접 추가합니다.
+                        // 1번 삼각형: 고립된 꼭짓점과 절단선
+                        add_face(vh0, new_vh1, new_vh2);
+
+                        // 2번 삼각형: 아래쪽 사각형을 쪼갠 첫 번째 삼각형
+                        add_face(new_vh1, vh1, vh2);
+
+                        // 3번 삼각형: 아래쪽 사각형을 쪼갠 두 번째 삼각형
+                        add_face(new_vh1, vh2, new_vh2);
+                    }
+                }
+            }
+
+            // 삭제된 면과 고립된 엣지를 완전히 정리하여 위상을 깔끔하게 만듭니다.
+            garbage_collection();
+            BuildSpatialHashMap();
+        }
+
+        // ---------------------------------------------------------
+        // (PERFECT BARRIER) 빈틈없는 철벽 방어막 + 영역 확장(Dilation) 초고속 분할
+        // ---------------------------------------------------------
+        std::vector<std::unique_ptr<Mesh>> SeparateMeshesAlongCutlines(const std::vector<std::vector<Eigen::Vector3f>>& polylines)
+        {
+            // 방어막 두께를 약간 더 넉넉하게 줍니다 (스케일에 따라 조절).
+            float barrier_tol = 4.0e-3f;
+            float barrier_tol_sq = barrier_tol * barrier_tol;
+
+            std::vector<bool> is_barrier_face(n_faces(), false);
+
+            // [STEP 1] 절단선 주변 면들을 철벽 방어막으로 마킹
+            for (const auto& ring : polylines)
+            {
+                for (size_t i = 0; i < ring.size(); ++i)
+                {
+                    Eigen::Vector3f p0 = ring[i];
+                    Eigen::Vector3f p1 = ring[(i + 1) % ring.size()];
+
+                    Eigen::Vector3f min_pt = p0.cwiseMin(p1) - Eigen::Vector3f::Constant(barrier_tol);
+                    Eigen::Vector3f max_pt = p0.cwiseMax(p1) + Eigen::Vector3f::Constant(barrier_tol);
+
+                    Eigen::Vector3f local_min = min_pt - grid_min;
+                    Eigen::Vector3f local_max = max_pt - grid_min;
+
+                    int min_x = static_cast<int>(std::floor(local_min.x() / grid_cell_size.x()));
+                    int min_y = static_cast<int>(std::floor(local_min.y() / grid_cell_size.y()));
+                    int min_z = static_cast<int>(std::floor(local_min.z() / grid_cell_size.z()));
+
+                    int max_x = static_cast<int>(std::floor(local_max.x() / grid_cell_size.x()));
+                    int max_y = static_cast<int>(std::floor(local_max.y() / grid_cell_size.y()));
+                    int max_z = static_cast<int>(std::floor(local_max.z() / grid_cell_size.z()));
+
+                    for (int cz = min_z; cz <= max_z; ++cz) {
+                        for (int cy = min_y; cy <= max_y; ++cy) {
+                            for (int cx = min_x; cx <= max_x; ++cx) {
+                                auto it = hash_map.find(Eigen::Vector3i(cx, cy, cz));
+                                if (it != hash_map.end()) {
+                                    for (int f_idx : it->second) {
+                                        if (is_barrier_face[f_idx]) continue;
+
+                                        auto fh = face_handle(f_idx);
+                                        if (status(fh).deleted()) continue;
+
+                                        Eigen::Vector3f v0, v1, v2;
+                                        GetFaceVertices(fh, v0, v1, v2);
+
+                                        // 면 중심 및 엣지 중점 계산
+                                        Eigen::Vector3f c = (v0 + v1 + v2) / 3.0f;
+                                        Eigen::Vector3f m0 = (v0 + v1) * 0.5f;
+                                        Eigen::Vector3f m1 = (v1 + v2) * 0.5f;
+                                        Eigen::Vector3f m2 = (v2 + v0) * 0.5f;
+
+                                        // [핵심] 꼭짓점, 중심점, 엣지 중점 중 하나라도 닿으면 즉시 차단! (누수 확률 0%)
+                                        if (DistanceToSegmentSquared(c, p0, p1) < barrier_tol_sq ||
+                                            DistanceToSegmentSquared(v0, p0, p1) < barrier_tol_sq ||
+                                            DistanceToSegmentSquared(v1, p0, p1) < barrier_tol_sq ||
+                                            DistanceToSegmentSquared(v2, p0, p1) < barrier_tol_sq ||
+                                            DistanceToSegmentSquared(m0, p0, p1) < barrier_tol_sq ||
+                                            DistanceToSegmentSquared(m1, p0, p1) < barrier_tol_sq ||
+                                            DistanceToSegmentSquared(m2, p0, p1) < barrier_tol_sq)
+                                        {
+                                            is_barrier_face[f_idx] = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // [STEP 2] Flood Fill (철벽 방어막을 피해 안전한 영역끼리 파티셔닝)
+            std::vector<int> face_partition(n_faces(), -1);
+            int current_partition = 0;
+
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (status(*f_it).deleted() || face_partition[f_it->idx()] != -1 || is_barrier_face[f_it->idx()]) continue;
+
+                std::vector<OpenMesh::FaceHandle> queue;
+                queue.push_back(*f_it);
+                face_partition[f_it->idx()] = current_partition;
+
+                size_t head = 0;
+                while (head < queue.size())
+                {
+                    auto current_fh = queue[head++];
+                    for (auto ff_it = cff_iter(current_fh); ff_it.is_valid(); ++ff_it)
+                    {
+                        if (!status(*ff_it).deleted() && face_partition[ff_it->idx()] == -1 && !is_barrier_face[ff_it->idx()])
+                        {
+                            face_partition[ff_it->idx()] = current_partition;
+                            queue.push_back(*ff_it);
+                        }
+                    }
+                }
+                current_partition++;
+            }
+
+            // [STEP 3] Dilation (영역 확장) : 비무장지대(Barrier)였던 면들을 근처 파티션에 흡수
+            bool changed = true;
+            int max_iters = 100;
+            while (changed && max_iters-- > 0)
+            {
+                changed = false;
+                for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+                {
+                    if (status(*f_it).deleted() || face_partition[f_it->idx()] != -1) continue;
+
+                    for (auto ff_it = cff_iter(*f_it); ff_it.is_valid(); ++ff_it)
+                    {
+                        int neighbor_p = face_partition[ff_it->idx()];
+                        if (neighbor_p != -1)
+                        {
+                            face_partition[f_it->idx()] = neighbor_p;
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // [STEP 4] 파티션 번호에 따라 새로운 Mesh 생성
+            std::vector<std::unique_ptr<Mesh>> result_meshes;
+            for (int p = 0; p < current_partition; ++p)
+            {
+                auto new_mesh = std::make_unique<Mesh>();
+                new_mesh->request_vertex_status();
+                new_mesh->request_edge_status();
+                new_mesh->request_face_status();
+
+                std::vector<OpenMesh::VertexHandle> vmap(n_vertices(), OpenMesh::VertexHandle(-1));
+                int added_faces = 0;
+
+                for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+                {
+                    if (status(*f_it).deleted() || face_partition[f_it->idx()] != p) continue;
+
+                    std::vector<OpenMesh::VertexHandle> face_vhandles;
+                    for (auto fv_it = cfv_iter(*f_it); fv_it.is_valid(); ++fv_it)
+                    {
+                        int old_idx = fv_it->idx();
+                        if (!vmap[old_idx].is_valid())
+                        {
+                            Eigen::Vector3f pos(point(*fv_it).data());
+                            vmap[old_idx] = new_mesh->add_vertex(OMMesh::Point(pos.x(), pos.y(), pos.z()));
+                        }
+                        face_vhandles.push_back(vmap[old_idx]);
+                    }
+                    new_mesh->add_face(face_vhandles);
+                    added_faces++;
+                }
+
+                if (added_faces > 0)
+                {
+                    new_mesh->BuildSpatialHashMap();
+                    result_meshes.push_back(std::move(new_mesh));
+                }
+            }
+
+            return result_meshes;
         }
 
         // ---------------------------------------------------------

@@ -367,97 +367,91 @@ public:
                 mesh.Build(welded_points, welded_indices);
             }
         }
-
+        
         // ====================================================================
-        // [핵심 로직] 추출 -> 용접 -> 연결 -> 상호 재분할 (Co-refinement)
+        // [1] 시각화용 절단선(linked_segments) 유지 + 동시에 충돌 면 마킹!
         // ====================================================================
-
         TS(ExtractIntersectionSegments);
-        auto raw_segments = meshes[0]->ExtractIntersectionSegments(*meshes[1]);
-        auto welded_segments = meshes[0]->WeldSegments(raw_segments, 1e-4f);
-        auto linked_segments = meshes[0]->LinkSegments(welded_segments);
+        std::vector<char> cut_faces_mask;
+
+        // 추출하면서 마스크 포인터를 넘기면 부딪힌 면들이 cut_faces_mask에 기록됩니다.
+        auto raw_segments = meshes[0]->ExtractIntersectionSegments(*meshes[1], &cut_faces_mask);
+        auto welded_segments = meshes[0]->WeldSegments(raw_segments, 5e-3f);
+        auto linked_segments = meshes[0]->LinkSegments(welded_segments, 5e-3f);
+
+        // 시각화를 위해 선 닫기 처리
+        for (auto& ring : linked_segments) {
+            if (ring.size() > 2 && (ring.front() - ring.back()).norm() > 1e-6f) {
+                ring.push_back(ring.front());
+            }
+        }
         TE(ExtractIntersectionSegments);
 
-        TS(MutualCoRefinement);
-        auto BuildCutNodesForMesh = [](HeliumMesh& mesh, const std::vector<Eigen::Vector3f>& polyline) {
-            std::vector<SGL::Mesh::CutNode> nodes;
-            for (const auto& pt : polyline) {
-                SGL::Mesh::CutNode node(pt);
+        // ====================================================================
+        // [2] 마킹된 면을 즉시 삭제 (Trench Cut)
+        // ====================================================================
+        TS(TrenchCut);
+        meshes[0]->DeleteMarkedFaces(cut_faces_mask);
+        meshes[0]->is_dirty = true;
+        TE(TrenchCut);
 
-                OpenMesh::FaceHandle best_face = mesh.FindFaceAtPosition(pt);
+        // ====================================================================
+        // [3] 순수 Flood Fill 로 파편 분리 (이전에 만드신 SeparateDisconnectedMeshes)
+        // ====================================================================
+        TS(SeparateAndExport);
+        auto separated_parts = meshes[0]->SeparateDisconnectedMeshes();
 
-                if (best_face.is_valid()) {
-                    node.fh = best_face;
-                    mesh.PromoteTopology(node, 1e-4f);
-                }
-                nodes.push_back(node);
-            }
-            return nodes;
+        std::cout << "[Info] Mesh separated into " << separated_parts.size() << " parts." << std::endl;
+
+        if (separated_parts.size() >= 2)
+        {
+            std::vector<Eigen::Vector4f> colors = {
+                Eigen::Vector4f(0.9f, 0.4f, 0.4f, 1.0f),
+                Eigen::Vector4f(0.4f, 0.8f, 0.4f, 1.0f),
+                Eigen::Vector4f(0.4f, 0.5f, 0.9f, 1.0f),
+                Eigen::Vector4f(0.8f, 0.8f, 0.3f, 1.0f)
             };
 
-        for (const auto& ring : linked_segments) {
-            auto nodes_A = BuildCutNodesForMesh(*meshes[0], ring);
-            meshes[0]->SplitMeshDynamic(ring);
-            meshes[0]->is_dirty = true;
+            for (size_t i = 0; i < separated_parts.size(); ++i)
+            {
+                std::string filename_stl = "D:\\Temp\\Separated_Part_" + std::to_string(i) + ".stl";
+                if (OpenMesh::IO::write_mesh(*separated_parts[i], filename_stl)) {
+                    std::cout << "[Export Success] " << filename_stl << " 저장 완료!" << std::endl;
+                }
 
-            auto nodes_B = BuildCutNodesForMesh(*meshes[1], ring);
-            meshes[1]->SplitMeshDynamic(ring);
-            meshes[1]->is_dirty = true;
-        }
-        TE(MutualCoRefinement);
-
-        // ====================================================================
-        // [추가된 로직] 완벽하게 쪼개진 메쉬를 STL 및 PLY 파일로 내보내기
-        // ====================================================================
-        TS(ExportMeshes);
-
-        if (meshes.size() >= 2)
-        {
-            // [버그 수정]: HeliumMesh 자체의 변수 충돌을 방지하기 위해 기본 클래스(SGL::OMMesh)로 명시적 캐스팅합니다.
-            SGL::OMMesh& base_mesh0 = *meshes[0];
-            SGL::OMMesh& base_mesh1 = *meshes[1];
-
-            if (OpenMesh::IO::write_mesh(base_mesh0, "D:\\Temp\\CutResult_Mesh0.stl")) {
-                std::cout << "[Export Success] CutResult_Mesh0.stl 저장 완료!" << std::endl;
-            }
-            if (OpenMesh::IO::write_mesh(base_mesh0, "D:\\Temp\\CutResult_Mesh0.ply")) {
-                std::cout << "[Export Success] CutResult_Mesh0.ply 저장 완료!" << std::endl;
-            }
-
-            if (OpenMesh::IO::write_mesh(base_mesh1, "D:\\Temp\\CutResult_Mesh1.stl")) {
-                std::cout << "[Export Success] CutResult_Mesh1.stl 저장 완료!" << std::endl;
-            }
-            if (OpenMesh::IO::write_mesh(base_mesh1, "D:\\Temp\\CutResult_Mesh1.ply")) {
-                std::cout << "[Export Success] CutResult_Mesh1.ply 저장 완료!" << std::endl;
+                auto new_helium_mesh = std::make_unique<HeliumMesh>();
+                new_helium_mesh->assign(*separated_parts[i]);
+                new_helium_mesh->BuildSpatialHashMap();
+                new_helium_mesh->mesh_color = colors[i % colors.size()];
+                new_helium_mesh->is_dirty = true;
+                meshes.push_back(std::move(new_helium_mesh));
             }
         }
+        TE(SeparateAndExport);
 
-        TE(ExportMeshes);
         // ====================================================================
-
+        // [4] 보존된 linked_segments 로 노란색 절단선 시각화
+        // ====================================================================
         VD::Clear("CutLines");
         for (const auto& ring : linked_segments)
         {
-            auto red = Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f);
-            auto blue = Eigen::Vector4f(0.0f, 0.0f, 1.0f, 1.0f);
-            for (size_t i = 0; i < ring.size(); ++i)
+            for (size_t i = 0; i < ring.size() - 1; ++i)
             {
-                auto color_line = red * (1.0f - static_cast<float>(i) / ring.size()) + blue * (static_cast<float>(i) / ring.size());
-
-                const auto& v0 = ring[i];
-                const auto& v1 = ring[(i + 1) % ring.size()];
-                VD::AddLine("CutLines", v0, v1, color_line);
+                VD::AddLine("CutLines", ring[i], ring[i + 1], Eigen::Vector4f(1.0f, 1.0f, 0.0f, 1.0f));
             }
         }
 
+        // 렌더링 업데이트 시 원본 메쉬 숨기기
         Helium.AddOnUpdateCallback([this](float time_delta)
             {
                 for (auto& m : this->meshes) m->Update();
 
-                if (meshes.size() >= 2)
+                if (meshes.size() >= 3)
                 {
                     auto renderable_A = Helium.GetComponent<Renderable>(meshes[0]->entity);
-                    if (nullptr != renderable_A) { renderable_A->SetVisible(false); }
+                    auto renderable_B = Helium.GetComponent<Renderable>(meshes[1]->entity);
+                    if (nullptr != renderable_A) renderable_A->SetVisible(false);
+                    if (nullptr != renderable_B) renderable_B->SetVisible(false);
                 }
             });
     }
