@@ -1119,11 +1119,169 @@ public:
         }
     }
 
+    void ExecuteSplitting()
+    {
+        // 1. Mesh A 로드 및 용접
+        meshes.emplace_back(std::make_unique<HeliumMesh>());
+        HeliumMesh& mesh_a = *meshes.back();
+
+        STLFormat STL_A;
+        STL_A.Deserialize("D:\\Resources\\3D\\STL\\Cube.stl");
+
+        const std::vector<Eigen::Vector3f>& points_a = STL_A.GetPoints();
+        std::vector<Eigen::Vector3f> welded_points_a;
+        std::vector<Eigen::Vector3i> welded_indices_a;
+        robin_hood::unordered_map<Eigen::Vector3f, int, SGL::Vector3fHash, SGL::Vector3fEqual> vertex_map_a;
+
+        for (size_t i = 0; i < points_a.size(); i += 3)
+        {
+            Eigen::Vector3i face_indices;
+            for (int j = 0; j < 3; ++j)
+            {
+                const Eigen::Vector3f& p = points_a[i + j];
+                auto it = vertex_map_a.find(p);
+                if (it != vertex_map_a.end())
+                {
+                    face_indices[j] = it->second;
+                }
+                else
+                {
+                    int new_idx = static_cast<int>(welded_points_a.size());
+                    welded_points_a.push_back(p);
+                    vertex_map_a[p] = new_idx;
+                    face_indices[j] = new_idx;
+                }
+            }
+            if (face_indices[0] != face_indices[1] && face_indices[1] != face_indices[2] && face_indices[2] != face_indices[0])
+            {
+                welded_indices_a.push_back(face_indices);
+            }
+        }
+        mesh_a.Build(welded_points_a, welded_indices_a);
+
+        // 2. Mesh B 로드 및 용접
+        meshes.emplace_back(std::make_unique<HeliumMesh>());
+        HeliumMesh& mesh_b = *meshes.back();
+
+        STLFormat STL_B;
+        STL_B.Deserialize("D:\\Resources\\3D\\STL\\Cylinder.stl");
+
+        const std::vector<Eigen::Vector3f>& points_b = STL_B.GetPoints();
+        std::vector<Eigen::Vector3f> welded_points_b;
+        std::vector<Eigen::Vector3i> welded_indices_b;
+        robin_hood::unordered_map<Eigen::Vector3f, int, SGL::Vector3fHash, SGL::Vector3fEqual> vertex_map_b;
+
+        for (size_t i = 0; i < points_b.size(); i += 3)
+        {
+            Eigen::Vector3i face_indices;
+            for (int j = 0; j < 3; ++j)
+            {
+                const Eigen::Vector3f& p = points_b[i + j];
+                auto it = vertex_map_b.find(p);
+                if (it != vertex_map_b.end())
+                {
+                    face_indices[j] = it->second;
+                }
+                else
+                {
+                    int new_idx = static_cast<int>(welded_points_b.size());
+                    welded_points_b.push_back(p);
+                    vertex_map_b[p] = new_idx;
+                    face_indices[j] = new_idx;
+                }
+            }
+            if (face_indices[0] != face_indices[1] && face_indices[1] != face_indices[2] && face_indices[2] != face_indices[0])
+            {
+                welded_indices_b.push_back(face_indices);
+            }
+        }
+        mesh_b.Build(welded_points_b, welded_indices_b);
+
+        // 공간 해시맵 빌드 (양쪽 모두 필요)
+        mesh_a.BuildSpatialHashMap();
+        mesh_b.BuildSpatialHashMap();
+
+        std::cout << "[Split] Extracting exact intersection segments..." << std::endl;
+
+        std::vector<char> mask_a;
+        // Face 간의 삼각형 교차로 만들어진 원시 교차선 추출
+        auto raw_segments = mesh_a.ExtractIntersectionSegments(mesh_b, &mask_a);
+        auto welded_segments = mesh_a.WeldSegments(raw_segments, 1e-4f);
+
+        VD::Clear("IntersectionSegments");
+        VD::Clear("IntersectionPoints");
+
+        // --- 핵심 로직: 이중 분할 (Dual Splitting) ---
+
+        std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> refined_segments_a;
+        std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> final_refined_segments;
+
+        // 1차 분할: Mesh A의 내부 엣지들을 기준으로 선분들을 쪼갭니다.
+        for (const auto& segment : welded_segments)
+        {
+            std::vector<Eigen::Vector3f> split_points_a = mesh_a.SplitSegmentWithMeshEdges(segment.first, segment.second);
+            for (size_t i = 0; i < split_points_a.size() - 1; ++i)
+            {
+                refined_segments_a.push_back({ split_points_a[i], split_points_a[i + 1] });
+            }
+        }
+
+        // 2차 분할: Mesh A에 의해 쪼개진 하위 선분들을 다시 Mesh B의 내부 엣지들을 기준으로 쪼갭니다.
+        for (const auto& segment : refined_segments_a)
+        {
+            std::vector<Eigen::Vector3f> split_points_b = mesh_b.SplitSegmentWithMeshEdges(segment.first, segment.second);
+            for (size_t i = 0; i < split_points_b.size() - 1; ++i)
+            {
+                final_refined_segments.push_back({ split_points_b[i], split_points_b[i + 1] });
+            }
+        }
+
+        // 양쪽 메쉬의 엣지를 모두 통과하며 쪼개진 최종 교차점들을 수집합니다.
+        std::vector<Eigen::Vector3f> intersection_points;
+        for (const auto& segment : final_refined_segments)
+        {
+            intersection_points.push_back(segment.first);
+            intersection_points.push_back(segment.second);
+        }
+
+        // 중복 정점 제거
+        auto erase_iterator = std::unique(intersection_points.begin(), intersection_points.end(), [](const Eigen::Vector3f& p1, const Eigen::Vector3f& p2)
+            {
+                return (p1 - p2).squaredNorm() < 1e-8f;
+            });
+        intersection_points.erase(erase_iterator, intersection_points.end());
+
+        std::cout << "[Split] Found " << intersection_points.size() << " exact intersection points on BOTH meshes. Visualizing..." << std::endl;
+
+        // 1. 쪼개진 최종 교차선들 그리기 (노란색 선)
+        for (const auto& seg : final_refined_segments)
+        {
+            VD::AddLine("IntersectionSegments", seg.first, seg.second, Eigen::Vector4f(1.0f, 1.0f, 0.0f, 1.0f));
+        }
+
+        // 2. 쪼개진 지점들 그리기 (빨간색 구)
+        // 이 점들은 이제 Mesh A의 엣지 위에도 있고, Mesh B의 엣지 위에도 존재합니다!
+        for (const auto& pt : intersection_points)
+        {
+            VD::AddSphere("IntersectionPoints", pt, { 0.0f, 0.0f, 1.0f }, 0.05f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
+        }
+
+        Helium.AddOnUpdateCallback([this](float time_delta)
+            {
+                for (auto& m : this->meshes)
+                {
+                    m->Update();
+                }
+            });
+    }
+
     virtual void Execute() override
     {
         //ExecuteBasic();
 
-		ExecuteBooleanOperation();
+		//ExecuteBooleanOperation();
+
+        ExecuteSplitting();
     }
 
     std::vector<std::unique_ptr<HeliumMesh>> meshes;

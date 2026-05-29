@@ -660,6 +660,141 @@ namespace SGL
         }
 
         // ---------------------------------------------------------
+        // 교차선(p1 ~ p2)이 메쉬의 내부 엣지(Edge)와 만나는 지점들을 찾아
+        // 선분을 여러 개의 점 배열로 분할하여 반환합니다.
+        // ---------------------------------------------------------
+        std::vector<Eigen::Vector3f> SplitSegmentWithMeshEdges(const Eigen::Vector3f& p1, const Eigen::Vector3f& p2) const
+        {
+            std::vector<Eigen::Vector3f> internal_points;
+
+            if (hash_map.empty())
+            {
+                internal_points.push_back(p1);
+                internal_points.push_back(p2);
+                return internal_points;
+            }
+
+            Eigen::Vector3f u = p2 - p1;
+            float u_len_sq = u.squaredNorm();
+            if (u_len_sq < 1e-8f)
+            {
+                internal_points.push_back(p1);
+                internal_points.push_back(p2);
+                return internal_points;
+            }
+
+            // 선분의 바운딩 박스를 구하고 그리드 크기만큼 여유를 줍니다.
+            Eigen::Vector3f b_min = p1.cwiseMin(p2) - Eigen::Vector3f::Constant(grid_cell_size.maxCoeff());
+            Eigen::Vector3f b_max = p1.cwiseMax(p2) + Eigen::Vector3f::Constant(grid_cell_size.maxCoeff());
+
+            Eigen::Vector3f local_min = b_min - grid_min;
+            Eigen::Vector3f local_max = b_max - grid_min;
+
+            int min_x = static_cast<int>(std::floor(local_min.x() / grid_cell_size.x()));
+            int min_y = static_cast<int>(std::floor(local_min.y() / grid_cell_size.y()));
+            int min_z = static_cast<int>(std::floor(local_min.z() / grid_cell_size.z()));
+
+            int max_x = static_cast<int>(std::floor(local_max.x() / grid_cell_size.x()));
+            int max_y = static_cast<int>(std::floor(local_max.y() / grid_cell_size.y()));
+            int max_z = static_cast<int>(std::floor(local_max.z() / grid_cell_size.z()));
+
+            std::vector<OpenMesh::EdgeHandle> candidate_edges;
+            std::vector<bool> visited_edges(n_edges(), false);
+
+            // 해시맵을 사용하여 교차선 근처의 엣지만 수집합니다.
+            for (int cz = min_z; cz <= max_z; ++cz)
+            {
+                for (int cy = min_y; cy <= max_y; ++cy)
+                {
+                    for (int cx = min_x; cx <= max_x; ++cx)
+                    {
+                        auto it = hash_map.find(Eigen::Vector3i(cx, cy, cz));
+                        if (it != hash_map.end())
+                        {
+                            for (int f_idx : it->second)
+                            {
+                                auto fh = face_handle(f_idx);
+                                if (status(fh).deleted()) continue;
+
+                                for (auto fe_it = cfe_iter(fh); fe_it.is_valid(); ++fe_it)
+                                {
+                                    if (!visited_edges[fe_it->idx()])
+                                    {
+                                        visited_edges[fe_it->idx()] = true;
+                                        candidate_edges.push_back(*fe_it);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 수집된 엣지들과 교차선을 3D 선분-선분 교차 판정(Segment-Segment Intersection) 합니다.
+            for (auto eh : candidate_edges)
+            {
+                auto h0 = halfedge_handle(eh, 0);
+                Eigen::Vector3f v0(point(from_vertex_handle(h0)).data());
+                Eigen::Vector3f v1(point(to_vertex_handle(h0)).data());
+
+                Eigen::Vector3f v = v1 - v0;
+                Eigen::Vector3f w = p1 - v0;
+
+                float a = u_len_sq;
+                float b = u.dot(v);
+                float c = v.squaredNorm();
+                float d = u.dot(w);
+                float e = v.dot(w);
+
+                float D = a * c - b * b;
+                float sc, tc;
+
+                if (D < 1e-8f)
+                {
+                    continue; // 두 선분이 거의 평행한 경우는 무시합니다.
+                }
+                else
+                {
+                    sc = (b * e - c * d) / D;
+                    tc = (a * e - b * d) / D;
+                }
+
+                // 끝점 중복 생성을 막기 위해 엄격하게 선분 내부에 있는 경우만 추출합니다.
+                if (sc > 1e-4f && sc < 1.0f - 1e-4f && tc > 1e-4f && tc < 1.0f - 1e-4f)
+                {
+                    Eigen::Vector3f dP = w + (sc * u) - (tc * v);
+                    if (dP.squaredNorm() < 1e-6f) // 두 선분이 실제로 만났는지 거리 검사
+                    {
+                        internal_points.push_back(p1 + sc * u);
+                    }
+                }
+            }
+
+            // 시작점과 끝점 추가
+            internal_points.push_back(p1);
+            internal_points.push_back(p2);
+
+            // 시작점(p1)으로부터의 거리를 기준으로 오름차순 정렬하여 경로를 완성합니다.
+            std::sort(internal_points.begin(), internal_points.end(), [&](const Eigen::Vector3f& a, const Eigen::Vector3f& b)
+                {
+                    return (a - p1).squaredNorm() < (b - p1).squaredNorm();
+                });
+
+            // 미세한 부동소수점 오차로 겹친 점들을 제거합니다.
+            auto erase_it = std::unique(internal_points.begin(), internal_points.end(), [](const Eigen::Vector3f& a, const Eigen::Vector3f& b)
+                {
+                    return (a - b).squaredNorm() < 1e-8f;
+                });
+            internal_points.erase(erase_it, internal_points.end());
+
+            return internal_points;
+        }
+
+
+
+
+
+        // ---------------------------------------------------------
         // (2) 마킹된 면과 그 이웃(1-Ring)까지 통째로 날려버리는 물리적 단절 함수
         // ---------------------------------------------------------
         void DeleteMarkedFaces(const std::vector<char>& cut_faces_mask)
