@@ -25,3 +25,6 @@
 [submodule "External/OpenMesh"]
 	path = External/OpenMesh
 	url = https://gitlab.vci.rwth-aachen.de:9000/OpenMesh/OpenMesh.git
+[submodule "External/CDT"]
+	path = External/CDT
+	url = https://github.com/artem-ogre/CDT.git
