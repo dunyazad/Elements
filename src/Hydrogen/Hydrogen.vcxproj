@@ -117,7 +117,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;$(SolutionDir)External\nvapi510\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;$(SolutionDir)src\Hydrogen\Apps;$(SolutionDir)inc\robin_hood;$(SolutionDir)External\OpenMesh\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\CDT\CDT\include;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;$(SolutionDir)External\nvapi510\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;$(SolutionDir)src\Hydrogen\Apps;$(SolutionDir)inc\robin_hood;$(SolutionDir)External\OpenMesh\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <DisableSpecificWarnings>4819</DisableSpecificWarnings>
       <OpenMPSupport>true</OpenMPSupport>
@@ -148,7 +148,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;$(SolutionDir)External\nvapi510\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;$(SolutionDir)src\Hydrogen\Apps;$(SolutionDir)inc\robin_hood;$(SolutionDir)External\OpenMesh\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)inc;$(SolutionDir)External;$(SolutionDir)External\CDT\CDT\include;$(SolutionDir)External\Eigen;$(SolutionDir)External\Manifold\include;$(SolutionDir)External\\entt\single_include;$(SolutionDir)External\json\include;$(SolutionDir)External\RxTx\inc;$(SolutionDir)External\nvapi510\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\include;$(SolutionDir)src\Hydrogen\Apps;$(SolutionDir)inc\robin_hood;$(SolutionDir)External\OpenMesh\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <DisableSpecificWarnings>4819</DisableSpecificWarnings>
