@@ -287,8 +287,8 @@ public:
         HeliumMesh& mesh_a = *meshes.back();
 
         STLFormat STL_A;
-        STL_A.Deserialize("D:\\Resources\\3D\\STL\\Cube.stl");
-        //STL_A.Deserialize("D:\\Resources\\3D\\STL\\rabbit.stl");
+        //STL_A.Deserialize("D:\\Resources\\3D\\STL\\Cube.stl");
+        STL_A.Deserialize("D:\\Resources\\3D\\STL\\rabbit.stl");
         {
             const std::vector<Eigen::Vector3f>& points_a = STL_A.GetPoints();
             std::vector<Eigen::Vector3f> wp;
@@ -313,8 +313,8 @@ public:
         HeliumMesh& mesh_b = *meshes.back();
 
         STLFormat STL_B;
-        STL_B.Deserialize("D:\\Resources\\3D\\STL\\Cylinder.stl");
-        //STL_B.Deserialize("D:\\Resources\\3D\\STL\\rabbit_upside_down.stl");
+        //STL_B.Deserialize("D:\\Resources\\3D\\STL\\Cylinder.stl");
+        STL_B.Deserialize("D:\\Resources\\3D\\STL\\rabbit_upside_down.stl");
         {
             const std::vector<Eigen::Vector3f>& points_b = STL_B.GetPoints();
             std::vector<Eigen::Vector3f> wp;
@@ -354,6 +354,17 @@ public:
 
         mesh_a.BuildSpatialHashMap();
         mesh_b.BuildSpatialHashMap();
+
+        auto loops_b = mesh_b.ExtractBoundaryLoops();
+        for (size_t li = 0; li < loops_b.size(); ++li)
+        {
+            std::cout << "[Diag] loop " << li << " coords:" << std::endl;
+            for (auto vh : loops_b[li])
+            {
+                Eigen::Vector3f p(mesh_b.point(vh).data());
+                std::cout << "  (" << p.x() << ", " << p.y() << ", " << p.z() << ")" << std::endl;
+            }
+        }
 
         int ba = 0, bb = 0;
         for (auto e_it = mesh_a.edges_begin(); e_it != mesh_a.edges_end(); ++e_it) if (mesh_a.is_boundary(*e_it)) ba++;

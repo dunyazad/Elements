@@ -130,7 +130,12 @@ namespace SGL
                 face_v_handles.push_back(v_handles[idx[0]]);
                 face_v_handles.push_back(v_handles[idx[1]]);
                 face_v_handles.push_back(v_handles[idx[2]]);
-                add_face(face_v_handles);
+
+				int rejected_count = 0;
+                auto fh = add_face(face_v_handles);
+                if (!fh.is_valid()) rejected_count++;
+
+				//printf("[Info] Added face with vertices (%d, %d, %d) - %s\n", idx[0], idx[1], idx[2], fh.is_valid() ? "Success" : "Failed");
             }
 
             BuildSpatialHashMap();
@@ -1172,6 +1177,28 @@ namespace SGL
                 std::cout << "[SplitFaces] WARNING: total dropped constraints = "
                     << total_dropped_constraints << " (merge_eps may be too large)" << std::endl;
             }
+
+            // carry over every face that was NOT cut, unchanged.
+            // cut faces were delete_face'd above, so deleted() filters them out here.
+            int carried = 0;
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (status(*f_it).deleted()) continue;
+
+                Eigen::Vector3i fidx;
+                int k = 0;
+                for (auto fv_it = cfv_iter(*f_it); fv_it.is_valid() && k < 3; ++fv_it, ++k)
+                {
+                    Eigen::Vector3f p(point(*fv_it).data());
+                    fidx[k] = push_point(p);
+                }
+                if (k == 3)
+                {
+                    all_new_indices.push_back(fidx);
+                    carried++;
+                }
+            }
+            std::cout << "[SplitFaces] carried over " << carried << " uncut faces" << std::endl;
 
             // optional: dump raw soup before weld to isolate CDT vs weld issues
             {
