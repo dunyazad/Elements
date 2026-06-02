@@ -8,6 +8,10 @@
 #include <functional>
 #include <mutex>
 #include <deque>
+#include <map>
+#include <set>
+#include <fstream>
+#include <iostream>
 #include <Eigen/Dense>
 #include <robin_hood/robin_hood.h>
 
@@ -94,6 +98,80 @@ namespace SGL
         Eigen::Vector3f hit_point;
     };
 
+    // One intersection segment that remembers both meshes' owning face.
+    // faceA refers to the mesh that produced the segment (this),
+    // faceB refers to the other mesh.
+    struct SharedSegment
+    {
+        Eigen::Vector3f p1;
+        Eigen::Vector3f p2;
+        int faceA = -1;
+        int faceB = -1;
+    };
+
+    // Global vertex pool that maps identical positions to identical integer ids.
+    // Both meshes share one pool so their cut-curve vertices stay bit-identical.
+    class CanonicalPool
+    {
+    public:
+        explicit CanonicalPool(float cell) : cell_(cell) {}
+
+        int GetID(const Eigen::Vector3f& p)
+        {
+            Eigen::Vector3i c = CellOf(p);
+            float eps_sq = cell_ * cell_;
+            for (int dz = -1; dz <= 1; ++dz)
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx)
+                    {
+                        Eigen::Vector3i nc(c.x() + dx, c.y() + dy, c.z() + dz);
+                        auto it = grid_.find(nc);
+                        if (it == grid_.end()) continue;
+                        for (int idx : it->second)
+                            if ((points_[idx] - p).squaredNorm() < eps_sq)
+                                return idx;
+                    }
+            int id = static_cast<int>(points_.size());
+            points_.push_back(p);
+            grid_[c].push_back(id);
+            return id;
+        }
+
+        const Eigen::Vector3f& Point(int id) const { return points_[id]; }
+        size_t Size() const { return points_.size(); }
+
+        bool Contains(const Eigen::Vector3f& p, float eps) const
+        {
+            Eigen::Vector3i c = CellOf(p);
+            float eps_sq = eps * eps;
+            for (int dz = -1; dz <= 1; ++dz)
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx)
+                    {
+                        Eigen::Vector3i nc(c.x() + dx, c.y() + dy, c.z() + dz);
+                        auto it = grid_.find(nc);
+                        if (it == grid_.end()) continue;
+                        for (int idx : it->second)
+                            if ((points_[idx] - p).squaredNorm() < eps_sq)
+                                return true;
+                    }
+            return false;
+        }
+
+    private:
+        Eigen::Vector3i CellOf(const Eigen::Vector3f& p) const
+        {
+            return Eigen::Vector3i(
+                static_cast<int>(std::floor(p.x() / cell_)),
+                static_cast<int>(std::floor(p.y() / cell_)),
+                static_cast<int>(std::floor(p.z() / cell_)));
+        }
+
+        float cell_;
+        std::vector<Eigen::Vector3f> points_;
+        robin_hood::unordered_map<Eigen::Vector3i, std::vector<int>, Int3Hash, Int3Equal> grid_;
+    };
+
     class Mesh : public OMMesh
     {
     public:
@@ -130,12 +208,7 @@ namespace SGL
                 face_v_handles.push_back(v_handles[idx[0]]);
                 face_v_handles.push_back(v_handles[idx[1]]);
                 face_v_handles.push_back(v_handles[idx[2]]);
-
-				int rejected_count = 0;
-                auto fh = add_face(face_v_handles);
-                if (!fh.is_valid()) rejected_count++;
-
-				//printf("[Info] Added face with vertices (%d, %d, %d) - %s\n", idx[0], idx[1], idx[2], fh.is_valid() ? "Success" : "Failed");
+                add_face(face_v_handles);
             }
 
             BuildSpatialHashMap();
@@ -238,12 +311,12 @@ namespace SGL
                 Eigen::Vector3f a(point(from_vertex_handle(*fh_it)).data());
                 Eigen::Vector3f b(point(to_vertex_handle(*fh_it)).data());
 
-                // 선분까지의 정확한 수직 거리 계산
+                // exact perpendicular distance to the segment
                 float dist_sq = DistanceToSegmentSquared(pt, a, b);
 
                 if (dist_sq < min_dist_sq)
                 {
-                    // 점이 꼭짓점(Vertex) 반경 내부에 있다면 IsOnVertex에서 처리하도록 엣지 판정에서는 제외
+                    // if the point is within a vertex radius, leave it to IsOnVertex
                     if ((pt - a).squaredNorm() > eps_sq && (pt - b).squaredNorm() > eps_sq)
                     {
                         min_dist_sq = dist_sq;
@@ -495,7 +568,7 @@ namespace SGL
             float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
             float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
 
-            // 정점이 엣지 위에 있을 때를 대비해 -1e-4f 마진 허용
+            // allow a small margin so points on an edge still count as inside
             return (u >= -1e-4f) && (v >= -1e-4f) && (u + v <= 1.0f + 1e-4f);
         }
 
@@ -552,7 +625,7 @@ namespace SGL
         {
             if (poly_vertices.size() < 3) return;
 
-            // 정점이 3개 남을 때까지 "귀(Ear)"를 찾아서 잘라내며 면(Face)을 생성합니다.
+            // clip "ears" until only 3 vertices remain, building a face each time
             while (poly_vertices.size() > 3)
             {
                 bool ear_found = false;
@@ -565,11 +638,11 @@ namespace SGL
                     Eigen::Vector3f p1 = Eigen::Vector3f(point(poly_vertices[i]).data());
                     Eigen::Vector3f p2 = Eigen::Vector3f(point(poly_vertices[next]).data());
 
-                    // 1. 해당 정점이 볼록(Convex)한지 검사 (외적과 법선 벡터의 내적 활용)
+                    // is this vertex convex (cross product aligned with face normal)
                     Eigen::Vector3f cross_prod = (p1 - p0).cross(p2 - p1);
                     if (cross_prod.dot(normal) > 0.0f)
                     {
-                        // 2. 만들어질 삼각형 내부에 다른 폴리곤 정점이 들어있는지 검사
+                        // does the candidate triangle contain any other polygon vertex
                         bool is_ear = true;
                         for (size_t j = 0; j < poly_vertices.size(); ++j)
                         {
@@ -581,7 +654,6 @@ namespace SGL
                             }
                         }
 
-                        // 3. 진정한 귀(Ear)로 판명되면 삼각형을 추가하고 해당 정점을 폴리곤에서 제거
                         if (is_ear)
                         {
                             add_face(poly_vertices[prev], poly_vertices[i], poly_vertices[next]);
@@ -592,11 +664,10 @@ namespace SGL
                     }
                 }
 
-                // 부동소수점 오차로 꼬여서 귀를 못 찾으면 무한루프 방지를 위해 강제 종료 (Fan Triangulation 폴백)
+                // bail out to avoid an infinite loop if numeric noise hides every ear
                 if (!ear_found) break;
             }
 
-            // 마지막 남은 3개의 정점으로 최종 삼각형 생성
             if (poly_vertices.size() == 3)
             {
                 add_face(poly_vertices[0], poly_vertices[1], poly_vertices[2]);
@@ -955,6 +1026,9 @@ namespace SGL
             return internal_points;
         }
 
+        // ----------------------------------------------------------------
+        // Original per-face split (kept for reference / non-shared callers)
+        // ----------------------------------------------------------------
         void SplitFaces(
             std::map<OpenMesh::FaceHandle, std::vector<Eigen::Vector3f>>& facePointsMapping,
             const std::vector<std::tuple<Eigen::Vector3f, Eigen::Vector3f, int>>& original_segments)
@@ -965,11 +1039,9 @@ namespace SGL
                 face_constraints[std::get<2>(s)].push_back({ std::get<0>(s), std::get<1>(s) });
             }
 
-            // raw polygon soup: no per-call dedup here, topology rebuilt by weld later
             std::vector<Eigen::Vector3f> all_new_points;
             std::vector<Eigen::Vector3i> all_new_indices;
 
-            // scale-relative epsilons based on the model bounding box
             float diag = (grid_max - grid_min).norm();
             if (diag < 1e-6f) diag = 1.0f;
             const float snap_eps = diag * 1e-5f;
@@ -1002,7 +1074,7 @@ namespace SGL
                 Eigen::Vector3f v2(point(vh2).data());
 
                 Eigen::Vector3f e_normal = (v1 - v0).cross(v2 - v0);
-                if (e_normal.squaredNorm() < 1e-12f) continue; // degenerate
+                if (e_normal.squaredNorm() < 1e-12f) continue;
                 e_normal.normalize();
 
                 Eigen::Vector3f axis_u = (v1 - v0).normalized();
@@ -1021,7 +1093,6 @@ namespace SGL
                 Eigen::Vector2f uv1 = to_uv(v1);
                 Eigen::Vector2f uv2 = to_uv(v2);
 
-                // map a planar UV point back to 3D via barycentric on the original triangle
                 auto uv_to_3d = [&](float ux, float uy) -> Eigen::Vector3f
                     {
                         Eigen::Vector2f p(ux, uy);
@@ -1063,7 +1134,6 @@ namespace SGL
 
                 for (const auto& p : points) add_point(p);
 
-                // boundary edges: chain collinear points along each triangle side
                 std::vector<std::pair<CDT::VertInd, CDT::VertInd>> boundary_edges;
                 std::vector<std::pair<float, CDT::VertInd>> b0, b1, b2;
 
@@ -1092,7 +1162,6 @@ namespace SGL
                     };
                 add_boundary(b0); add_boundary(b1); add_boundary(b2);
 
-                // internal constraints from intersection segments
                 std::vector<std::pair<CDT::VertInd, CDT::VertInd>> internal_edges;
                 auto fc_it = face_constraints.find(fh.idx());
                 if (fc_it != face_constraints.end())
@@ -1125,8 +1194,6 @@ namespace SGL
 
                 try
                 {
-                    // let CDT resolve crossing constraints, then keep only the
-                    // constrained interior region (removes outer fan slivers)
                     CDT::Triangulation<float> cdt(
                         CDT::VertexInsertionOrder::Auto,
                         CDT::IntersectingConstraintEdges::TryResolve,
@@ -1144,7 +1211,6 @@ namespace SGL
                         const auto& cv1 = cdt.vertices[tri.vertices[1]];
                         const auto& cv2 = cdt.vertices[tri.vertices[2]];
 
-                        // reconstruct 3D directly from UV (no pos3d index dependency)
                         Eigen::Vector3f pa = uv_to_3d(cv0.x, cv0.y);
                         Eigen::Vector3f pb = uv_to_3d(cv1.x, cv1.y);
                         Eigen::Vector3f pc = uv_to_3d(cv2.x, cv2.y);
@@ -1156,7 +1222,6 @@ namespace SGL
 
                         if (f_idx[0] == f_idx[1] || f_idx[1] == f_idx[2] || f_idx[2] == f_idx[0]) continue;
 
-                        // align winding to the original face orientation
                         Eigen::Vector2f a(cv0.x, cv0.y);
                         Eigen::Vector2f b(cv1.x, cv1.y);
                         Eigen::Vector2f c(cv2.x, cv2.y);
@@ -1178,8 +1243,7 @@ namespace SGL
                     << total_dropped_constraints << " (merge_eps may be too large)" << std::endl;
             }
 
-            // carry over every face that was NOT cut, unchanged.
-            // cut faces were delete_face'd above, so deleted() filters them out here.
+            // carry over every face that was NOT cut, unchanged
             int carried = 0;
             for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
             {
@@ -1200,20 +1264,372 @@ namespace SGL
             }
             std::cout << "[SplitFaces] carried over " << carried << " uncut faces" << std::endl;
 
-            // optional: dump raw soup before weld to isolate CDT vs weld issues
-            {
-                Mesh soup;
-                soup.Build(all_new_points, all_new_indices);
-                soup.SaveSTL("D:\\Temp\\soup_preweld.stl");
-            }
-
-            // rebuild as raw soup, then weld with robust 3x3x3 neighbor search
             this->clear();
             this->Build(all_new_points, all_new_indices);
-            this->WeldVerticesByPosition(snap_eps * 10.0f);
+            this->WeldVerticesByPosition(snap_eps);
 
             std::cout << "[SplitFaces] Mesh rebuilt. Vertices: "
                 << n_vertices() << ", Faces: " << n_faces() << std::endl;
+        }
+
+        // ----------------------------------------------------------------
+        // Compute the intersection once, recording BOTH owning faces.
+        // Call on mesh A passing mesh B; faceA = this face, faceB = other face.
+        // ----------------------------------------------------------------
+        std::vector<SharedSegment> ExtractSharedIntersection(const Mesh& other_mesh) const
+        {
+            std::vector<SharedSegment> segments;
+            std::mutex mtx;
+
+            size_t other_num_faces = other_mesh.n_faces();
+            if (other_num_faces == 0 || hash_map.empty()) return segments;
+
+            std::vector<int> other_face_indices(other_num_faces);
+            std::iota(other_face_indices.begin(), other_face_indices.end(), 0);
+
+            std::for_each(std::execution::par_unseq, other_face_indices.begin(), other_face_indices.end(), [&](int bi)
+                {
+                    Eigen::Vector3f u0, u1, u2;
+                    other_mesh.GetFaceVertices(other_mesh.face_handle(bi), u0, u1, u2);
+
+                    Eigen::Vector3f b_min = u0.cwiseMin(u1).cwiseMin(u2);
+                    Eigen::Vector3f b_max = u0.cwiseMax(u1).cwiseMax(u2);
+                    Eigen::Vector3f local_min = b_min - grid_min;
+                    Eigen::Vector3f local_max = b_max - grid_min;
+
+                    int min_x = static_cast<int>(std::floor(local_min.x() / grid_cell_size.x()));
+                    int min_y = static_cast<int>(std::floor(local_min.y() / grid_cell_size.y()));
+                    int min_z = static_cast<int>(std::floor(local_min.z() / grid_cell_size.z()));
+                    int max_x = static_cast<int>(std::floor(local_max.x() / grid_cell_size.x()));
+                    int max_y = static_cast<int>(std::floor(local_max.y() / grid_cell_size.y()));
+                    int max_z = static_cast<int>(std::floor(local_max.z() / grid_cell_size.z()));
+
+                    std::vector<int> candidate_faces;
+                    for (int cz = min_z; cz <= max_z; ++cz)
+                        for (int cy = min_y; cy <= max_y; ++cy)
+                            for (int cx = min_x; cx <= max_x; ++cx)
+                            {
+                                auto it = hash_map.find(Eigen::Vector3i(cx, cy, cz));
+                                if (it != hash_map.end())
+                                    candidate_faces.insert(candidate_faces.end(), it->second.begin(), it->second.end());
+                            }
+
+                    if (candidate_faces.empty()) return;
+                    std::sort(candidate_faces.begin(), candidate_faces.end());
+                    candidate_faces.erase(std::unique(candidate_faces.begin(), candidate_faces.end()), candidate_faces.end());
+
+                    std::vector<SharedSegment> local;
+                    for (int ai : candidate_faces)
+                    {
+                        Eigen::Vector3f v0, v1, v2;
+                        GetFaceVertices(face_handle(ai), v0, v1, v2);
+
+                        Eigen::Vector3f p1, p2;
+                        if (IntersectTriangleTriangle(v0, v1, v2, u0, u1, u2, p1, p2))
+                        {
+                            SharedSegment s;
+                            s.p1 = p1; s.p2 = p2; s.faceA = ai; s.faceB = bi;
+                            local.push_back(s);
+                        }
+                    }
+
+                    if (!local.empty())
+                    {
+                        std::lock_guard<std::mutex> lock(mtx);
+                        segments.insert(segments.end(), local.begin(), local.end());
+                    }
+                });
+
+            return segments;
+        }
+
+        // Split using canonical ids shared with the other mesh.
+         // Edge subdivisions are gathered per mesh edge so the two faces
+         // sharing an edge get an identical split (no seam slivers).
+        void SplitFacesShared(
+            const std::map<int, std::vector<int>>& facePointIds,
+            const std::map<int, std::vector<std::pair<int, int>>>& faceConstraints,
+            CanonicalPool& pool)
+        {
+            float diag = (grid_max - grid_min).norm();
+            if (diag < 1e-6f) diag = 1.0f;
+            const float snap_eps = diag * 1e-5f;
+            const float merge_eps = diag * 1e-6f;
+            const float merge_eps_sq = merge_eps * merge_eps;
+            const float edge_eps = diag * 1e-5f;
+
+            // Step 1: collect canonical ids that lie on each mesh edge.
+            // Both faces sharing the edge will read this same list.
+            std::map<int, std::vector<int>> edge_points;
+            {
+                std::map<int, std::set<int>> tmp;
+                for (const auto& kv : facePointIds)
+                {
+                    OpenMesh::FaceHandle fh = face_handle(kv.first);
+                    if (!fh.is_valid() || status(fh).deleted()) continue;
+                    for (int cid : kv.second)
+                    {
+                        const Eigen::Vector3f& p = pool.Point(cid);
+                        OpenMesh::VertexHandle vh;
+                        OpenMesh::EdgeHandle eh;
+                        if (IsOnVertex(p, fh, vh, edge_eps)) continue;
+                        if (IsOnEdge(p, fh, eh, edge_eps))
+                            tmp[eh.idx()].insert(cid);
+                    }
+                }
+                for (auto& kv : tmp)
+                    edge_points[kv.first] = std::vector<int>(kv.second.begin(), kv.second.end());
+            }
+
+            std::vector<Eigen::Vector3f> all_new_points;
+            std::vector<int>             all_new_ids;
+            std::vector<Eigen::Vector3i> all_new_indices;
+
+            int local_id_counter = -1;   // negative ids are unique, never merged
+
+            auto push_point = [&](const Eigen::Vector3f& p, int id) -> int
+                {
+                    int idx = static_cast<int>(all_new_points.size());
+                    all_new_points.push_back(p);
+                    all_new_ids.push_back(id);
+                    return idx;
+                };
+
+            std::set<int> cut_faces;
+            for (auto& kv : facePointIds) cut_faces.insert(kv.first);
+            for (auto& kv : faceConstraints) cut_faces.insert(kv.first);
+
+            for (int face_idx : cut_faces)
+            {
+                OpenMesh::FaceHandle fh = face_handle(face_idx);
+                if (!fh.is_valid() || status(fh).deleted()) continue;
+
+                auto fv_it = cfv_iter(fh);
+                OpenMesh::VertexHandle vh0 = *fv_it++;
+                OpenMesh::VertexHandle vh1 = *fv_it++;
+                OpenMesh::VertexHandle vh2 = *fv_it;
+
+                Eigen::Vector3f v0(point(vh0).data());
+                Eigen::Vector3f v1(point(vh1).data());
+                Eigen::Vector3f v2(point(vh2).data());
+
+                // identify the mesh edge id for each triangle side
+                int e01 = -1, e12 = -1, e20 = -1;
+                for (auto fh_it = cfh_iter(fh); fh_it.is_valid(); ++fh_it)
+                {
+                    auto a = from_vertex_handle(*fh_it);
+                    auto b = to_vertex_handle(*fh_it);
+                    int eidx = edge_handle(*fh_it).idx();
+                    if (a == vh0 && b == vh1) e01 = eidx;
+                    else if (a == vh1 && b == vh2) e12 = eidx;
+                    else if (a == vh2 && b == vh0) e20 = eidx;
+                }
+
+                Eigen::Vector3f e_normal = (v1 - v0).cross(v2 - v0);
+                if (e_normal.squaredNorm() < 1e-12f) continue;
+                e_normal.normalize();
+
+                Eigen::Vector3f axis_u = (v1 - v0).normalized();
+                Eigen::Vector3f axis_v = e_normal.cross(axis_u).normalized();
+                if (axis_u.cross(axis_v).dot(e_normal) < 0.0f) axis_v = -axis_v;
+
+                Eigen::Vector3f origin = v0;
+                auto to_uv = [&](const Eigen::Vector3f& p) -> Eigen::Vector2f
+                    {
+                        Eigen::Vector3f d = p - origin;
+                        return Eigen::Vector2f(d.dot(axis_u), d.dot(axis_v));
+                    };
+
+                Eigen::Vector2f uv0 = to_uv(v0);
+                Eigen::Vector2f uv1 = to_uv(v1);
+                Eigen::Vector2f uv2 = to_uv(v2);
+
+                auto uv_to_3d = [&](float ux, float uy) -> Eigen::Vector3f
+                    {
+                        Eigen::Vector2f p(ux, uy);
+                        Eigen::Vector2f a0 = uv1 - uv0;
+                        Eigen::Vector2f a1 = uv2 - uv0;
+                        Eigen::Vector2f a2 = p - uv0;
+                        float d00 = a0.dot(a0);
+                        float d01 = a0.dot(a1);
+                        float d11 = a1.dot(a1);
+                        float d20 = a2.dot(a0);
+                        float d21 = a2.dot(a1);
+                        float den = d00 * d11 - d01 * d01;
+                        if (std::abs(den) < 1e-20f) return v0;
+                        float vb = (d11 * d20 - d01 * d21) / den;
+                        float wb = (d00 * d21 - d01 * d20) / den;
+                        float ub = 1.0f - vb - wb;
+                        return ub * v0 + vb * v1 + wb * v2;
+                    };
+
+                std::vector<CDT::V2d<float>> cdt_points;
+                std::map<int, CDT::VertInd> id_to_cdt;   // canonical id -> cdt vertex
+                std::map<CDT::VertInd, int> cdt_to_id;   // cdt vertex -> canonical id
+
+                auto add_uv = [&](const Eigen::Vector3f& p) -> CDT::VertInd
+                    {
+                        Eigen::Vector2f uv = to_uv(p);
+                        for (size_t i = 0; i < cdt_points.size(); ++i)
+                        {
+                            float dx = cdt_points[i].x - uv.x();
+                            float dy = cdt_points[i].y - uv.y();
+                            if (dx * dx + dy * dy < merge_eps_sq) return static_cast<CDT::VertInd>(i);
+                        }
+                        CDT::V2d<float> pt; pt.x = uv.x(); pt.y = uv.y();
+                        cdt_points.push_back(pt);
+                        return static_cast<CDT::VertInd>(cdt_points.size() - 1);
+                    };
+
+                auto add_canonical = [&](int cid) -> CDT::VertInd
+                    {
+                        auto it = id_to_cdt.find(cid);
+                        if (it != id_to_cdt.end()) return it->second;
+                        CDT::VertInd vi = add_uv(pool.Point(cid));
+                        id_to_cdt[cid] = vi;
+                        cdt_to_id[vi] = cid;
+                        return vi;
+                    };
+
+                CDT::VertInd vidx0 = add_uv(v0);
+                CDT::VertInd vidx1 = add_uv(v1);
+                CDT::VertInd vidx2 = add_uv(v2);
+                cdt_to_id[vidx0] = pool.GetID(v0);
+                cdt_to_id[vidx1] = pool.GetID(v1);
+                cdt_to_id[vidx2] = pool.GetID(v2);
+
+                // interior (non-edge) canonical points become CDT vertices
+                auto fp_it = facePointIds.find(face_idx);
+                if (fp_it != facePointIds.end())
+                    for (int cid : fp_it->second) add_canonical(cid);
+
+                // boundary chains built from the SHARED per-edge subdivision
+                std::vector<std::pair<CDT::VertInd, CDT::VertInd>> boundary_edges;
+                auto build_side = [&](int eidx, const Eigen::Vector3f& a, const Eigen::Vector3f& b,
+                    CDT::VertInd ia, CDT::VertInd ib)
+                    {
+                        std::vector<std::pair<float, CDT::VertInd>> chain;
+                        chain.push_back({ 0.0f, ia });
+                        chain.push_back({ (b - a).squaredNorm(), ib });
+
+                        auto it = edge_points.find(eidx);
+                        if (it != edge_points.end())
+                        {
+                            for (int cid : it->second)
+                            {
+                                const Eigen::Vector3f& p = pool.Point(cid);
+                                float t = (p - a).dot(b - a);
+                                chain.push_back({ t, add_canonical(cid) });
+                            }
+                        }
+                        std::sort(chain.begin(), chain.end());
+                        chain.erase(std::unique(chain.begin(), chain.end(),
+                            [](const auto& l, const auto& r) { return l.second == r.second; }), chain.end());
+                        for (size_t k = 0; k + 1 < chain.size(); ++k)
+                            boundary_edges.push_back({ chain[k].second, chain[k + 1].second });
+                    };
+                build_side(e01, v0, v1, vidx0, vidx1);
+                build_side(e12, v1, v2, vidx1, vidx2);
+                build_side(e20, v2, v0, vidx2, vidx0);
+
+                // internal cut constraints
+                std::vector<std::pair<CDT::VertInd, CDT::VertInd>> internal_edges;
+                auto fc_it = faceConstraints.find(face_idx);
+                if (fc_it != faceConstraints.end())
+                {
+                    for (const auto& e : fc_it->second)
+                    {
+                        CDT::VertInd a = add_canonical(e.first);
+                        CDT::VertInd b = add_canonical(e.second);
+                        if (a != b) internal_edges.push_back({ a, b });
+                    }
+                }
+
+                std::vector<CDT::Edge> all_edges;
+                for (const auto& e : boundary_edges) all_edges.push_back({ e.first, e.second });
+                for (const auto& e : internal_edges) all_edges.push_back({ e.first, e.second });
+
+                auto ccw = [](const Eigen::Vector2f& p1, const Eigen::Vector2f& p2, const Eigen::Vector2f& p3) -> float
+                    {
+                        return (p2.x() - p1.x()) * (p3.y() - p1.y()) - (p2.y() - p1.y()) * (p3.x() - p1.x());
+                    };
+                bool is_base_ccw = ccw(uv0, uv1, uv2) > 0.0f;
+
+                try
+                {
+                    CDT::Triangulation<float> cdt(
+                        CDT::VertexInsertionOrder::Auto,
+                        CDT::IntersectingConstraintEdges::TryResolve,
+                        0.0f);
+
+                    cdt.insertVertices(cdt_points);
+                    if (!all_edges.empty()) cdt.insertEdges(all_edges);
+                    cdt.eraseOuterTrianglesAndHoles();
+
+                    delete_face(fh, false);
+
+                    for (const auto& tri : cdt.triangles)
+                    {
+                        CDT::VertInd vi[3] = { tri.vertices[0], tri.vertices[1], tri.vertices[2] };
+
+                        Eigen::Vector3f p[3];
+                        int pid[3];
+                        for (int k = 0; k < 3; ++k)
+                        {
+                            auto it = cdt_to_id.find(vi[k]);
+                            if (it != cdt_to_id.end())
+                            {
+                                p[k] = pool.Point(it->second);          // exact shared position
+                                pid[k] = it->second;                    // shared canonical id
+                            }
+                            else
+                            {
+                                p[k] = uv_to_3d(cdt.vertices[vi[k]].x, cdt.vertices[vi[k]].y);
+                                pid[k] = local_id_counter--;            // unique, never merged
+                            }
+                        }
+
+                        Eigen::Vector3i f_idx;
+                        f_idx[0] = push_point(p[0], pid[0]);
+                        f_idx[1] = push_point(p[1], pid[1]);
+                        f_idx[2] = push_point(p[2], pid[2]);
+                        if (f_idx[0] == f_idx[1] || f_idx[1] == f_idx[2] || f_idx[2] == f_idx[0]) continue;
+
+                        Eigen::Vector2f a(cdt.vertices[vi[0]].x, cdt.vertices[vi[0]].y);
+                        Eigen::Vector2f b(cdt.vertices[vi[1]].x, cdt.vertices[vi[1]].y);
+                        Eigen::Vector2f c(cdt.vertices[vi[2]].x, cdt.vertices[vi[2]].y);
+                        bool cdt_ccw = ccw(a, b, c) > 0.0f;
+                        if (cdt_ccw != is_base_ccw) std::swap(f_idx[1], f_idx[2]);
+
+                        all_new_indices.push_back(f_idx);
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    std::cout << "[ERROR] CDT Face " << face_idx << ": " << e.what() << std::endl;
+                }
+            }
+
+            // carry over uncut faces unchanged
+            int carried = 0;
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (status(*f_it).deleted()) continue;
+                Eigen::Vector3i fidx; int k = 0;
+                for (auto fv_it = cfv_iter(*f_it); fv_it.is_valid() && k < 3; ++fv_it, ++k)
+                {
+                    Eigen::Vector3f vp(point(*fv_it).data());
+                    fidx[k] = push_point(vp, pool.GetID(vp));
+                }
+                if (k == 3) { all_new_indices.push_back(fidx); carried++; }
+            }
+            std::cout << "[SplitShared] carried over " << carried << " uncut faces" << std::endl;
+
+            this->clear();
+            this->Build(all_new_points, all_new_indices);
+            this->WeldVerticesByPosition(snap_eps);
+
+            std::cout << "[SplitShared] rebuilt. V=" << n_vertices() << " F=" << n_faces() << std::endl;
         }
 
         void WeldVerticesByPosition(float snap_eps)
@@ -1291,6 +1707,41 @@ namespace SGL
             this->Build(rep_points, new_indices);
         }
 
+        // Weld by explicit vertex id instead of position.
+        // ids[k] is the canonical/local id of point k in 'points'.
+        // Same id -> same vertex; different id -> always distinct (no tolerance).
+        void BuildWeldedByIds(
+            const std::vector<Eigen::Vector3f>& points,
+            const std::vector<int>& ids,
+            const std::vector<Eigen::Vector3i>& indices)
+        {
+            robin_hood::unordered_map<int, int> id_to_rep;   // id -> compact vertex index
+            std::vector<Eigen::Vector3f> rep_points;
+
+            auto rep_of = [&](int point_index) -> int
+                {
+                    int id = ids[point_index];
+                    auto it = id_to_rep.find(id);
+                    if (it != id_to_rep.end()) return it->second;
+                    int ni = static_cast<int>(rep_points.size());
+                    rep_points.push_back(points[point_index]);
+                    id_to_rep[id] = ni;
+                    return ni;
+                };
+
+            std::vector<Eigen::Vector3i> new_indices;
+            new_indices.reserve(indices.size());
+            for (const auto& f : indices)
+            {
+                Eigen::Vector3i fi(rep_of(f[0]), rep_of(f[1]), rep_of(f[2]));
+                if (fi[0] == fi[1] || fi[1] == fi[2] || fi[2] == fi[0]) continue;
+                new_indices.push_back(fi);
+            }
+
+            this->clear();
+            this->Build(rep_points, new_indices);
+        }
+
         bool SaveSTL(const std::string& filepath) const
         {
             std::ofstream ofs(filepath, std::ios::binary);
@@ -1335,20 +1786,6 @@ namespace SGL
             ofs.close();
             return true;
         }
-
-
-
-
-
-
-
-
-
-        
-
-
-        
-
 
         std::vector<std::tuple<Eigen::Vector3f, Eigen::Vector3f, int>> ExtractIntersectionSegmentsWithFace(const Mesh& other_mesh) const
         {
@@ -1466,7 +1903,7 @@ namespace SGL
 
         void DeleteFacesAlongPolylines(const std::vector<std::vector<Eigen::Vector3f>>& polylines)
         {
-            float cut_tol = 1.0e-3f; // 1mm 참호 두께
+            float cut_tol = 1.0e-3f; // trench width
             float cut_tol_sq = cut_tol * cut_tol;
 
             std::vector<bool> faces_to_delete(n_faces(), false);
@@ -1529,7 +1966,6 @@ namespace SGL
                 }
             }
 
-            // 마킹된 면들 삭제
             bool any_deleted = false;
             for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
             {
@@ -1545,7 +1981,7 @@ namespace SGL
                 BuildSpatialHashMap();
             }
         }
-        
+
         std::vector<std::unique_ptr<Mesh>> SeparateDisconnectedMeshes()
         {
             std::vector<int> face_partition(n_faces(), -1);
@@ -1553,7 +1989,6 @@ namespace SGL
 
             for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
             {
-                // 이미 참호로 지워진 면이거나 방문한 면이면 패스
                 if (status(*f_it).deleted() || face_partition[f_it->idx()] != -1) continue;
 
                 std::vector<OpenMesh::FaceHandle> queue;
@@ -1565,8 +2000,6 @@ namespace SGL
                 {
                     auto current_fh = queue[head++];
 
-                    // 지워지지 않고 남아있는 "진짜 면"들끼리만 다리를 타고 넘어갑니다.
-                    // 위상이 끊겨 있으므로 다른 파트로 넘어갈 확률은 0%입니다.
                     for (auto ff_it = cff_iter(current_fh); ff_it.is_valid(); ++ff_it)
                     {
                         if (!status(*ff_it).deleted() && face_partition[ff_it->idx()] == -1)
@@ -1579,7 +2012,6 @@ namespace SGL
                 current_partition++;
             }
 
-            // 분리된 파티션 번호에 따라 새로운 Mesh 파편들을 생성
             std::vector<std::unique_ptr<Mesh>> result_meshes;
             for (int p = 0; p < current_partition; ++p)
             {
@@ -1611,7 +2043,6 @@ namespace SGL
                     added_faces++;
                 }
 
-                // 면이 1개 이하인(삼각형 하나짜리) 찌꺼기 메쉬는 반환 리스트에서 무시합니다.
                 if (added_faces > 1)
                 {
                     new_mesh->BuildSpatialHashMap();
@@ -1629,7 +2060,6 @@ namespace SGL
 
             for (auto h_it = halfedges_begin(); h_it != halfedges_end(); ++h_it)
             {
-                // [버그 수정] status(*h_it) 대신 안전한 status(edge_handle(*h_it))를 사용합니다!
                 if (status(edge_handle(*h_it)).deleted() || !is_boundary(*h_it) || visited_he[h_it->idx()]) continue;
 
                 std::vector<OpenMesh::VertexHandle> loop;
@@ -1646,6 +2076,306 @@ namespace SGL
                 }
             }
             return boundaries;
+        }
+
+        struct MeshDiagnostics
+        {
+            int num_vertices = 0;
+            int num_faces = 0;
+            int num_edges = 0;
+
+            int boundary_edges = 0;          // edges with only one face
+            int boundary_loops = 0;          // closed boundary chains
+            int non_manifold_edges = 0;      // edges shared by 3+ faces
+            int non_manifold_vertices = 0;   // vertices whose one-ring is not a single fan
+            int isolated_vertices = 0;       // vertices used by no face
+            int degenerate_faces = 0;        // near-zero-area faces
+            int duplicate_faces = 0;         // same 3 vertices as another face
+
+            bool is_watertight = false;      // closed + manifold
+
+            // boundary loop breakdown, so we can judge holes vs structure
+            std::vector<int> loop_sizes;         // vertex count per loop
+            std::vector<float> loop_perimeters;  // perimeter per loop
+        };
+
+        MeshDiagnostics Diagnose(float degenerate_area_eps = 1e-10f) const
+        {
+            MeshDiagnostics d;
+            d.num_vertices = static_cast<int>(n_vertices());
+            d.num_faces = static_cast<int>(n_faces());
+            d.num_edges = static_cast<int>(n_edges());
+
+            // boundary + non-manifold edges
+            for (auto e_it = edges_begin(); e_it != edges_end(); ++e_it)
+            {
+                if (status(*e_it).deleted()) continue;
+                if (is_boundary(*e_it)) d.boundary_edges++;
+            }
+
+            // non-manifold vertices (OpenMesh flags these)
+            for (auto v_it = vertices_begin(); v_it != vertices_end(); ++v_it)
+            {
+                if (status(*v_it).deleted()) continue;
+                if (!is_manifold(*v_it)) d.non_manifold_vertices++;
+                if (valence(*v_it) == 0) d.isolated_vertices++;
+            }
+
+            // degenerate faces (near-zero area)
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (status(*f_it).deleted()) continue;
+                Eigen::Vector3f v0, v1, v2;
+                GetFaceVertices(*f_it, v0, v1, v2);
+                float area2 = (v1 - v0).cross(v2 - v0).squaredNorm();
+                if (area2 < degenerate_area_eps) d.degenerate_faces++;
+            }
+
+            // duplicate faces: same sorted vertex-index triple
+            {
+                std::set<std::array<int, 3>> seen;
+                for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+                {
+                    if (status(*f_it).deleted()) continue;
+                    std::array<int, 3> key;
+                    int k = 0;
+                    for (auto fv_it = cfv_iter(*f_it); fv_it.is_valid() && k < 3; ++fv_it, ++k)
+                        key[k] = fv_it->idx();
+                    std::sort(key.begin(), key.end());
+                    if (!seen.insert(key).second) d.duplicate_faces++;
+                }
+            }
+
+            // boundary loops and their geometry
+            auto loops = ExtractBoundaryLoops();
+            d.boundary_loops = static_cast<int>(loops.size());
+            for (auto& loop : loops)
+            {
+                d.loop_sizes.push_back(static_cast<int>(loop.size()));
+                float per = 0.0f;
+                for (size_t k = 0; k < loop.size(); ++k)
+                {
+                    Eigen::Vector3f a(point(loop[k]).data());
+                    Eigen::Vector3f b(point(loop[(k + 1) % loop.size()]).data());
+                    per += (b - a).norm();
+                }
+                d.loop_perimeters.push_back(per);
+            }
+
+            d.is_watertight = (d.boundary_edges == 0 &&
+                d.non_manifold_vertices == 0 &&
+                d.degenerate_faces == 0);
+            return d;
+        }
+
+
+        // Close small boundary loops. Tries both windings per triangle and
+        // keeps only faces that add cleanly (no non-manifold result).
+        int FillSmallBoundaryHoles(size_t max_loop_size = 8)
+        {
+            auto count_boundary = [&]() {
+                int b = 0;
+                for (auto e = edges_begin(); e != edges_end(); ++e)
+                    if (is_boundary(*e)) b++;
+                return b;
+                };
+
+            auto loops = ExtractBoundaryLoops();
+            int filled = 0;
+            int before = count_boundary();
+
+            for (auto& loop : loops)
+            {
+                if (loop.size() < 3 || loop.size() > max_loop_size) continue;
+
+                // size 3: trivial; just add (both windings)
+                if (loop.size() == 3)
+                {
+                    auto fh = add_face(loop[0], loop[1], loop[2]);
+                    if (!fh.is_valid()) fh = add_face(loop[0], loop[2], loop[1]);
+                    if (fh.is_valid()) filled++;
+                    continue;
+                }
+
+                // larger loops: add a center vertex and fan from it.
+                // this always closes a simple boundary loop, convex or not.
+                Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
+                for (auto vh : loop) centroid += Eigen::Vector3f(point(vh).data());
+                centroid /= static_cast<float>(loop.size());
+
+                OpenMesh::VertexHandle cv = add_vertex(Point(centroid.x(), centroid.y(), centroid.z()));
+
+                int added = 0;
+                for (size_t i = 0; i < loop.size(); ++i)
+                {
+                    OpenMesh::VertexHandle a = loop[i];
+                    OpenMesh::VertexHandle b = loop[(i + 1) % loop.size()];
+                    auto fh = add_face(cv, a, b);
+                    if (!fh.is_valid()) fh = add_face(cv, b, a);
+                    if (fh.is_valid()) added++;
+                }
+                if (added > 0) filled++;
+            }
+
+            int after = count_boundary();
+            std::cout << "[Fill] loops=" << loops.size()
+                << " filled=" << filled
+                << " boundary " << before << "->" << after << std::endl;
+
+            if (filled > 0) { garbage_collection(); BuildSpatialHashMap(); }
+            return filled;
+        }
+
+        // Remove faces touching small leftover boundary loops (bowtie/non-manifold
+        // slivers that cannot be filled). Deleting them collapses the thin strip.
+        int RemoveSmallBoundaryFaces(size_t max_loop_size = 12)
+        {
+            auto loops = ExtractBoundaryLoops();
+            std::set<int> faces_to_delete;
+
+            for (auto& loop : loops)
+            {
+                if (loop.size() < 3 || loop.size() > max_loop_size) continue;
+                // every face incident to a loop vertex is part of the sliver strip
+                for (auto vh : loop)
+                    for (auto vf_it = cvf_iter(vh); vf_it.is_valid(); ++vf_it)
+                        if (!status(*vf_it).deleted())
+                            faces_to_delete.insert(vf_it->idx());
+            }
+
+            int removed = 0;
+            for (int fidx : faces_to_delete)
+            {
+                auto fh = face_handle(fidx);
+                if (fh.is_valid() && !status(fh).deleted())
+                {
+                    delete_face(fh, false);
+                    removed++;
+                }
+            }
+
+            if (removed > 0)
+            {
+                garbage_collection();
+                BuildSpatialHashMap();
+            }
+            return removed;
+        }
+
+        // Split non-manifold vertices: a vertex whose incident faces form
+        // multiple disconnected fans is duplicated, one copy per fan.
+        // This makes the local topology manifold so weld/fill behave.
+        int RepairNonManifoldVertices()
+        {
+            int repaired = 0;
+            std::vector<Eigen::Vector3f> add_pts;
+            std::vector<Eigen::Vector3i> all_faces;
+
+            // rebuild from scratch: for each face, remap any non-manifold
+            // vertex to a per-fan duplicate. Easiest robust route is a full
+            // rebuild keyed by (vertex, connected-face-component).
+            // collect current geometry first
+            std::vector<Eigen::Vector3f> pts(n_vertices());
+            for (auto v_it = vertices_begin(); v_it != vertices_end(); ++v_it)
+                pts[v_it->idx()] = Eigen::Vector3f(point(*v_it).data());
+
+            // group faces around each vertex into connected fans (via shared edges)
+            std::vector<int> face_comp(n_faces(), -1);
+            // we only need to duplicate at non-manifold vertices; detect them
+            std::vector<char> is_nm(n_vertices(), 0);
+            for (auto v_it = vertices_begin(); v_it != vertices_end(); ++v_it)
+                if (!status(*v_it).deleted() && !is_manifold(*v_it))
+                    is_nm[v_it->idx()] = 1;
+
+            // for each vertex, assign a fan id to each incident face
+            // map (old_vertex, fan_id) -> new vertex index
+            std::map<std::pair<int, int>, int> remap;
+            std::vector<Eigen::Vector3f> new_pts = pts;
+
+            auto fan_id_of_face_at_vertex = [&](OpenMesh::VertexHandle vh, OpenMesh::FaceHandle fh) -> int
+                {
+                    // BFS over faces incident to vh, connected if they share an
+                    // edge that is incident to vh. returns a stable small id.
+                    std::vector<OpenMesh::FaceHandle> inc;
+                    for (auto vf = cvf_iter(vh); vf.is_valid(); ++vf)
+                        if (!status(*vf).deleted()) inc.push_back(*vf);
+
+                    std::map<int, int> local;   // face idx -> fan id
+                    int next = 0;
+                    for (auto f : inc)
+                    {
+                        if (local.count(f.idx())) continue;
+                        std::vector<OpenMesh::FaceHandle> stack{ f };
+                        local[f.idx()] = next;
+                        while (!stack.empty())
+                        {
+                            auto cur = stack.back(); stack.pop_back();
+                            for (auto fh_it = cfh_iter(cur); fh_it.is_valid(); ++fh_it)
+                            {
+                                // edge must touch vh to stay in the same fan
+                                auto a = from_vertex_handle(*fh_it);
+                                auto b = to_vertex_handle(*fh_it);
+                                if (a != vh && b != vh) continue;
+                                auto opp = opposite_halfedge_handle(*fh_it);
+                                if (is_boundary(opp)) continue;
+                                auto nf = face_handle(opp);
+                                if (!nf.is_valid() || status(nf).deleted()) continue;
+                                if (local.count(nf.idx())) continue;
+                                if (std::find_if(inc.begin(), inc.end(),
+                                    [&](auto& x) { return x.idx() == nf.idx(); }) == inc.end()) continue;
+                                local[nf.idx()] = next;
+                                stack.push_back(nf);
+                            }
+                        }
+                        next++;
+                    }
+                    return local.count(fh.idx()) ? local[fh.idx()] : 0;
+                };
+
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (status(*f_it).deleted()) continue;
+                Eigen::Vector3i fidx; int k = 0;
+                for (auto fv = cfv_iter(*f_it); fv.is_valid() && k < 3; ++fv, ++k)
+                {
+                    int vid = fv->idx();
+                    if (!is_nm[vid]) { fidx[k] = vid; continue; }
+
+                    int fan = fan_id_of_face_at_vertex(*fv, *f_it);
+                    auto key = std::make_pair(vid, fan);
+                    auto it = remap.find(key);
+                    if (it != remap.end()) { fidx[k] = it->second; }
+                    else if (fan == 0) { remap[key] = vid; fidx[k] = vid; }
+                    else
+                    {
+                        int ni = static_cast<int>(new_pts.size());
+                        new_pts.push_back(pts[vid]);
+                        remap[key] = ni;
+                        fidx[k] = ni;
+                        repaired++;
+                    }
+                }
+                if (k == 3) all_faces.push_back(fidx);
+            }
+
+            this->clear();
+            this->Build(new_pts, all_faces);
+            return repaired;
+        }
+
+        // Try to make the mesh watertight: split non-manifold vertices, then
+        // fill small holes. Returns the diagnostics AFTER repair.
+        MeshDiagnostics Repair(size_t max_hole_size = 30)
+        {
+            int nm = RepairNonManifoldVertices();
+            BuildSpatialHashMap();
+            int filled = FillSmallBoundaryHoles(max_hole_size);
+            int removed = RemoveSmallBoundaryFaces(max_hole_size + 4);
+            if (removed > 0) FillSmallBoundaryHoles(max_hole_size + 4);
+            std::cout << "[Repair] nm_split=" << nm
+                << " holes_filled=" << filled
+                << " removed=" << removed << std::endl;
+            return Diagnose();
         }
 
         OpenMesh::FaceHandle FindFaceAtPosition(const Eigen::Vector3f& pt) const
@@ -1693,13 +2423,11 @@ namespace SGL
                             float dist_sq;
                             if (v >= 0.0f && w >= 0.0f && u >= 0.0f)
                             {
-                                // 삼각형 영역 안: 평면까지의 수직거리
                                 float dp = normal.dot(v2p);
                                 dist_sq = dp * dp;
                             }
                             else
                             {
-                                // 삼각형 밖: 가장 가까운 변까지의 거리
                                 float d_e0 = DistanceToSegmentSquared(pt, v0, v1);
                                 float d_e1 = DistanceToSegmentSquared(pt, v1, v2);
                                 float d_e2 = DistanceToSegmentSquared(pt, v2, v0);
@@ -1723,7 +2451,6 @@ namespace SGL
             std::vector<Eigen::Vector3f> new_points;
             std::vector<Eigen::Vector3i> new_indices;
 
-            // 기존 정점 좌표를 재활용하기 위한 해시맵
             robin_hood::unordered_map<Eigen::Vector3f, int, Vector3fHash, Vector3fEqual> vertex_map;
 
             for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
@@ -1735,11 +2462,10 @@ namespace SGL
                     pts.push_back(Eigen::Vector3f(point(*fv_it).data()));
                 }
 
-                // 면이 3각형이 아니면 건너뜀 (안전 장치)
                 if (pts.size() != 3) continue;
 
                 Eigen::Vector3i face_indices;
-                // 법선(Normal)을 뒤집기 위해 정점 순서를 역순(2, 1, 0)으로 삽입
+                // reverse vertex order (2,1,0) to flip the normal
                 for (int k = 2; k >= 0; --k)
                 {
                     const Eigen::Vector3f& p = pts[k];
@@ -1757,9 +2483,185 @@ namespace SGL
                 new_indices.push_back(face_indices);
             }
 
-            // 기존 메쉬 데이터를 싹 날리고 안전하게 재조립
             this->clear();
             this->Build(new_points, new_indices);
+        }
+
+        // Mark edges whose BOTH endpoints are intersection points (in cutPool).
+        // These act as walls so flood-fill cannot cross the cut curve.
+        std::vector<bool> MarkCutEdges(CanonicalPool& cutPool, float eps) const
+        {
+            std::vector<bool> is_cut(n_edges(), false);
+            float eps_sq = eps * eps;
+
+            auto on_curve = [&](const Eigen::Vector3f& p) -> bool
+                {
+                    return cutPool.Contains(p, eps);
+                };
+
+            for (auto e_it = edges_begin(); e_it != edges_end(); ++e_it)
+            {
+                auto h = halfedge_handle(*e_it, 0);
+                Eigen::Vector3f a(point(from_vertex_handle(h)).data());
+                Eigen::Vector3f b(point(to_vertex_handle(h)).data());
+                if (on_curve(a) && on_curve(b))
+                    is_cut[e_it->idx()] = true;
+            }
+            return is_cut;
+        }
+
+        // Flood-fill faces into groups, never crossing a cut edge.
+        // Returns per-face group id; out_count gets the number of groups.
+        std::vector<int> ClassifyFaceGroups(const std::vector<bool>& is_cut_edge, int& out_count) const
+        {
+            std::vector<int> group(n_faces(), -1);
+            int gid = 0;
+
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (status(*f_it).deleted() || group[f_it->idx()] != -1) continue;
+
+                std::vector<OpenMesh::FaceHandle> stack;
+                stack.push_back(*f_it);
+                group[f_it->idx()] = gid;
+
+                while (!stack.empty())
+                {
+                    auto fh = stack.back(); stack.pop_back();
+
+                    for (auto fh_it = cfh_iter(fh); fh_it.is_valid(); ++fh_it)
+                    {
+                        // do not cross a cut edge
+                        if (is_cut_edge[edge_handle(*fh_it).idx()]) continue;
+
+                        auto opp = opposite_halfedge_handle(*fh_it);
+                        if (is_boundary(opp)) continue;
+                        auto nf = face_handle(opp);
+                        if (!nf.is_valid() || status(nf).deleted()) continue;
+                        if (group[nf.idx()] != -1) continue;
+
+                        group[nf.idx()] = gid;
+                        stack.push_back(nf);
+                    }
+                }
+                gid++;
+            }
+            out_count = gid;
+            return group;
+        }
+
+        // Absorb tiny groups into the largest adjacent group.
+        // Small groups (< min_size faces) are seam slivers; merging them into a
+        // neighbor lets them inherit a valid inside/outside label.
+        void MergeSmallGroups(std::vector<int>& group, int& ng,
+            const std::vector<bool>& is_cut_edge, int min_size) const
+        {
+            std::vector<int> sz(ng, 0);
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+                if (!status(*f_it).deleted()) sz[group[f_it->idx()]]++;
+
+            // iterate: small groups adopt the largest neighboring group id
+            bool changed = true;
+            int guard = 0;
+            while (changed && guard++ < 20)
+            {
+                changed = false;
+                for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+                {
+                    if (status(*f_it).deleted()) continue;
+                    int g = group[f_it->idx()];
+                    if (sz[g] >= min_size) continue;
+
+                    // find the largest neighbor group across ANY edge
+                    // (including cut edges, so slivers attach to a real region)
+                    int best_g = -1, best_sz = -1;
+                    for (auto fh_it = cfh_iter(*f_it); fh_it.is_valid(); ++fh_it)
+                    {
+                        auto opp = opposite_halfedge_handle(*fh_it);
+                        if (is_boundary(opp)) continue;
+                        auto nf = face_handle(opp);
+                        if (!nf.is_valid() || status(nf).deleted()) continue;
+                        int ng2 = group[nf.idx()];
+                        if (ng2 == g) continue;
+                        if (sz[ng2] > best_sz) { best_sz = sz[ng2]; best_g = ng2; }
+                    }
+
+                    if (best_g >= 0)
+                    {
+                        sz[g]--;
+                        group[f_it->idx()] = best_g;
+                        sz[best_g]++;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        Eigen::Vector3f FaceCentroid(OpenMesh::FaceHandle fh) const
+        {
+            Eigen::Vector3f v0, v1, v2;
+            GetFaceVertices(fh, v0, v1, v2);
+            return (v0 + v1 + v2) / 3.0f;
+        }
+
+        // Count how many faces a ray from 'origin' along 'dir' crosses.
+        // Used for inside/outside test (odd = inside) via the spatial grid.
+        int CountRayCrossings(const Eigen::Vector3f& origin, const Eigen::Vector3f& dir) const
+        {
+            if (hash_map.empty()) return 0;
+
+            std::set<int> hit_faces;   // dedupe faces shared across grid cells
+
+            // brute force over all faces is too slow; instead march all cells the
+            // ray passes is complex, so we test every face once via a simple loop.
+            // For correctness first; optimize later if needed.
+            int crossings = 0;
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (status(*f_it).deleted()) continue;
+                Eigen::Vector3f v0, v1, v2;
+                GetFaceVertices(*f_it, v0, v1, v2);
+                float t;
+                if (IntersectRayTriangle(origin, dir, v0, v1, v2, t))
+                    crossings++;
+            }
+            return crossings;
+        }
+
+        // Collect faces whose group id is in 'keep' into out_points/out_indices.
+        // If flip is true, reverse winding (used for the subtracted volume).
+        void CollectGroupFaces(
+            const std::vector<int>& grp,
+            const std::set<int>& keep,
+            bool flip,
+            std::vector<Eigen::Vector3f>& out_points,
+            std::vector<Eigen::Vector3i>& out_indices) const
+        {
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (status(*f_it).deleted()) continue;
+                if (keep.find(grp[f_it->idx()]) == keep.end()) continue;
+
+                Eigen::Vector3f v[3]; int k = 0;
+                for (auto fv_it = cfv_iter(*f_it); fv_it.is_valid() && k < 3; ++fv_it, ++k)
+                    v[k] = Eigen::Vector3f(point(*fv_it).data());
+                if (k != 3) continue;
+
+                int base = static_cast<int>(out_points.size());
+                if (flip)
+                {
+                    out_points.push_back(v[0]);
+                    out_points.push_back(v[2]);
+                    out_points.push_back(v[1]);
+                }
+                else
+                {
+                    out_points.push_back(v[0]);
+                    out_points.push_back(v[1]);
+                    out_points.push_back(v[2]);
+                }
+                out_indices.push_back(Eigen::Vector3i(base, base + 1, base + 2));
+            }
         }
 
     protected:
