@@ -2091,6 +2091,7 @@ namespace SGL
             int isolated_vertices = 0;       // vertices used by no face
             int degenerate_faces = 0;        // near-zero-area faces
             int duplicate_faces = 0;         // same 3 vertices as another face
+            float signed_volume = 0.0f;      // sign reveals winding convention
 
             bool is_watertight = false;      // closed + manifold
 
@@ -2165,6 +2166,20 @@ namespace SGL
             d.is_watertight = (d.boundary_edges == 0 &&
                 d.non_manifold_vertices == 0 &&
                 d.degenerate_faces == 0);
+
+            // signed volume; positive if face normals point outward,
+            // negative if they point inward. Two meshes with opposite signs
+            // have opposite winding conventions -> one looks flipped when merged.
+            double vol6 = 0.0;
+            for (auto f_it = faces_begin(); f_it != faces_end(); ++f_it)
+            {
+                if (status(*f_it).deleted()) continue;
+                Eigen::Vector3f v0, v1, v2;
+                GetFaceVertices(*f_it, v0, v1, v2);
+                vol6 += v0.cast<double>().dot(v1.cast<double>().cross(v2.cast<double>()));
+            }
+            d.signed_volume = static_cast<float>(vol6 / 6.0);
+
             return d;
         }
 
@@ -2184,9 +2199,21 @@ namespace SGL
             int filled = 0;
             int before = count_boundary();
 
+            float protect_eps = 0.0f;
+            {
+                Eigen::Vector3f bmin(1e30f, 1e30f, 1e30f), bmax(-1e30f, -1e30f, -1e30f);
+                for (auto v = vertices_begin(); v != vertices_end(); ++v)
+                {
+                    Eigen::Vector3f p(point(*v).data());
+                    bmin = bmin.cwiseMin(p); bmax = bmax.cwiseMax(p);
+                }
+                protect_eps = (bmax - bmin).norm() * 1e-4f;
+            }
+
             for (auto& loop : loops)
             {
                 if (loop.size() < 3 || loop.size() > max_loop_size) continue;
+                if (IsProtectedLoop(loop, protect_eps)) continue;   // keep opening open
 
                 // size 3: trivial; just add (both windings)
                 if (loop.size() == 3)
@@ -2226,6 +2253,48 @@ namespace SGL
             return filled;
         }
 
+        // Inspect the mesh as loaded and mark boundary loops with too many
+        // edges as intentional openings. Call ONCE right after loading,
+        // before any repair/fill. min_edges: loops with >= this many edges
+        // are protected (kept open).
+        int MarkLargeOpeningsAsProtected(size_t min_edges)
+        {
+            protected_opening_points_.clear();
+            auto loops = ExtractBoundaryLoops();
+            int protected_loops = 0;
+            for (auto& loop : loops)
+            {
+                if (loop.size() < min_edges) continue;
+                for (auto vh : loop)
+                    protected_opening_points_.push_back(Eigen::Vector3f(point(vh).data()));
+                protected_loops++;
+            }
+            std::cout << "[Protect] loops=" << loops.size()
+                << " protected(>=" << min_edges << " edges)=" << protected_loops
+                << " points=" << protected_opening_points_.size() << std::endl;
+            return protected_loops;
+        }
+
+        // True if this boundary loop coincides with a protected opening.
+        // Matches by position against protected_opening_points_.
+        bool IsProtectedLoop(const std::vector<OpenMesh::VertexHandle>& loop, float eps) const
+        {
+            if (protected_opening_points_.empty()) return false;
+            float eps_sq = eps * eps;
+
+            // a loop is protected if MOST of its vertices match a protected point
+            int matched = 0;
+            for (auto vh : loop)
+            {
+                Eigen::Vector3f p(point(vh).data());
+                for (const auto& q : protected_opening_points_)
+                    if ((p - q).squaredNorm() < eps_sq) { matched++; break; }
+            }
+            // majority match guards against a small loop that merely shares
+            // one or two vertices with a protected opening
+            return matched * 2 >= static_cast<int>(loop.size());
+        }
+
         // Remove faces touching small leftover boundary loops (bowtie/non-manifold
         // slivers that cannot be filled). Deleting them collapses the thin strip.
         int RemoveSmallBoundaryFaces(size_t max_loop_size = 12)
@@ -2233,10 +2302,21 @@ namespace SGL
             auto loops = ExtractBoundaryLoops();
             std::set<int> faces_to_delete;
 
+            float protect_eps = 0.0f;
+            {
+                Eigen::Vector3f bmin(1e30f, 1e30f, 1e30f), bmax(-1e30f, -1e30f, -1e30f);
+                for (auto v = vertices_begin(); v != vertices_end(); ++v)
+                {
+                    Eigen::Vector3f p(point(*v).data());
+                    bmin = bmin.cwiseMin(p); bmax = bmax.cwiseMax(p);
+                }
+                protect_eps = (bmax - bmin).norm() * 1e-4f;
+            }
+
             for (auto& loop : loops)
             {
                 if (loop.size() < 3 || loop.size() > max_loop_size) continue;
-                // every face incident to a loop vertex is part of the sliver strip
+                if (IsProtectedLoop(loop, protect_eps)) continue;   // keep opening open
                 for (auto vh : loop)
                     for (auto vf_it = cvf_iter(vh); vf_it.is_valid(); ++vf_it)
                         if (!status(*vf_it).deleted())
@@ -2628,6 +2708,97 @@ namespace SGL
             return crossings;
         }
 
+        // Closest point on triangle (v0,v1,v2) to p (Ericson, Real-Time
+        // Collision Detection). Needed for robust nearest-face distance.
+        Eigen::Vector3f ClosestPointOnTriangle(const Eigen::Vector3f& p,
+            const Eigen::Vector3f& a, const Eigen::Vector3f& b, const Eigen::Vector3f& c) const
+        {
+            Eigen::Vector3f ab = b - a, ac = c - a, ap = p - a;
+            float d1 = ab.dot(ap), d2 = ac.dot(ap);
+            if (d1 <= 0 && d2 <= 0) return a;
+
+            Eigen::Vector3f bp = p - b;
+            float d3 = ab.dot(bp), d4 = ac.dot(bp);
+            if (d3 >= 0 && d4 <= d3) return b;
+
+            float vc = d1 * d4 - d3 * d2;
+            if (vc <= 0 && d1 >= 0 && d3 <= 0)
+                return a + (d1 / (d1 - d3)) * ab;
+
+            Eigen::Vector3f cp = p - c;
+            float d5 = ab.dot(cp), d6 = ac.dot(cp);
+            if (d6 >= 0 && d5 <= d6) return c;
+
+            float vb = d5 * d2 - d1 * d6;
+            if (vb <= 0 && d2 >= 0 && d6 <= 0)
+                return a + (d2 / (d2 - d6)) * ac;
+
+            float va = d3 * d6 - d5 * d4;
+            if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0)
+                return b + ((d4 - d3) / ((d4 - d3) + (d5 - d6))) * (c - b);
+
+            float denom = 1.0f / (va + vb + vc);
+            float v = vb * denom, w = vc * denom;
+            return a + ab * v + ac * w;
+        }
+
+        // Inside-test by nearest face, robust on OPEN meshes (unlike ray
+        // crossing). Returns true if 'p' lies behind the nearest face's
+        // outward normal (i.e. inside this mesh's surface locally).
+        bool IsInsideByNearestFace(const Eigen::Vector3f& p) const
+        {
+            if (hash_map.empty()) return false;
+
+            // search outward in growing cell rings until at least one face
+            // is found, then take the geometrically nearest among candidates
+            Eigen::Vector3f local = p - grid_min;
+            int cx = static_cast<int>(std::floor(local.x() / grid_cell_size.x()));
+            int cy = static_cast<int>(std::floor(local.y() / grid_cell_size.y()));
+            int cz = static_cast<int>(std::floor(local.z() / grid_cell_size.z()));
+
+            float best_d2 = std::numeric_limits<float>::max();
+            OpenMesh::FaceHandle best_f;
+            Eigen::Vector3f best_cp;
+
+            for (int ring = 1; ring <= 64; ++ring)
+            {
+                for (int dz = -ring; dz <= ring; ++dz)
+                    for (int dy = -ring; dy <= ring; ++dy)
+                        for (int dx = -ring; dx <= ring; ++dx)
+                        {
+                            // only the shell of this ring
+                            if (std::max({ std::abs(dx), std::abs(dy), std::abs(dz) }) != ring) continue;
+                            auto it = hash_map.find(Eigen::Vector3i(cx + dx, cy + dy, cz + dz));
+                            if (it == hash_map.end()) continue;
+                            for (int f_idx : it->second)
+                            {
+                                Eigen::Vector3f v0, v1, v2;
+                                GetFaceVertices(face_handle(f_idx), v0, v1, v2);
+                                Eigen::Vector3f cp = ClosestPointOnTriangle(p, v0, v1, v2);
+                                float d2 = (cp - p).squaredNorm();
+                                if (d2 < best_d2)
+                                {
+                                    best_d2 = d2;
+                                    best_f = face_handle(f_idx);
+                                    best_cp = cp;
+                                }
+                            }
+                        }
+                // stop one ring after first hit so we don't miss a closer face
+                // in a diagonal neighbor
+                if (best_f.is_valid() && ring >= 2) break;
+            }
+
+            if (!best_f.is_valid()) return false;
+
+            Eigen::Vector3f v0, v1, v2;
+            GetFaceVertices(best_f, v0, v1, v2);
+            Eigen::Vector3f nrm = (v1 - v0).cross(v2 - v0);
+            if (nrm.squaredNorm() < 1e-20f) return false;
+            // inside if p is behind the outward normal
+            return nrm.dot(p - best_cp) < 0.0f;
+        }
+
         // Collect faces whose group id is in 'keep' into out_points/out_indices.
         // If flip is true, reverse winding (used for the subtracted volume).
         void CollectGroupFaces(
@@ -2670,5 +2841,10 @@ namespace SGL
         Eigen::Vector3f grid_cell_size;
 
         robin_hood::unordered_map<Eigen::Vector3i, std::vector<int>, Int3Hash, Int3Equal> hash_map;
+
+        // Boundary loops marked as intentional openings (e.g. teapot spout,
+        // handle). Stored as vertex POSITIONS because vertex handles change
+        // after every rebuild. Fill steps must skip any loop touching these.
+        std::vector<Eigen::Vector3f> protected_opening_points_;
     };
 }

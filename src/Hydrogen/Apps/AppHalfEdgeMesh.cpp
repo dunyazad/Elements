@@ -296,11 +296,11 @@ public:
     {
         meshes.emplace_back(std::make_unique<HeliumMesh>());
         HeliumMesh& mesh_a = *meshes.back();
-        LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\spot.stl");
+        LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\A_Maxillar.stl");
 
         meshes.emplace_back(std::make_unique<HeliumMesh>());
         HeliumMesh& mesh_b = *meshes.back();
-        LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\teapot_cut.stl");
+        LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\A_Tooth.stl");
 
         mesh_a.BuildSpatialHashMap();
         mesh_b.BuildSpatialHashMap();
@@ -311,6 +311,13 @@ public:
             for (auto e = mesh_b.edges_begin(); e != mesh_b.edges_end(); ++e) if (mesh_b.is_boundary(*e)) pb++;
             std::cout << "[PreSplit] original boundary edges A=" << pa << " B=" << pb << std::endl;
         }
+
+        // Mark intentional openings BEFORE any repair. Boundary loops with many
+        // edges (spout, handle openings) are kept open; small loops are defects
+        // to be filled. Threshold chosen above teapot defect-hole sizes.
+        const size_t opening_min_edges = 13;
+        mesh_a.MarkLargeOpeningsAsProtected(opening_min_edges);
+        mesh_b.MarkLargeOpeningsAsProtected(opening_min_edges);
 
         auto print_diag = [](const char* name, const SGL::Mesh::MeshDiagnostics& d)
             {
@@ -323,6 +330,8 @@ public:
                 std::cout << "    degenerate_faces=" << d.degenerate_faces
                     << " duplicate_faces=" << d.duplicate_faces << std::endl;
                 std::cout << "    watertight=" << (d.is_watertight ? "YES" : "NO") << std::endl;
+
+                std::cout << "    signed_volume=" << d.signed_volume << std::endl;
 
                 // loop size histogram: small loops likely real holes,
                 // large loops may be open structure (e.g. lattice gaps)
@@ -544,8 +553,8 @@ public:
                     for (auto fh : samples[g])
                     {
                         Eigen::Vector3f c = self.FaceCentroid(fh);
-                        int crossings = other.CountRayCrossings(c, dir);
-                        if (crossings % 2 == 1) votes_in++; else votes_out++;
+                        if (other.IsInsideByNearestFace(c)) votes_in++;
+                        else votes_out++;
                     }
                     inside[g] = (votes_in > votes_out) ? 1 : 0;
                 }
