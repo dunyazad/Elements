@@ -36,6 +36,7 @@ using VD = VisualDebugging;
 
 #include "Apps/Apps.h"
 
+//const std::string appName = "AppTextMesh";
 //const std::string appName = "AppSGL";
 const std::string appName = "AppHalfEdgeMesh";
 //const std::string appName = "AppManifold";
@@ -108,7 +109,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 		AllocConsole();
 		freopen("CONOUT$", "w", stdout);
-		MaximizeConsoleWindowOnMonitor(largestMonitorIndex - 1);
+		MaximizeConsoleWindowOnSmallestMonitor(true);
 	}
 	else
 	{
@@ -116,7 +117,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 		AllocConsole();
 		freopen("CONOUT$", "w", stdout);
-		MaximizeConsoleWindowOnMonitor(largestMonitorIndex - 1);
+		MaximizeConsoleWindowOnSmallestMonitor(true);
 	}
 
 	std::cout << "CPU Vendor: " << vendor << std::endl;

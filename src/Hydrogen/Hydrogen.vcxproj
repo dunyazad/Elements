@@ -121,6 +121,7 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
       <DisableSpecificWarnings>4819</DisableSpecificWarnings>
       <OpenMPSupport>true</OpenMPSupport>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -153,6 +154,7 @@
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <DisableSpecificWarnings>4819</DisableSpecificWarnings>
       <OpenMPSupport>true</OpenMPSupport>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -188,8 +190,10 @@
     <ClInclude Include="Apps\Core\DataStructures\VoxelCache.h" />
     <ClInclude Include="Apps\Core\DataStructures\VoxelDataBase.h" />
     <ClInclude Include="Apps\Core\Operations\OperationPointCloudMerge.h" />
+    <ClInclude Include="Apps\HeliumMesh.h" />
     <ClInclude Include="Apps\SimpleGeometryLibrary.hpp" />
     <ClInclude Include="Apps\SimpleGeometryLibrary_Primitives.hpp" />
+    <ClInclude Include="Apps\TextMeshGenerator.hpp" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Hydrogen.h" />
     <ClInclude Include="Resource.h" />
@@ -207,6 +211,7 @@
     <ClCompile Include="Apps\AppMorphologyDebug.cpp" />
     <ClCompile Include="Apps\AppSDFFiltering.cpp" />
     <ClCompile Include="Apps\AppSTL.cpp" />
+    <ClCompile Include="Apps\AppTextMesh.cpp" />
     <ClCompile Include="Apps\AppTSDF.cpp" />
     <ClCompile Include="Apps\AppTSDFDevice.cpp" />
     <ClCompile Include="Apps\AppVoxelDataBaseMemoryUsageCheck.cpp" />

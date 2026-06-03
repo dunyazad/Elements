@@ -96,6 +96,12 @@
     <ClInclude Include="Apps\SimpleGeometryLibrary_Primitives.hpp">
       <Filter>Apps</Filter>
     </ClInclude>
+    <ClInclude Include="Apps\HeliumMesh.h">
+      <Filter>Apps</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\TextMeshGenerator.hpp">
+      <Filter>Apps</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Hydrogen.cpp">
@@ -141,6 +147,9 @@
       <Filter>Apps</Filter>
     </ClCompile>
     <ClCompile Include="Apps\AppManifold.cpp">
+      <Filter>Apps</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppTextMesh.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
   </ItemGroup>

@@ -216,6 +216,42 @@ inline void MaximizeConsoleWindowOnMonitor(int monitorIndex)
     SetWindowPlacement(hwnd, &wp);
 }
 
+inline int MaximizeConsoleWindowOnSmallestMonitor(bool horizontal)
+{
+    std::vector<MonitorInfo> monitors;
+    EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, reinterpret_cast<LPARAM>(&monitors));
+
+    if (monitors.empty())
+    {
+        return -1;
+    }
+
+    int smallestMonitorIndex = 0;
+    long long smallestDimension = -1;
+
+    for (size_t i = 0; i < monitors.size(); ++i)
+    {
+        const RECT& workArea = monitors[i].monitorInfo.rcWork;
+        long long width = workArea.right - workArea.left;
+        long long height = workArea.bottom - workArea.top;
+
+        // horizontal 파라미터에 따라 비교 기준 설정 (true: 너비, false: 높이)
+        long long currentDimension = horizontal ? width : height;
+
+        // 초기값이거나, 현재 모니터의 치수가 지금까지 찾은 최소 치수보다 작은 경우 갱신
+        if (smallestDimension == -1 || currentDimension < smallestDimension)
+        {
+            smallestDimension = currentDimension;
+            smallestMonitorIndex = static_cast<int>(i);
+        }
+    }
+
+    // 찾은 모니터에 콘솔 창을 최대화
+    MaximizeConsoleWindowOnMonitor(smallestMonitorIndex);
+
+    return smallestMonitorIndex;
+}
+
 inline void SetConsoleToHalfOfScreen(int monitorIndex, int halfIndex)
 {
     EnsureConsoleBufferIsLargeEnough();
