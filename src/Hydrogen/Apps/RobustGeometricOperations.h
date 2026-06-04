@@ -539,7 +539,13 @@ namespace RGO
 			Unknown,
 			Inside,
 			Outside,
-			OnSurface
+
+			// The patch lies on the other mesh's surface. Same means the
+			// two coincident surfaces face the same direction, Opposite
+			// means they face each other or away from each other. The
+			// distinction decides which boolean operations keep the patch.
+			OnSurfaceSame,
+			OnSurfaceOpposite
 		};
 
 		OperatorBoolean(
@@ -581,16 +587,28 @@ namespace RGO
 			Eigen::Vector3f aabb_max;
 		};
 
-		// Solid path: both inputs are closed volumes. The result is a
-		// closed solid assembled from patches of both meshes.
-		bool ExecuteSolidBoolean();
+		// Solid assembly: both inputs are closed volumes, structures in
+		// data_a and data_b are already built and validated by Execute.
+		// The result is a closed solid assembled from patches of both
+		// meshes, with coplanar overlap regions taken from mesh A once.
+		bool AssembleSolidBoolean();
 
-		// Trim path: exactly one input is open. An open shell has no
+		// Trim assembly: exactly one input is open. An open shell has no
 		// volume, so ray parity against it is undefined and its patches
 		// cannot be stitched with the other mesh into a volume boundary.
 		// The only well defined result is the open mesh trimmed by the
 		// closed solid, which is an open surface.
-		bool ExecuteOpenMeshTrim(Mesh* open_mesh, const Mesh* solid, const char* open_label);
+		bool AssembleOpenMeshTrim(Mesh* open_mesh, const MeshSideData& data, const char* open_label);
+
+		void CollectFacesForBoolean(
+			const Mesh* mesh,
+			const MeshSideData& data,
+			bool keep_inside,
+			bool keep_outside,
+			bool keep_on_same,
+			bool keep_on_opposite,
+			bool flip_winding,
+			std::vector<Eigen::Vector3f>& out_soup) const;
 
 		void ReportPatchStatistics(const Mesh* mesh, const MeshSideData& data, const char* label) const;
 
@@ -598,15 +616,8 @@ namespace RGO
 		bool ValidateSeamIntegrity(const Mesh* mesh, const MeshSideData& data, const char* label) const;
 		bool BuildFacePatches(const Mesh* mesh, MeshSideData& data, const char* label) const;
 		bool ClassifyPatches(const Mesh* mesh, const Mesh* other, MeshSideData& data, const char* label) const;
-		FaceSide RobustPointInMesh(const Eigen::Vector3f& p, const Mesh* other) const;
+		FaceSide RobustPointInMesh(const Eigen::Vector3f& p, const Eigen::Vector3f& query_normal, const Mesh* other) const;
 		bool ValidatePatchAdjacency(const Mesh* mesh, const MeshSideData& data, const char* label) const;
-
-		void CollectFacesForBoolean(
-			const Mesh* mesh,
-			const MeshSideData& data,
-			bool keep_inside,
-			bool flip_winding,
-			std::vector<Eigen::Vector3f>& out_soup) const;
 
 		void WeldTriangleSoup(
 			const std::vector<Eigen::Vector3f>& soup,

@@ -78,14 +78,15 @@ public:
 		}
 		TE(CoRefine);
 
-		TS(BooleanSeamAndPatches);
-		// Stage gate: OperatorBoolean currently runs only up to seam
-		// reconstruction and seam-bounded flood fill, with validation.
-		// Classification and assembly stay disconnected until this stage
-		// is verified on real data.
+		TS(Boolean);
+		// Full boolean pipeline: seam reconstruction, seam-bounded flood
+		// fill, classification (including OnSurface for coplanar overlap
+		// regions) and assembly, each stage validated. On success the
+		// result mesh is a watertight solid (or a trimmed open surface
+		// when one input is open).
 		RGO::HeliumMesh* mesh_result = nullptr;
 		std::unique_ptr<RGO::OperatorBoolean> boolean_op;
-		bool boolean_stage_ok = false;
+		bool boolean_ok = false;
 		if (corefine_ok)
 		{
 			meshes.emplace_back(std::make_unique<RGO::HeliumMesh>());
@@ -93,24 +94,24 @@ public:
 			mesh_result->mesh_color = Eigen::Vector4f(1.0f, 0.5f, 0.0f, 1.0f);
 
 			boolean_op = std::make_unique<RGO::OperatorBoolean>(
-				RGO::OperatorBoolean::Intersection, &mesh_a, &mesh_b, &op, mesh_result);
-			boolean_stage_ok = boolean_op->Execute();
+				RGO::OperatorBoolean::Difference, &mesh_a, &mesh_b, &op, mesh_result);
+			boolean_ok = boolean_op->Execute();
 
-			if (false == boolean_stage_ok)
+			if (false == boolean_ok)
 			{
-				std::cout << "[Error] AppRGO: seam or patch stage failed validation." << std::endl;
+				std::cout << "[Error] AppRGO: boolean failed validation." << std::endl;
 			}
 		}
 		else
 		{
 			std::cout << "[Error] AppRGO: co-refinement failed, skipping boolean stages." << std::endl;
 		}
-		TE(BooleanSeamAndPatches);
+		TE(Boolean);
 
 		TS(VisualizeSeamEdges);
 		// Blue lines are seam edges reconstructed on each mesh. They must
 		// form the same closed intersection curve on both meshes.
-		if (boolean_stage_ok)
+		if (boolean_ok)
 		{
 			auto draw_seam = [](RGO::HeliumMesh& m, const std::vector<char>& edge_is_seam, const char* layer)
 				{
@@ -131,15 +132,23 @@ public:
 							Eigen::Vector4f(0.0f, 0.0f, 1.0f, 1.0f));
 					}
 				};
-			draw_seam(mesh_a, boolean_op->GetSideDataA().edge_is_seam, "SeamEdges");
-			draw_seam(mesh_b, boolean_op->GetSideDataB().edge_is_seam, "SeamEdges");
+			// Seam edge flags exist only on sides the operator built:
+			// both for solid booleans, only the open side for trims.
+			if (boolean_op->GetSideDataA().edge_is_seam.size() == mesh_a.n_edges())
+			{
+				draw_seam(mesh_a, boolean_op->GetSideDataA().edge_is_seam, "SeamEdges");
+			}
+			if (boolean_op->GetSideDataB().edge_is_seam.size() == mesh_b.n_edges())
+			{
+				draw_seam(mesh_b, boolean_op->GetSideDataB().edge_is_seam, "SeamEdges");
+			}
 			VD::SetLineWidth("SeamEdges", 5.0f);
 		}
 		TE(VisualizeSeamEdges);
 
 		TS(VisualizeBoundaryEdges);
-		// Any red line here is a residual boundary edge. The goal state
-		// renders nothing in this layer.
+		// Any red line on the RESULT is a failure of the pipeline. Red
+		// lines on the inputs are legitimate only for open inputs.
 		auto draw_boundary = [](RGO::HeliumMesh& m, const char* layer)
 			{
 				for (size_t i = 0; i < m.n_edges(); ++i)
@@ -167,22 +176,37 @@ public:
 		VD::SetLineWidth("BoundaryEdges", 5.0f);
 		TE(VisualizeBoundaryEdges);
 
-		TS(VisualizePatches);
-		// Each flood-fill patch becomes its own HeliumMesh with a distinct
-		// color and is saved as a separate STL file. The original meshes
-		// are cleared inside BuildPatchMeshes because the patch meshes
-		// occupy the same geometry and would z-fight with them. All line
-		// layers (seam, boundary) are drawn above, BEFORE the clear.
-		if (boolean_stage_ok)
+		TS(VisualizeResult);
+		// The boolean result occupies the same geometry as the inputs and
+		// the patch meshes, so exactly ONE representation is kept visible.
+		// visualize_patches = false shows the orange result solid;
+		// true shows the colored per-patch decomposition instead and
+		// saves each patch as an STL file. All line layers (seam,
+		// boundary) are drawn above, BEFORE any clear.
+		const bool visualize_patches = false;
+		if (boolean_ok)
 		{
-			std::vector<std::pair<std::string, RGO::HeliumMesh*>> patch_meshes;
-			int color_index = 0;
-			BuildPatchMeshes(mesh_a, boolean_op->GetSideDataA(), "A", color_index, patch_meshes);
-			BuildPatchMeshes(mesh_b, boolean_op->GetSideDataB(), "B", color_index, patch_meshes);
+			if (visualize_patches)
+			{
+				std::vector<std::pair<std::string, RGO::HeliumMesh*>> patch_meshes;
+				int color_index = 0;
+				BuildPatchMeshes(mesh_a, boolean_op->GetSideDataA(), "A", color_index, patch_meshes);
+				BuildPatchMeshes(mesh_b, boolean_op->GetSideDataB(), "B", color_index, patch_meshes);
 
-			SavePatchMeshesAsSTL(patch_meshes, "D:\\Temp\\Patch_");
+				SavePatchMeshesAsSTL(patch_meshes, "D:\\Temp\\Patch_");
+
+				mesh_result->clear();
+			}
+			else
+			{
+				// Clear the inputs so they cannot cover the result.
+				mesh_a.clear();
+				mesh_b.clear();
+			}
+
+			SavePatchMeshesAsSTL({ { "Result", mesh_result } }, "D:\\Temp\\");
 		}
-		TE(VisualizePatches);
+		TE(VisualizeResult);
 
 		Helium.AddOnUpdateCallback([this](float time_delta)
 			{

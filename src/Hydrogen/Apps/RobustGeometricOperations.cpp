@@ -2963,6 +2963,19 @@ namespace RGO
 		return count;
 	}
 
+	// File-local: readable classification names for logs
+	static const char* FaceSideNameString(OperatorBoolean::FaceSide s)
+	{
+		switch (s)
+		{
+		case OperatorBoolean::FaceSide::Inside: return "Inside";
+		case OperatorBoolean::FaceSide::Outside: return "Outside";
+		case OperatorBoolean::FaceSide::OnSurfaceSame: return "OnSurfaceSame";
+		case OperatorBoolean::FaceSide::OnSurfaceOpposite: return "OnSurfaceOpposite";
+		default: return "Unknown";
+		}
+	}
+
 	OperatorBoolean::OperatorBoolean(
 		Type t,
 		Mesh* a,
@@ -2992,137 +3005,153 @@ namespace RGO
 			endpoint_segments[segments[i].p1].push_back(i);
 		}
 
-		// Input topology, for the record. It decides which later stages
-		// are defined, but the stages executed below are valid for open
-		// and closed inputs alike.
+		// Strategy selection from the actual topology of the inputs.
+		// Solid booleans are only defined between closed volumes: an open
+		// shell has no volume, ray parity against it is undefined, and
+		// stitching its patches with the other mesh along the seam cannot
+		// produce a volume boundary.
 		size_t boundary_a = CountBoundaryEdges(meshA);
 		size_t boundary_b = CountBoundaryEdges(meshB);
+		bool a_closed = (0 == boundary_a);
+		bool b_closed = (0 == boundary_b);
 
 		std::cout << "[Info] OperatorBoolean: meshA is "
-			<< (0 == boundary_a ? "closed" : "open") << " (" << boundary_a
+			<< (a_closed ? "closed" : "open") << " (" << boundary_a
 			<< " boundary edges), meshB is "
-			<< (0 == boundary_b ? "closed" : "open") << " (" << boundary_b
+			<< (b_closed ? "closed" : "open") << " (" << boundary_b
 			<< " boundary edges)." << std::endl;
 
-		// STAGE GATE: the pipeline is intentionally cut here. Only seam
-		// reconstruction and the seam-bounded flood fill run, each with
-		// its own validation, so that any failure is attributable to
-		// exactly one stage. Classification (ExecuteSolidBoolean and
-		// ExecuteOpenMeshTrim further down in this file) reconnects only
-		// after this stage is verified on real data.
-		if (false == BuildSeamEdgeFlags(meshA, data_a, "meshA")) return false;
-		if (false == BuildSeamEdgeFlags(meshB, data_b, "meshB")) return false;
+		if (a_closed && b_closed)
+		{
+			if (false == BuildSeamEdgeFlags(meshA, data_a, "meshA")) return false;
+			if (false == BuildSeamEdgeFlags(meshB, data_b, "meshB")) return false;
 
-		if (false == ValidateSeamIntegrity(meshA, data_a, "meshA")) return false;
-		if (false == ValidateSeamIntegrity(meshB, data_b, "meshB")) return false;
+			if (false == ValidateSeamIntegrity(meshA, data_a, "meshA")) return false;
+			if (false == ValidateSeamIntegrity(meshB, data_b, "meshB")) return false;
 
-		if (false == BuildFacePatches(meshA, data_a, "meshA")) return false;
-		if (false == BuildFacePatches(meshB, data_b, "meshB")) return false;
+			if (false == BuildFacePatches(meshA, data_a, "meshA")) return false;
+			if (false == BuildFacePatches(meshB, data_b, "meshB")) return false;
 
-		ReportPatchStatistics(meshA, data_a, "meshA");
-		ReportPatchStatistics(meshB, data_b, "meshB");
+			if (false == ClassifyPatches(meshA, meshB, data_a, "meshA")) return false;
+			if (false == ClassifyPatches(meshB, meshA, data_b, "meshB")) return false;
 
-		std::cout << "[Info] OperatorBoolean: stage gate reached."
-			<< " Seam and patch structures are built and validated."
-			<< " Classification and assembly are NOT executed yet." << std::endl;
+			if (false == ValidatePatchAdjacency(meshA, data_a, "meshA")) return false;
+			if (false == ValidatePatchAdjacency(meshB, data_b, "meshB")) return false;
 
-		return true;
+			ReportPatchStatistics(meshA, data_a, "meshA");
+			ReportPatchStatistics(meshB, data_b, "meshB");
+
+			return AssembleSolidBoolean();
+		}
+
+		if (false == a_closed && false == b_closed)
+		{
+			std::cout << "[Error] OperatorBoolean: both inputs are open."
+				<< " At least one closed solid is required." << std::endl;
+			return false;
+		}
+
+		if (Union == type)
+		{
+			std::cout << "[Error] OperatorBoolean: Union requires two closed solids."
+				<< " An open input contributes no volume." << std::endl;
+			return false;
+		}
+
+		// Exactly one mesh is open: the result is that mesh trimmed by
+		// the closed solid. All structures are built and validated on the
+		// open mesh only; the solid serves as the classification
+		// reference, where ray parity is valid.
+		Mesh* open_mesh = nullptr;
+		const Mesh* solid = nullptr;
+		MeshSideData* data = nullptr;
+		const char* open_label = nullptr;
+
+		if (false == a_closed)
+		{
+			// Intersection: the part of A inside B.
+			// Difference: the part of A outside B.
+			open_mesh = meshA;
+			solid = meshB;
+			data = &data_a;
+			open_label = "meshA";
+		}
+		else
+		{
+			// meshB is the open one. Intersection is symmetric, so
+			// trimming B against A is well defined. Difference (A minus
+			// B) would need the volume of B, which an open B lacks.
+			if (Intersection != type)
+			{
+				std::cout << "[Error] OperatorBoolean: Difference requires a closed meshB."
+					<< " An open meshB has no volume to subtract." << std::endl;
+				return false;
+			}
+			open_mesh = meshB;
+			solid = meshA;
+			data = &data_b;
+			open_label = "meshB";
+		}
+
+		if (false == BuildSeamEdgeFlags(open_mesh, *data, open_label)) return false;
+		if (false == ValidateSeamIntegrity(open_mesh, *data, open_label)) return false;
+		if (false == BuildFacePatches(open_mesh, *data, open_label)) return false;
+		if (false == ClassifyPatches(open_mesh, solid, *data, open_label)) return false;
+		if (false == ValidatePatchAdjacency(open_mesh, *data, open_label)) return false;
+
+		ReportPatchStatistics(open_mesh, *data, open_label);
+
+		return AssembleOpenMeshTrim(open_mesh, *data, open_label);
 	}
 
-	void OperatorBoolean::ReportPatchStatistics(const Mesh* mesh, const MeshSideData& data, const char* label) const
+	bool OperatorBoolean::AssembleSolidBoolean()
 	{
-		// Per-patch face counts make a flood fill leak visible at a
-		// glance: a leak merges patches, so instead of several plausibly
-		// sized patches one oversized patch appears.
-		std::vector<size_t> patch_faces(data.patch_count, 0);
-		std::vector<size_t> patch_seam_edges(data.patch_count, 0);
+		// Face selection per boolean type, including coplanar overlap
+		// rules. A coplanar overlap region exists identically on both
+		// meshes, so it is taken from mesh A only, never from both:
+		// - Intersection and Union keep Same regions: the coincident
+		//   surface bounds the common volume and the union there.
+		// - Difference drops Same regions (the subtracted volume ends
+		//   exactly at A's surface, opening it there) and keeps Opposite
+		//   regions of A (B only touches A from the other side, A's
+		//   surface survives).
+		// - Opposite regions are zero-volume face contacts for
+		//   Intersection and interior walls for Union: dropped.
+		// For Difference the kept B faces bound removed volume, so their
+		// winding flips to stay outward.
+		bool a_inside = false;
+		bool a_outside = false;
+		bool a_same = false;
+		bool a_opposite = false;
+		bool b_inside = false;
+		bool b_outside = false;
+		bool flip_b = false;
 
-		for (size_t i = 0; i < mesh->n_faces(); ++i)
+		switch (type)
 		{
-			OpenMesh::FaceHandle fh = mesh->face_handle(static_cast<int>(i));
-			if (mesh->status(fh).deleted()) continue;
-
-			int patch = data.face_patch[i];
-			if (patch < 0) continue;
-			++patch_faces[patch];
+		case Intersection:
+			a_inside = true;
+			a_same = true;
+			b_inside = true;
+			break;
+		case Union:
+			a_outside = true;
+			a_same = true;
+			b_outside = true;
+			break;
+		case Difference:
+			a_outside = true;
+			a_opposite = true;
+			b_inside = true;
+			flip_b = true;
+			break;
 		}
-
-		// Seam edges incident to each patch: every patch created by the
-		// cut must touch the seam. A patch with zero seam edges is a
-		// separate connected component, which is informative on its own.
-		for (size_t i = 0; i < mesh->n_edges(); ++i)
-		{
-			if (0 == data.edge_is_seam[i]) continue;
-
-			OpenMesh::EdgeHandle eh = mesh->edge_handle(static_cast<int>(i));
-			OpenMesh::HalfedgeHandle h0 = mesh->halfedge_handle(eh, 0);
-			OpenMesh::HalfedgeHandle h1 = mesh->halfedge_handle(eh, 1);
-
-			if (false == mesh->is_boundary(h0))
-			{
-				int p = data.face_patch[mesh->face_handle(h0).idx()];
-				if (p >= 0) ++patch_seam_edges[p];
-			}
-			if (false == mesh->is_boundary(h1))
-			{
-				int p = data.face_patch[mesh->face_handle(h1).idx()];
-				if (p >= 0) ++patch_seam_edges[p];
-			}
-		}
-
-		const int report_limit = 20;
-		for (int p = 0; p < data.patch_count; ++p)
-		{
-			if (p >= report_limit)
-			{
-				std::cout << "[Info] PatchStats(" << label << "): "
-					<< (data.patch_count - report_limit) << " more patches not shown." << std::endl;
-				break;
-			}
-			std::cout << "[Info] PatchStats(" << label << "): patch " << p
-				<< " has " << patch_faces[p] << " faces, touches "
-				<< patch_seam_edges[p] << " seam edge sides." << std::endl;
-		}
-	}
-
-	bool OperatorBoolean::ExecuteSolidBoolean()
-	{
-		// Disjoint or fully contained inputs have no segments. The same
-		// pipeline still works: no seams means one patch per connected
-		// component, classified as a whole by one ray cast each.
-		MeshSideData data_a;
-		MeshSideData data_b;
-
-		if (false == BuildSeamEdgeFlags(meshA, data_a, "meshA")) return false;
-		if (false == BuildSeamEdgeFlags(meshB, data_b, "meshB")) return false;
-
-		// Seam integrity must hold BEFORE flood fill: a broken seam would
-		// let inside and outside patches merge silently.
-		if (false == ValidateSeamIntegrity(meshA, data_a, "meshA")) return false;
-		if (false == ValidateSeamIntegrity(meshB, data_b, "meshB")) return false;
-
-		if (false == BuildFacePatches(meshA, data_a, "meshA")) return false;
-		if (false == BuildFacePatches(meshB, data_b, "meshB")) return false;
-
-		if (false == ClassifyPatches(meshA, meshB, data_a, "meshA")) return false;
-		if (false == ClassifyPatches(meshB, meshA, data_b, "meshB")) return false;
-
-		// Cross check: classifications must flip across every seam edge.
-		// This catches both flood fill leaks and wrong ray verdicts.
-		if (false == ValidatePatchAdjacency(meshA, data_a, "meshA")) return false;
-		if (false == ValidatePatchAdjacency(meshB, data_b, "meshB")) return false;
-
-		// Face selection per boolean type. For Difference the kept B faces
-		// bound removed volume, so their winding flips to stay outward.
-		bool keep_inside_a = (type == Intersection);
-		bool keep_inside_b = (type == Intersection || type == Difference);
-		bool flip_b = (type == Difference);
 
 		std::vector<Eigen::Vector3f> soup;
 		soup.reserve((meshA->n_faces() + meshB->n_faces()) * 3);
 
-		CollectFacesForBoolean(meshA, data_a, keep_inside_a, false, soup);
-		CollectFacesForBoolean(meshB, data_b, keep_inside_b, flip_b, soup);
+		CollectFacesForBoolean(meshA, data_a, a_inside, a_outside, a_same, a_opposite, false, soup);
+		CollectFacesForBoolean(meshB, data_b, b_inside, b_outside, false, false, flip_b, soup);
 
 		std::vector<Eigen::Vector3f> points;
 		std::vector<Eigen::Vector3i> indices;
@@ -3144,30 +3173,26 @@ namespace RGO
 		return 0 == result_boundary_edge_count;
 	}
 
-	bool OperatorBoolean::ExecuteOpenMeshTrim(Mesh* open_mesh, const Mesh* solid, const char* open_label)
+	bool OperatorBoolean::AssembleOpenMeshTrim(Mesh* open_mesh, const MeshSideData& data, const char* open_label)
 	{
-		// All structure building and validation runs on the open mesh
-		// only. The solid is used purely as the classification reference,
-		// where ray parity is valid.
-		MeshSideData data;
-
-		if (false == BuildSeamEdgeFlags(open_mesh, data, open_label)) return false;
-		if (false == ValidateSeamIntegrity(open_mesh, data, open_label)) return false;
-		if (false == BuildFacePatches(open_mesh, data, open_label)) return false;
-		if (false == ClassifyPatches(open_mesh, solid, data, open_label)) return false;
-		if (false == ValidatePatchAdjacency(open_mesh, data, open_label)) return false;
-
 		// The open mesh's own border is a property of the input and stays
 		// legitimate in the result. It is recorded before assembly so the
 		// result validation can separate it from pipeline-created holes.
 		std::vector<BoundaryEdge> input_boundary;
 		CollectInputBoundaryEdges(open_mesh, input_boundary);
 
+		// Intersection keeps the part of the open mesh inside the solid,
+		// including pieces lying on the solid surface facing the same
+		// way. Difference keeps the outside part, including pieces lying
+		// on the surface facing the opposite way.
 		bool keep_inside = (Intersection == type);
+		bool keep_outside = (Difference == type);
+		bool keep_same = keep_inside;
+		bool keep_opposite = keep_outside;
 
 		std::vector<Eigen::Vector3f> soup;
 		soup.reserve(open_mesh->n_faces() * 3);
-		CollectFacesForBoolean(open_mesh, data, keep_inside, false, soup);
+		CollectFacesForBoolean(open_mesh, data, keep_inside, keep_outside, keep_same, keep_opposite, false, soup);
 
 		std::vector<Eigen::Vector3f> points;
 		std::vector<Eigen::Vector3i> indices;
@@ -3563,6 +3588,11 @@ namespace RGO
 			}
 		}
 
+		size_t inside = 0;
+		size_t outside = 0;
+		size_t on_same = 0;
+		size_t on_opposite = 0;
+
 		for (int p = 0; p < data.patch_count; ++p)
 		{
 			if (rep_face[p] < 0)
@@ -3576,38 +3606,56 @@ namespace RGO
 			mesh->GetFaceVertices(mesh->face_handle(rep_face[p]), v0, v1, v2);
 			Eigen::Vector3f centroid = (v0 + v1 + v2) / 3.0f;
 
-			FaceSide side = RobustPointInMesh(centroid, other);
-			if (FaceSide::Inside != side && FaceSide::Outside != side)
+			Eigen::Vector3f n = (v1 - v0).cross(v2 - v0);
+			float n_len = n.norm();
+			if (n_len < 1e-12f)
 			{
-				// OnSurface means coplanar face contact, which is a
-				// separate stage by agreement: fail loudly, never guess.
 				std::cout << "[Error] ClassifyPatches(" << label << "): patch " << p
-					<< " could not be classified ("
-					<< (side == FaceSide::OnSurface ? "OnSurface" : "Unknown")
-					<< ")." << std::endl;
+					<< " representative face is degenerate." << std::endl;
+				return false;
+			}
+			n /= n_len;
+
+			FaceSide side = RobustPointInMesh(centroid, n, other);
+			if (FaceSide::Unknown == side)
+			{
+				std::cout << "[Error] ClassifyPatches(" << label << "): patch " << p
+					<< " could not be classified." << std::endl;
 				return false;
 			}
 
 			data.patch_side[p] = side;
+
+			switch (side)
+			{
+			case FaceSide::Inside: ++inside; break;
+			case FaceSide::Outside: ++outside; break;
+			case FaceSide::OnSurfaceSame: ++on_same; break;
+			case FaceSide::OnSurfaceOpposite: ++on_opposite; break;
+			default: break;
+			}
 		}
 
-		size_t inside = 0;
-		for (const auto& s : data.patch_side)
-		{
-			if (FaceSide::Inside == s) ++inside;
-		}
 		std::cout << "[Info] ClassifyPatches(" << label << "): " << inside << " inside, "
-			<< (data.patch_side.size() - inside) << " outside patches." << std::endl;
+			<< outside << " outside, " << on_same << " on-surface-same, "
+			<< on_opposite << " on-surface-opposite patches." << std::endl;
 		return true;
 	}
 
-	OperatorBoolean::FaceSide OperatorBoolean::RobustPointInMesh(const Eigen::Vector3f& p, const Mesh* other) const
+	OperatorBoolean::FaceSide OperatorBoolean::RobustPointInMesh(const Eigen::Vector3f& p, const Eigen::Vector3f& query_normal, const Mesh* other) const
 	{
 		// On-surface check first: a point on the other mesh cannot be
-		// classified by ray parity at all.
+		// classified by ray parity at all. When the point does lie on the
+		// other surface, the relative normal orientation decides between
+		// the Same and Opposite on-surface classifications.
 		const Eigen::Vector3f pad(EPSILON, EPSILON, EPSILON);
 		std::vector<int> near_faces;
 		other->QueryOverlappingFaces(p - pad, p + pad, near_faces);
+
+		float best_abs_dot = 0.0f;
+		float best_dot = 0.0f;
+		bool on_surface = false;
+
 		for (int f : near_faces)
 		{
 			OpenMesh::FaceHandle fh = other->face_handle(f);
@@ -3615,10 +3663,36 @@ namespace RGO
 
 			Eigen::Vector3f v0, v1, v2;
 			other->GetFaceVertices(fh, v0, v1, v2);
-			if (Intersection::PointToTriangle(p, v0, v1, v2).type != Intersection::PointToTriangleType::Outside)
+			if (Intersection::PointToTriangle(p, v0, v1, v2).type == Intersection::PointToTriangleType::Outside) continue;
+
+			on_surface = true;
+
+			Eigen::Vector3f n = (v1 - v0).cross(v2 - v0);
+			float n_len = n.norm();
+			if (n_len < 1e-12f) continue;
+			n /= n_len;
+
+			float d = n.dot(query_normal);
+			if (std::abs(d) > best_abs_dot)
 			{
-				return FaceSide::OnSurface;
+				best_abs_dot = std::abs(d);
+				best_dot = d;
 			}
+		}
+
+		if (on_surface)
+		{
+			// Nearly perpendicular normals mean the point sits on the
+			// intersection curve itself, where Same/Opposite is undefined.
+			// Representative centroids must not land there: report it.
+			if (best_abs_dot < 0.5f)
+			{
+				std::cout << "[Error] RobustPointInMesh: on-surface point ("
+					<< p.x() << ", " << p.y() << ", " << p.z()
+					<< ") has ambiguous orientation (|dot| " << best_abs_dot << ")." << std::endl;
+				return FaceSide::Unknown;
+			}
+			return (best_dot > 0.0f) ? FaceSide::OnSurfaceSame : FaceSide::OnSurfaceOpposite;
 		}
 
 		// Bounding box of the other mesh: ray length and a cheap reject
@@ -3704,11 +3778,14 @@ namespace RGO
 
 	bool OperatorBoolean::ValidatePatchAdjacency(const Mesh* mesh, const MeshSideData& data, const char* label) const
 	{
-		// Crossing the intersection curve on a watertight surface flips
-		// which side of the other mesh you are on. A seam edge whose two
-		// incident faces classify the same way therefore proves either a
-		// flood fill leak (patches wrongly merged across a broken seam) or
-		// a wrong ray verdict. Either way the boolean must not proceed.
+		// Crossing the intersection curve changes the relation to the
+		// other mesh, so the two patches incident to a seam edge must
+		// carry DIFFERENT classifications. This generalizes the pure
+		// transversal rule (Inside/Outside flip) to the OnSurface cases:
+		// entering or leaving a coplanar overlap region also changes the
+		// classification. Identical sides across a seam edge prove either
+		// a flood fill leak or a wrong classification verdict, and the
+		// boolean must not proceed.
 		size_t failures = 0;
 
 		for (size_t i = 0; i < mesh->n_edges(); ++i)
@@ -3730,31 +3807,31 @@ namespace RGO
 				if (failures <= 10)
 				{
 					std::cout << "[Error] PatchAdjacency(" << label << "): seam edge " << i
-						<< " has the same classification on both sides." << std::endl;
+						<< " has the same classification ("
+						<< FaceSideNameString(s0) << ") on both sides." << std::endl;
 				}
 			}
 		}
 
 		if (0 == failures)
 		{
-			std::cout << "[Info] PatchAdjacency(" << label << "): all seam edges separate"
-				<< " inside from outside." << std::endl;
+			std::cout << "[Info] PatchAdjacency(" << label << "): every seam edge separates"
+				<< " differently classified patches." << std::endl;
 			return true;
 		}
 
 		std::cout << "[Error] PatchAdjacency(" << label << "): " << failures
-			<< " seam edges violate the inside/outside flip." << std::endl;
+			<< " seam edges violate the classification change rule." << std::endl;
 		return false;
 	}
 
-	void OperatorBoolean::CollectFacesForBoolean(
-		const Mesh* mesh,
-		const MeshSideData& data,
-		bool keep_inside,
-		bool flip_winding,
-		std::vector<Eigen::Vector3f>& out_soup) const
+	void OperatorBoolean::ReportPatchStatistics(const Mesh* mesh, const MeshSideData& data, const char* label) const
 	{
-		FaceSide wanted = keep_inside ? FaceSide::Inside : FaceSide::Outside;
+		// Per-patch face counts make a flood fill leak visible at a
+		// glance: a leak merges patches, so instead of several plausibly
+		// sized patches one oversized patch appears.
+		std::vector<size_t> patch_faces(data.patch_count, 0);
+		std::vector<size_t> patch_seam_edges(data.patch_count, 0);
 
 		for (size_t i = 0; i < mesh->n_faces(); ++i)
 		{
@@ -3763,7 +3840,73 @@ namespace RGO
 
 			int patch = data.face_patch[i];
 			if (patch < 0) continue;
-			if (data.patch_side[patch] != wanted) continue;
+			++patch_faces[patch];
+		}
+
+		// Seam edges incident to each patch: every patch created by the
+		// cut must touch the seam. A patch with zero seam edges is a
+		// separate connected component, which is informative on its own.
+		for (size_t i = 0; i < mesh->n_edges(); ++i)
+		{
+			if (0 == data.edge_is_seam[i]) continue;
+
+			OpenMesh::EdgeHandle eh = mesh->edge_handle(static_cast<int>(i));
+			OpenMesh::HalfedgeHandle h0 = mesh->halfedge_handle(eh, 0);
+			OpenMesh::HalfedgeHandle h1 = mesh->halfedge_handle(eh, 1);
+
+			if (false == mesh->is_boundary(h0))
+			{
+				int p = data.face_patch[mesh->face_handle(h0).idx()];
+				if (p >= 0) ++patch_seam_edges[p];
+			}
+			if (false == mesh->is_boundary(h1))
+			{
+				int p = data.face_patch[mesh->face_handle(h1).idx()];
+				if (p >= 0) ++patch_seam_edges[p];
+			}
+		}
+
+		const int report_limit = 20;
+		for (int p = 0; p < data.patch_count; ++p)
+		{
+			if (p >= report_limit)
+			{
+				std::cout << "[Info] PatchStats(" << label << "): "
+					<< (data.patch_count - report_limit) << " more patches not shown." << std::endl;
+				break;
+			}
+			std::cout << "[Info] PatchStats(" << label << "): patch " << p
+				<< " has " << patch_faces[p] << " faces, touches "
+				<< patch_seam_edges[p] << " seam edge sides, side "
+				<< FaceSideNameString(data.patch_side[p]) << "." << std::endl;
+		}
+	}
+
+	void OperatorBoolean::CollectFacesForBoolean(
+		const Mesh* mesh,
+		const MeshSideData& data,
+		bool keep_inside,
+		bool keep_outside,
+		bool keep_on_same,
+		bool keep_on_opposite,
+		bool flip_winding,
+		std::vector<Eigen::Vector3f>& out_soup) const
+	{
+		for (size_t i = 0; i < mesh->n_faces(); ++i)
+		{
+			OpenMesh::FaceHandle fh = mesh->face_handle(static_cast<int>(i));
+			if (mesh->status(fh).deleted()) continue;
+
+			int patch = data.face_patch[i];
+			if (patch < 0) continue;
+
+			FaceSide side = data.patch_side[patch];
+			bool keep =
+				(FaceSide::Inside == side && keep_inside) ||
+				(FaceSide::Outside == side && keep_outside) ||
+				(FaceSide::OnSurfaceSame == side && keep_on_same) ||
+				(FaceSide::OnSurfaceOpposite == side && keep_on_opposite);
+			if (false == keep) continue;
 
 			Eigen::Vector3f v0, v1, v2;
 			mesh->GetFaceVertices(fh, v0, v1, v2);
@@ -3781,7 +3924,6 @@ namespace RGO
 			}
 		}
 	}
-
 	void OperatorBoolean::WeldTriangleSoup(
 		const std::vector<Eigen::Vector3f>& soup,
 		std::vector<Eigen::Vector3f>& out_points,
