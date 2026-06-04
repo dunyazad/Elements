@@ -155,14 +155,14 @@
     <ClCompile Include="Apps\AppVoxelDataBaseMemoryUsageCheck.cpp">
       <Filter>Apps\OLD</Filter>
     </ClCompile>
-    <ClCompile Include="Apps\AppHalfEdgeMesh.cpp">
-      <Filter>Apps</Filter>
-    </ClCompile>
     <ClCompile Include="Apps\AppRGO.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
     <ClCompile Include="Apps\RobustGeometricOperations.cpp">
       <Filter>Apps</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppHalfEdgeMesh.cpp">
+      <Filter>Apps\OLD</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

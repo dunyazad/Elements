@@ -33,9 +33,10 @@ public:
 		//LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\A_Maxillar.stl");
 		//LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\Gadget.stl");
 		//LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\rabbit.stl");
-		mesh_a.BuildBox(
+		mesh_a.BuildSineWaveBox(
 			Eigen::Vector3f::Zero(),
-			Eigen::Vector3f(50.0f, 10.0f, 5.0f),
+			Eigen::Vector3f(60.0f, 12.0f, 4.0f),
+			1.5f, 4.0f, 120, 12,
 			Eigen::MakeTransform(
 				Eigen::Vector3f(25.0f, 0.0f, 0.0f),
 				Eigen::Vector3f::UnitY(),
@@ -94,7 +95,7 @@ public:
 			mesh_result->mesh_color = Eigen::Vector4f(1.0f, 0.5f, 0.0f, 1.0f);
 
 			boolean_op = std::make_unique<RGO::OperatorBoolean>(
-				RGO::OperatorBoolean::Difference, &mesh_a, &mesh_b, &op, mesh_result);
+				RGO::OperatorBoolean::Union, &mesh_a, &mesh_b, &op, mesh_result);
 			boolean_ok = boolean_op->Execute();
 
 			if (false == boolean_ok)

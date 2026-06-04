@@ -262,6 +262,24 @@ namespace RGO
 			const Eigen::Vector3f& size,
 			const Eigen::Matrix4f& transform = Eigen::Matrix4f::Identity());
 
+		// Builds a watertight solid box whose TOP surface is displaced by
+		// a sine wave along x: z_top(u) = +size.z/2 + amplitude * sin(2*pi*wave_count*u),
+		// u in [0,1] across the x extent. Bottom and side walls stay flat.
+		// Centered at the given point, then the given transform is applied.
+		// If the transform has a negative determinant (mirroring), winding
+		// is flipped to keep normals outward.
+		// amplitude must satisfy 0 <= amplitude < size.z so the top can
+		// never dip below the bottom. segments_x / segments_y >= 1.
+		// Returns false on invalid input.
+		bool BuildSineWaveBox(
+			const Eigen::Vector3f& center,
+			const Eigen::Vector3f& size,
+			float amplitude,
+			float wave_count,
+			int segments_x,
+			int segments_y,
+			const Eigen::Matrix4f& transform = Eigen::Matrix4f::Identity());
+
 		// Builds a watertight solid 3D mesh from a text string, intended as
 		// CSG input. Glyph outlines come from a TTF font, are triangulated
 		// with CDT (holes handled), and extruded along z centered at z = 0,
@@ -306,6 +324,25 @@ namespace RGO
 		virtual ~Operator() {}
 		virtual bool Execute() = 0;
 	};
+
+	// Extracts the live faces of a mesh as an indexed triangle set,
+	// reusing the mesh vertex indices.
+	void ExtractMeshSoup(
+		const Mesh* mesh,
+		std::vector<Eigen::Vector3f>& out_points,
+		std::vector<Eigen::Vector3i>& out_indices);
+
+	// Topology validation of an indexed triangle set: duplicate and
+	// degenerate triangles, edge manifoldness, bowtie vertices, short
+	// edges and near-coincident vertex pairs up to near_pair_radius
+	// (tiered, edge-connected pairs excluded). The tiers show what an
+	// external tool would fuse when welding at a coarser tolerance than
+	// this pipeline's EPSILON.
+	bool ValidateTriangleSoup(
+		const std::vector<Eigen::Vector3f>& points,
+		const std::vector<Eigen::Vector3i>& indices,
+		const char* label,
+		float near_pair_radius);
 
 	class OperatorIntersectionLoops : public Operator
 	{
@@ -577,6 +614,11 @@ namespace RGO
 		// seam and patch stage.
 		const MeshSideData& GetSideDataA() const { return data_a; }
 		const MeshSideData& GetSideDataB() const { return data_b; }
+
+		bool ValidateResultSoup(
+			const std::vector<Eigen::Vector3f>& points,
+			const std::vector<Eigen::Vector3i>& indices,
+			const char* label) const;
 
 	protected:
 		struct BoundaryEdge

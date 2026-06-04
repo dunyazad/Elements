@@ -667,6 +667,200 @@ namespace RGO
 		}
 	}
 
+	// File-local: grid vertex index. Grid is (nx + 1) by (ny + 1),
+	// row-major: index(i, j) = j * (nx + 1) + i.
+	static int SineWaveGridIndex(int nx, int i, int j)
+	{
+		return j * (nx + 1) + i;
+	}
+
+	// File-local: vertex layout of the sine wave slab.
+	// Top grid first [0, grid_count), bottom grid after [grid_count, 2 * grid_count),
+	// where grid_count = (nx + 1) * (ny + 1). Top z follows the sine wave,
+	// bottom z is flat at center.z - size.z / 2.
+	static void AppendSineWaveSlabPoints(
+		const Eigen::Vector3f& center,
+		const Eigen::Vector3f& size,
+		float amplitude,
+		float wave_count,
+		int nx,
+		int ny,
+		std::vector<Eigen::Vector3f>& out_points)
+	{
+		float half_x = size.x() * 0.5f;
+		float half_y = size.y() * 0.5f;
+		float half_z = size.z() * 0.5f;
+
+		int grid_count = (nx + 1) * (ny + 1);
+		out_points.reserve(static_cast<size_t>(grid_count) * 2);
+
+		// Top grid: sine displacement along x only
+		for (int j = 0; j <= ny; ++j)
+		{
+			float v = static_cast<float>(j) / static_cast<float>(ny);
+			float y = center.y() - half_y + size.y() * v;
+
+			for (int i = 0; i <= nx; ++i)
+			{
+				float u = static_cast<float>(i) / static_cast<float>(nx);
+				float x = center.x() - half_x + size.x() * u;
+				float z = center.z() + half_z
+					+ amplitude * std::sin(2.0f * static_cast<float>(M_PI) * wave_count * u);
+
+				out_points.emplace_back(x, y, z);
+			}
+		}
+
+		// Bottom grid: flat, same xy so the side walls are exactly vertical
+		for (int j = 0; j <= ny; ++j)
+		{
+			float v = static_cast<float>(j) / static_cast<float>(ny);
+			float y = center.y() - half_y + size.y() * v;
+
+			for (int i = 0; i <= nx; ++i)
+			{
+				float u = static_cast<float>(i) / static_cast<float>(nx);
+				float x = center.x() - half_x + size.x() * u;
+
+				out_points.emplace_back(x, y, center.z() - half_z);
+			}
+		}
+	}
+
+	// File-local: top and bottom surface triangles, two per grid cell.
+	// Top is CCW viewed from +z (outward +z normal), bottom mirrored
+	// (outward -z normal). Index layout must match AppendSineWaveSlabPoints.
+	static void AppendSineWaveSlabTopBottomIndices(
+		int nx,
+		int ny,
+		std::vector<Eigen::Vector3i>& out_indices)
+	{
+		int bottom_offset = (nx + 1) * (ny + 1);
+
+		for (int j = 0; j < ny; ++j)
+		{
+			for (int i = 0; i < nx; ++i)
+			{
+				int t00 = SineWaveGridIndex(nx, i, j);
+				int t10 = SineWaveGridIndex(nx, i + 1, j);
+				int t01 = SineWaveGridIndex(nx, i, j + 1);
+				int t11 = SineWaveGridIndex(nx, i + 1, j + 1);
+
+				out_indices.emplace_back(t00, t10, t11);
+				out_indices.emplace_back(t00, t11, t01);
+
+				int b00 = bottom_offset + t00;
+				int b10 = bottom_offset + t10;
+				int b01 = bottom_offset + t01;
+				int b11 = bottom_offset + t11;
+
+				out_indices.emplace_back(b00, b11, b10);
+				out_indices.emplace_back(b00, b01, b11);
+			}
+		}
+	}
+
+	// File-local: four side walls stitching the top boundary to the bottom
+	// boundary, two CCW triangles per column, outward normals. Quads on
+	// the wavy edges are non-planar but remain valid as two triangles.
+	// Index layout must match AppendSineWaveSlabPoints.
+	static void AppendSineWaveSlabSideIndices(
+		int nx,
+		int ny,
+		std::vector<Eigen::Vector3i>& out_indices)
+	{
+		int bottom_offset = (nx + 1) * (ny + 1);
+
+		// y min side (normal -y) and y max side (normal +y)
+		for (int i = 0; i < nx; ++i)
+		{
+			int t0 = SineWaveGridIndex(nx, i, 0);
+			int t1 = SineWaveGridIndex(nx, i + 1, 0);
+			int b0 = bottom_offset + t0;
+			int b1 = bottom_offset + t1;
+
+			out_indices.emplace_back(b0, b1, t1);
+			out_indices.emplace_back(b0, t1, t0);
+
+			int u0 = SineWaveGridIndex(nx, i, ny);
+			int u1 = SineWaveGridIndex(nx, i + 1, ny);
+			int c0 = bottom_offset + u0;
+			int c1 = bottom_offset + u1;
+
+			out_indices.emplace_back(c1, c0, u0);
+			out_indices.emplace_back(c1, u0, u1);
+		}
+
+		// x min side (normal -x) and x max side (normal +x)
+		for (int j = 0; j < ny; ++j)
+		{
+			int t0 = SineWaveGridIndex(nx, 0, j);
+			int t1 = SineWaveGridIndex(nx, 0, j + 1);
+			int b0 = bottom_offset + t0;
+			int b1 = bottom_offset + t1;
+
+			out_indices.emplace_back(b1, b0, t0);
+			out_indices.emplace_back(b1, t0, t1);
+
+			int u0 = SineWaveGridIndex(nx, nx, j);
+			int u1 = SineWaveGridIndex(nx, nx, j + 1);
+			int c0 = bottom_offset + u0;
+			int c1 = bottom_offset + u1;
+
+			out_indices.emplace_back(c0, c1, u1);
+			out_indices.emplace_back(c0, u1, u0);
+		}
+	}
+
+	bool Mesh::BuildSineWaveBox(
+		const Eigen::Vector3f& center,
+		const Eigen::Vector3f& size,
+		float amplitude,
+		float wave_count,
+		int segments_x,
+		int segments_y,
+		const Eigen::Matrix4f& transform)
+	{
+		if (size.x() < EPSILON || size.y() < EPSILON || size.z() < EPSILON)
+		{
+			std::cout << "[Error] BuildSineWaveBox: all extents must be positive, got ("
+				<< size.x() << ", " << size.y() << ", " << size.z() << ")" << std::endl;
+			return false;
+		}
+		if (amplitude < 0.0f || amplitude >= size.z())
+		{
+			std::cout << "[Error] BuildSineWaveBox: amplitude must satisfy"
+				<< " 0 <= amplitude < size.z, got " << amplitude
+				<< " (size.z " << size.z() << "). Otherwise the top surface"
+				<< " can dip below the bottom and self-intersect." << std::endl;
+			return false;
+		}
+		if (segments_x < 1 || segments_y < 1)
+		{
+			std::cout << "[Error] BuildSineWaveBox: segments must be at least 1, got ("
+				<< segments_x << ", " << segments_y << ")" << std::endl;
+			return false;
+		}
+
+		std::vector<Eigen::Vector3f> points;
+		AppendSineWaveSlabPoints(center, size, amplitude, wave_count, segments_x, segments_y, points);
+
+		std::vector<Eigen::Vector3i> indices;
+		indices.reserve(static_cast<size_t>(segments_x) * segments_y * 4
+			+ static_cast<size_t>(segments_x + segments_y) * 4);
+		AppendSineWaveSlabTopBottomIndices(segments_x, segments_y, indices);
+		AppendSineWaveSlabSideIndices(segments_x, segments_y, indices);
+
+		// Mirroring transforms flip winding: undo it to keep normals outward
+		if (ApplyTransform(transform, points))
+		{
+			FlipWinding(indices);
+		}
+
+		Build(points, indices);
+		return true;
+	}
+
 	bool Mesh::BuildBox(const Eigen::Vector3f& center, const Eigen::Vector3f& size, const Eigen::Matrix4f& transform)
 	{
 		if (size.x() < EPSILON || size.y() < EPSILON || size.z() < EPSILON)
@@ -1276,6 +1470,383 @@ namespace RGO
 	// Operators
 	// ------------------------------------------------------------
 
+	void ExtractMeshSoup(
+		const Mesh* mesh,
+		std::vector<Eigen::Vector3f>& out_points,
+		std::vector<Eigen::Vector3i>& out_indices)
+	{
+		out_points.clear();
+		out_indices.clear();
+		out_points.reserve(mesh->n_vertices());
+
+		for (size_t i = 0; i < mesh->n_vertices(); ++i)
+		{
+			auto p = mesh->point(mesh->vertex_handle(static_cast<int>(i)));
+			out_points.push_back(Eigen::Vector3f(p[0], p[1], p[2]));
+		}
+
+		out_indices.reserve(mesh->n_faces());
+		for (size_t i = 0; i < mesh->n_faces(); ++i)
+		{
+			OpenMesh::FaceHandle fh = mesh->face_handle(static_cast<int>(i));
+			if (mesh->status(fh).deleted()) continue;
+
+			Eigen::Vector3i tri;
+			int k = 0;
+			for (auto fv_it = mesh->cfv_iter(fh); fv_it.is_valid() && k < 3; ++fv_it, ++k)
+			{
+				tri[k] = fv_it->idx();
+			}
+			if (3 == k) out_indices.push_back(tri);
+		}
+	}
+
+	bool ValidateTriangleSoup(
+		const std::vector<Eigen::Vector3f>& points,
+		const std::vector<Eigen::Vector3i>& indices,
+		const char* label,
+		float near_pair_radius)
+	{
+		size_t failures = 0;
+
+		struct EdgeKey
+		{
+			int a;
+			int b;
+		};
+		struct EdgeKeyHash
+		{
+			size_t operator()(const EdgeKey& k) const
+			{
+				return static_cast<size_t>(k.a) * 1000003ull ^ static_cast<size_t>(k.b);
+			}
+		};
+		struct EdgeKeyEqual
+		{
+			bool operator()(const EdgeKey& x, const EdgeKey& y) const
+			{
+				return x.a == y.a && x.b == y.b;
+			}
+		};
+
+		// Check 1: degenerate and duplicate triangles. The same vertex
+		// triple appearing twice means a region of the surface exists
+		// twice: every edge of that region becomes 4-valent.
+		{
+			struct TriKey
+			{
+				int a;
+				int b;
+				int c;
+			};
+			struct TriKeyHash
+			{
+				size_t operator()(const TriKey& k) const
+				{
+					size_t h = static_cast<size_t>(k.a);
+					h = h * 1000003ull ^ static_cast<size_t>(k.b);
+					h = h * 1000003ull ^ static_cast<size_t>(k.c);
+					return h;
+				}
+			};
+			struct TriKeyEqual
+			{
+				bool operator()(const TriKey& x, const TriKey& y) const
+				{
+					return x.a == y.a && x.b == y.b && x.c == y.c;
+				}
+			};
+
+			robin_hood::unordered_set<TriKey, TriKeyHash, TriKeyEqual> seen;
+			seen.reserve(indices.size());
+
+			size_t degenerate = 0;
+			size_t duplicates = 0;
+
+			for (size_t i = 0; i < indices.size(); ++i)
+			{
+				int a = indices[i][0];
+				int b = indices[i][1];
+				int cc = indices[i][2];
+
+				if (a == b || b == cc || cc == a)
+				{
+					++degenerate;
+					continue;
+				}
+
+				TriKey key;
+				key.a = std::min(a, std::min(b, cc));
+				key.c = std::max(a, std::max(b, cc));
+				key.b = a + b + cc - key.a - key.c;
+
+				if (false == seen.insert(key).second)
+				{
+					++duplicates;
+					if (duplicates <= 10)
+					{
+						const Eigen::Vector3f& p = points[key.a];
+						std::cout << "[Error] SoupTopology(" << label << "): duplicate triangle near ("
+							<< p.x() << ", " << p.y() << ", " << p.z() << ")." << std::endl;
+					}
+				}
+			}
+
+			if (degenerate > 0)
+			{
+				++failures;
+				std::cout << "[Error] SoupTopology(" << label << "): " << degenerate
+					<< " degenerate triangles." << std::endl;
+			}
+			if (duplicates > 0)
+			{
+				++failures;
+				std::cout << "[Error] SoupTopology(" << label << "): " << duplicates
+					<< " duplicate triangles." << std::endl;
+			}
+		}
+
+		// Shared edge map for checks 2 and 3
+		robin_hood::unordered_map<EdgeKey, int, EdgeKeyHash, EdgeKeyEqual> edge_faces;
+		edge_faces.reserve(indices.size() * 3);
+
+		for (const auto& tri : indices)
+		{
+			for (int e = 0; e < 3; ++e)
+			{
+				int a = tri[e];
+				int b = tri[(e + 1) % 3];
+				EdgeKey key;
+				key.a = std::min(a, b);
+				key.b = std::max(a, b);
+				edge_faces[key] += 1;
+			}
+		}
+
+		// Check 2: edge manifoldness and edge length statistics. The
+		// length tiers show which edges an external tool would COLLAPSE
+		// when welding at a coarser tolerance, turning their triangles
+		// degenerate and the surroundings non-manifold over there.
+		{
+			size_t holes = 0;
+			size_t complex_edges = 0;
+			size_t reported = 0;
+
+			float min_len = std::numeric_limits<float>::max();
+			size_t len_t1 = 0;
+			size_t len_t2 = 0;
+			size_t len_t3 = 0;
+
+			for (const auto& kvp : edge_faces)
+			{
+				float len = (points[kvp.first.a] - points[kvp.first.b]).norm();
+				if (len < min_len) min_len = len;
+				if (len < 2.0f * EPSILON) ++len_t1;
+				else if (len < 10.0f * EPSILON) ++len_t2;
+				else if (len < 100.0f * EPSILON) ++len_t3;
+
+				if (2 == kvp.second) continue;
+
+				if (kvp.second < 2) ++holes;
+				else ++complex_edges;
+
+				++reported;
+				if (reported <= 10)
+				{
+					const Eigen::Vector3f& p0 = points[kvp.first.a];
+					const Eigen::Vector3f& p1 = points[kvp.first.b];
+					std::cout << "[Error] SoupTopology(" << label << "): edge ("
+						<< p0.x() << ", " << p0.y() << ", " << p0.z() << ") - ("
+						<< p1.x() << ", " << p1.y() << ", " << p1.z() << ") has "
+						<< kvp.second << " incident faces." << std::endl;
+				}
+			}
+
+			std::cout << "[Info] SoupTopology(" << label << "): min edge length " << min_len
+				<< ", edges shorter than 2e/10e/100e EPSILON: "
+				<< len_t1 << " / " << len_t2 << " / " << len_t3 << "." << std::endl;
+
+			if (holes > 0)
+			{
+				++failures;
+				std::cout << "[Error] SoupTopology(" << label << "): " << holes
+					<< " edges with fewer than 2 faces (holes)." << std::endl;
+			}
+			if (complex_edges > 0)
+			{
+				++failures;
+				std::cout << "[Error] SoupTopology(" << label << "): " << complex_edges
+					<< " edges with more than 2 faces (non-manifold)." << std::endl;
+			}
+		}
+
+		// Check 3: near-coincident vertex pairs up to near_pair_radius,
+		// excluding pairs already connected by an edge (those are just
+		// short edges, counted above). Unconnected near pairs are
+		// separate sheets passing close: exactly what a distance-welding
+		// importer fuses into non-manifold features.
+		{
+			robin_hood::unordered_map<Eigen::Vector3i, std::vector<int>, Int3Hash, Int3Equal> grid;
+			grid.reserve(points.size());
+
+			auto quantize = [&](const Eigen::Vector3f& p) -> Eigen::Vector3i
+				{
+					return Eigen::Vector3i(
+						static_cast<int>(std::floor(p.x() / near_pair_radius)),
+						static_cast<int>(std::floor(p.y() / near_pair_radius)),
+						static_cast<int>(std::floor(p.z() / near_pair_radius)));
+				};
+
+			size_t pair_t1 = 0;
+			size_t pair_t2 = 0;
+			size_t pair_t3 = 0;
+			size_t shown = 0;
+
+			for (int i = 0; i < static_cast<int>(points.size()); ++i)
+			{
+				Eigen::Vector3i cell = quantize(points[i]);
+				for (int dz = -1; dz <= 1; ++dz)
+				{
+					for (int dy = -1; dy <= 1; ++dy)
+					{
+						for (int dx = -1; dx <= 1; ++dx)
+						{
+							auto it = grid.find(Eigen::Vector3i(cell.x() + dx, cell.y() + dy, cell.z() + dz));
+							if (it == grid.end()) continue;
+
+							for (int j : it->second)
+							{
+								float dist = (points[j] - points[i]).norm();
+								if (dist >= near_pair_radius) continue;
+
+								EdgeKey key;
+								key.a = std::min(i, j);
+								key.b = std::max(i, j);
+								if (edge_faces.find(key) != edge_faces.end()) continue;
+
+								if (dist < EPSILON) ++pair_t1;
+								else if (dist < 10.0f * EPSILON) ++pair_t2;
+								else ++pair_t3;
+
+								++shown;
+								if (shown <= 10)
+								{
+									std::cout << "[Warning] SoupTopology(" << label
+										<< "): unconnected vertices " << dist << " apart at ("
+										<< points[i].x() << ", " << points[i].y() << ", "
+										<< points[i].z() << ")." << std::endl;
+								}
+							}
+						}
+					}
+				}
+				grid[cell].push_back(i);
+			}
+
+			if (pair_t1 + pair_t2 + pair_t3 > 0)
+			{
+				std::cout << "[Warning] SoupTopology(" << label << "): unconnected near vertex pairs"
+					<< " under EPSILON/10e/" << near_pair_radius << ": "
+					<< pair_t1 << " / " << pair_t2 << " / " << pair_t3
+					<< ". A distance-welding importer fuses these." << std::endl;
+			}
+		}
+
+		// Check 4: non-manifold (bowtie) vertices. All edges can be clean
+		// while a vertex still joins two or more separate face fans, for
+		// example where a glyph outline touches itself in one point.
+		{
+			std::vector<std::vector<int>> vertex_tris(points.size());
+			for (int t = 0; t < static_cast<int>(indices.size()); ++t)
+			{
+				vertex_tris[indices[t][0]].push_back(t);
+				vertex_tris[indices[t][1]].push_back(t);
+				vertex_tris[indices[t][2]].push_back(t);
+			}
+
+			size_t bowties = 0;
+
+			for (int v = 0; v < static_cast<int>(points.size()); ++v)
+			{
+				const std::vector<int>& tris = vertex_tris[v];
+				if (tris.size() < 2) continue;
+
+				std::vector<int> parent(tris.size());
+				for (size_t i = 0; i < parent.size(); ++i) parent[i] = static_cast<int>(i);
+
+				std::function<int(int)> find = [&](int x) -> int
+					{
+						while (parent[x] != x)
+						{
+							parent[x] = parent[parent[x]];
+							x = parent[x];
+						}
+						return x;
+					};
+
+				robin_hood::unordered_map<int, int> neighbor_to_tri;
+				neighbor_to_tri.reserve(tris.size() * 2);
+
+				for (size_t i = 0; i < tris.size(); ++i)
+				{
+					const Eigen::Vector3i& tri = indices[tris[i]];
+					for (int e = 0; e < 3; ++e)
+					{
+						int w = tri[e];
+						if (w == v) continue;
+
+						auto it = neighbor_to_tri.find(w);
+						if (it == neighbor_to_tri.end())
+						{
+							neighbor_to_tri[w] = static_cast<int>(i);
+						}
+						else
+						{
+							int ra = find(static_cast<int>(i));
+							int rb = find(it->second);
+							if (ra != rb) parent[ra] = rb;
+						}
+					}
+				}
+
+				int components = 0;
+				for (size_t i = 0; i < tris.size(); ++i)
+				{
+					if (find(static_cast<int>(i)) == static_cast<int>(i)) ++components;
+				}
+
+				if (components > 1)
+				{
+					++bowties;
+					if (bowties <= 10)
+					{
+						std::cout << "[Error] SoupTopology(" << label << "): vertex ("
+							<< points[v].x() << ", " << points[v].y() << ", " << points[v].z()
+							<< ") joins " << components << " separate face fans (non-manifold vertex)." << std::endl;
+					}
+				}
+			}
+
+			if (bowties > 0)
+			{
+				++failures;
+				std::cout << "[Error] SoupTopology(" << label << "): " << bowties
+					<< " non-manifold (bowtie) vertices." << std::endl;
+			}
+		}
+
+		if (0 == failures)
+		{
+			std::cout << "[Info] SoupTopology(" << label << "): 2-manifold, no duplicate"
+				<< " or degenerate triangles, no bowtie vertices." << std::endl;
+			return true;
+		}
+
+		std::cout << "[Error] SoupTopology(" << label << "): " << failures
+			<< " failure categories." << std::endl;
+		return false;
+	}
+
 	OperatorIntersectionLoops::OperatorIntersectionLoops(Mesh* a, Mesh* b)
 		: meshA(a), meshB(b)
 	{
@@ -1293,6 +1864,23 @@ namespace RGO
 
 		if (nullptr == meshA || nullptr == meshB) return false;
 		if (0 == meshA->n_faces() || 0 == meshB->n_faces()) return false;
+
+		// Input topology diagnostics. The pipeline preserves the input
+		// surface everywhere it does not cut, so defects already present
+		// in an input (self-touching outlines, near-coincident sheets)
+		// reappear unchanged in the result. They are reported here at
+		// their true origin; the run continues, the verdict is data for
+		// the caller and for the input generator.
+		{
+			std::vector<Eigen::Vector3f> diag_points;
+			std::vector<Eigen::Vector3i> diag_indices;
+
+			ExtractMeshSoup(meshA, diag_points, diag_indices);
+			ValidateTriangleSoup(diag_points, diag_indices, "inputA", 100.0f * EPSILON);
+
+			ExtractMeshSoup(meshB, diag_points, diag_indices);
+			ValidateTriangleSoup(diag_points, diag_indices, "inputB", 100.0f * EPSILON);
+		}
 
 		// Input boundary edges are recorded up front so open chains can
 		// later be judged against the input borders.
@@ -2976,6 +3564,18 @@ namespace RGO
 		}
 	}
 
+	// File-local: readable boolean operation names for logs
+	static const char* BooleanTypeNameString(OperatorBoolean::Type t)
+	{
+		switch (t)
+		{
+		case OperatorBoolean::Intersection: return "Intersection";
+		case OperatorBoolean::Union: return "Union";
+		case OperatorBoolean::Difference: return "Difference";
+		default: return "UnknownType";
+		}
+	}
+
 	OperatorBoolean::OperatorBoolean(
 		Type t,
 		Mesh* a,
@@ -3151,7 +3751,16 @@ namespace RGO
 		soup.reserve((meshA->n_faces() + meshB->n_faces()) * 3);
 
 		CollectFacesForBoolean(meshA, data_a, a_inside, a_outside, a_same, a_opposite, false, soup);
+		size_t kept_a = soup.size() / 3;
 		CollectFacesForBoolean(meshB, data_b, b_inside, b_outside, false, false, flip_b, soup);
+		size_t kept_b = soup.size() / 3 - kept_a;
+
+		// The operation and the per-side selection are logged so any run
+		// is identifiable from its log alone: different operations on the
+		// same data can coincidentally produce equal triangle totals.
+		std::cout << "[Info] OperatorBoolean: assembling " << BooleanTypeNameString(type)
+			<< ": kept " << kept_a << " faces from meshA, "
+			<< kept_b << " faces from meshB." << std::endl;
 
 		std::vector<Eigen::Vector3f> points;
 		std::vector<Eigen::Vector3i> indices;
@@ -3162,6 +3771,10 @@ namespace RGO
 			std::cout << "[Warning] OperatorBoolean: result is empty." << std::endl;
 		}
 
+		// Index-level manifoldness check BEFORE the halfedge build, which
+		// could silently drop non-manifold faces and hide the defect.
+		bool soup_ok = ValidateResultSoup(points, indices, "result");
+
 		result->clear();
 		result->Build(points, indices);
 
@@ -3170,7 +3783,7 @@ namespace RGO
 		std::cout << "[Info] OperatorBoolean: " << indices.size() << " result triangles, "
 			<< result_boundary_edge_count << " boundary edges in result." << std::endl;
 
-		return 0 == result_boundary_edge_count;
+		return soup_ok && 0 == result_boundary_edge_count;
 	}
 
 	bool OperatorBoolean::AssembleOpenMeshTrim(Mesh* open_mesh, const MeshSideData& data, const char* open_label)
@@ -3213,7 +3826,8 @@ namespace RGO
 		// border. Only boundary edges outside those two sets are failures.
 		size_t invalid = CountInvalidResultBoundaryEdges(result, input_boundary, "result");
 
-		std::cout << "[Info] OperatorBoolean: trim kept " << indices.size()
+		std::cout << "[Info] OperatorBoolean: " << BooleanTypeNameString(type)
+			<< " trim kept " << indices.size()
 			<< " triangles from " << open_label << ", "
 			<< result_boundary_edge_count << " boundary edges, "
 			<< invalid << " invalid." << std::endl;
@@ -4096,5 +4710,16 @@ namespace RGO
 			if (mesh->is_boundary(eh)) ++count;
 		}
 		return count;
+	}
+
+	bool OperatorBoolean::ValidateResultSoup(
+		const std::vector<Eigen::Vector3f>& points,
+		const std::vector<Eigen::Vector3i>& indices,
+		const char* label) const
+	{
+		// Probe radius 100 * EPSILON: external tools weld at coarser
+		// tolerances than this pipeline, so near pairs and short edges up
+		// to that scale explain non-manifold verdicts seen only there.
+		return ValidateTriangleSoup(points, indices, label, 100.0f * EPSILON);
 	}
 }
