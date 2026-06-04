@@ -1,6 +1,4 @@
-﻿#define _USE_MATH_DEFINES
-#define _SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING
-#define NOMINMAX
+﻿#define NOMINMAX
 
 #include "Apps.h"
 
@@ -29,7 +27,7 @@ class AppTextMesh : public App
 {
 public:
     // load an STL into a welded mesh (deduplicate identical vertices first)
-    void LoadWelded(HeliumMesh& mesh, const std::string& path)
+    void LoadWelded(SGLHeliumMesh& mesh, const std::string& path)
     {
         STLFormat stl;
         stl.Deserialize(path);
@@ -56,7 +54,7 @@ public:
 
     // Step 1/2 shared verification: is a mesh valid boolean input?
     // Checks watertightness, z-range, manifold-ness. tag names the mesh.
-    void VerifyInputMesh(HeliumMesh& m, const char* tag, float z0, float z1)
+    void VerifyInputMesh(SGLHeliumMesh& m, const char* tag, float z0, float z1)
     {
         auto d = m.Diagnose();
 
@@ -188,7 +186,7 @@ public:
     // points). Returns them as unordered position-key pairs so A and B can be
     // compared directly.
     std::set<std::pair<std::array<int, 3>, std::array<int, 3>>> CollectCutEdges(
-        HeliumMesh& m, SGL::CanonicalPool& pool, float diag)
+        SGLHeliumMesh& m, SGL::CanonicalPool& pool, float diag)
     {
         float match = diag * 1e-4f;
         float quant = diag * 1e-4f;   // position quantization for the key
@@ -220,7 +218,7 @@ public:
     // Step 3-3 diagnosis: where are a split mesh's boundary edges? Buckets each
     // boundary edge by its z-range so we can tell if the split broke the cut
     // plane (z=1 outline) or some other region. Reports counts per z-character.
-    void ReportBoundaryByZ(HeliumMesh& m, const char* tag, float cut_z)
+    void ReportBoundaryByZ(SGLHeliumMesh& m, const char* tag, float cut_z)
     {
         int at_cut = 0, below = 0, above = 0, spanning = 0, total = 0;
         for (auto e = m.edges_begin(); e != m.edges_end(); ++e)
@@ -287,7 +285,7 @@ public:
     // faces that each run their own CDT, those faces subdivide the shared
     // outline independently and their triangles won't meet -> boundary on the
     // cut plane. Reports each constraint-bearing face's z-range and seg count.
-    void ReportCutFaces(HeliumMesh& mesh_a,
+    void ReportCutFaces(SGLHeliumMesh& mesh_a,
         const std::map<int, std::vector<std::pair<int, int>>>& fcA, float cut_z)
     {
         std::cout << "  [cutfaces] A faces receiving constraints:" << std::endl;
@@ -315,7 +313,7 @@ public:
     // Step 3-3 fix verification: do the coplanar cut faces group correctly?
     // The two plate-top triangles (face2,face3) should merge into one group of
     // size 2 so they share a single CDT instead of two independent ones.
-    void ReportCoplanarGroups(HeliumMesh& mesh_a,
+    void ReportCoplanarGroups(SGLHeliumMesh& mesh_a,
         const std::map<int, std::vector<std::pair<int, int>>>& fcA, float diag)
     {
         std::set<int> cut_faces;
@@ -336,7 +334,7 @@ public:
     // Step 3-3 verification: after splitting, is each split mesh still watertight
     // and do A and B carry the same cut-line edges? Buckets boundary edges by z,
     // reports which A faces carry constraints on the cut plane.
-    void VerifySplitConsistency(HeliumMesh& mesh_a, HeliumMesh& mesh_b,
+    void VerifySplitConsistency(SGLHeliumMesh& mesh_a, SGLHeliumMesh& mesh_b,
         SGL::CanonicalPool& pool, float diag, float cut_z,
         const std::map<int, std::vector<std::pair<int, int>>>& fcA_before_split)
     {
@@ -367,14 +365,14 @@ public:
     // keep decision. A hole means a face that SHOULD have been kept was dropped
     // (or vice versa) by the per-face centroid classification.
     void VerifyClassificationAtHoles(
-        HeliumMesh& mesh_a, HeliumMesh& mesh_b,
+        SGLHeliumMesh& mesh_a, SGLHeliumMesh& mesh_b,
         const std::vector<char>& keepA, const std::vector<char>& keepB,
         const std::vector<char>& inFaceA, const std::vector<char>& inFaceB,
         const std::vector<Eigen::Vector3f>& hole_points)
     {
         std::cout << "=== [Step3-4 verify] classification at holes ===" << std::endl;
 
-        auto probe = [&](HeliumMesh& m, const std::vector<char>& keep,
+        auto probe = [&](SGLHeliumMesh& m, const std::vector<char>& keep,
             const std::vector<char>& inside, const char* tag, const Eigen::Vector3f& h)
             {
                 for (auto f = m.faces_begin(); f != m.faces_end(); ++f)
@@ -407,14 +405,14 @@ public:
     // and B contain that vertex, and report each face's inside test and keep
     // decision. Tells us whether the hole triangle was wrongly dropped (kept=0
     // when it should be 1) or never existed in either mesh.
-    void ProbeHoleVertex(HeliumMesh& mesh_a, HeliumMesh& mesh_b,
+    void ProbeHoleVertex(SGLHeliumMesh& mesh_a, SGLHeliumMesh& mesh_b,
         const std::vector<char>& keepA, const std::vector<char>& keepB,
         const std::vector<char>& inFaceA, const std::vector<char>& inFaceB,
         const Eigen::Vector3f& hv)
     {
         std::cout << "  vertex (" << hv.x() << "," << hv.y() << "," << hv.z() << "):" << std::endl;
 
-        auto probe = [&](HeliumMesh& m, const std::vector<char>& keep,
+        auto probe = [&](SGLHeliumMesh& m, const std::vector<char>& keep,
             const std::vector<char>& inside, const char* tag)
             {
                 int found = 0;
@@ -447,7 +445,7 @@ public:
     //     in +x from the point and count B edges crossed at this z; odd = inside.
     // If the two disagree on the misclassified faces, the nearest-face test is
     // the culprit and a planar test fixes it.
-    void CompareInsideTests(HeliumMesh& mesh_a, HeliumMesh& mesh_b,
+    void CompareInsideTests(SGLHeliumMesh& mesh_a, SGLHeliumMesh& mesh_b,
         const std::vector<Eigen::Vector3f>& centroids, float cut_z)
     {
         std::cout << "=== [Step3-4 compare] inside tests on suspect A faces ===" << std::endl;
@@ -506,7 +504,7 @@ public:
     // run one boolean op between target (A) and text (B) using the shared
     // split + classify pipeline. op: "diff" (engrave) or "union" (emboss).
     // Result is built into 'out'.
-    void BooleanInto(HeliumMesh& out, HeliumMesh& mesh_a, HeliumMesh& mesh_b,
+    void BooleanInto(SGLHeliumMesh& out, SGLHeliumMesh& mesh_a, SGLHeliumMesh& mesh_b,
         const char* op)
     {
         mesh_a.BuildSpatialHashMap();
@@ -557,7 +555,7 @@ public:
         //    classify it as outside directly; point-in-test (nearest-face OR 2D
         //    ray) is unreliable for these thin slivers right on the outline.
         //  - every other face: open-mesh-safe nearest-face test.
-        auto classify_faces = [&](HeliumMesh& self, HeliumMesh& other, bool self_is_cut_target) -> std::vector<char>
+        auto classify_faces = [&](SGLHeliumMesh& self, SGLHeliumMesh& other, bool self_is_cut_target) -> std::vector<char>
             {
                 std::vector<char> inside(self.n_faces(), 0);
                 for (auto f_it = self.faces_begin(); f_it != self.faces_end(); ++f_it)
@@ -619,7 +617,7 @@ public:
     // Build an axis-aligned box plate covering [cx-hx, cx+hx] x [cy-hy, cy+hy]
     // in x/y, spanning z0..z1. 12 triangles, closed. Used as an engrave/emboss
     // target when no STL is supplied.
-    void BuildPlate(HeliumMesh& m,
+    void BuildPlate(SGLHeliumMesh& m,
         float cx, float cy, float hx, float hy, float z0, float z1)
     {
         std::vector<Eigen::Vector3f> p = {
@@ -657,7 +655,7 @@ public:
         }
 
         // ---- 2. build the text solid (input only, NOT rendered) ----
-        HeliumMesh text;
+        SGLHeliumMesh text;
 
         float scale = 0.02f;     // font-unit -> model-unit
         float depth = 2.0f;      // extrusion thickness
@@ -675,7 +673,7 @@ public:
 
         // ---- 3. build target (input only, NOT rendered) ----
         float plate_z0 = -3.0f, plate_z1 = 1.0f;
-        HeliumMesh target;
+        SGLHeliumMesh target;
         BuildPlate(target, 100.0f, 0.0f, 110.0f, 20.0f, plate_z0, plate_z1);
 
         // Step 2-1: plate must be a watertight box, z in [z0,z1]
@@ -683,7 +681,7 @@ public:
 
         // ---- 4. engrave (diff) and emboss (union) ----
         // each needs its own fresh copies because the boolean splits inputs.
-        auto fresh = [&](HeliumMesh& dst, HeliumMesh& src)
+        auto fresh = [&](SGLHeliumMesh& dst, SGLHeliumMesh& src)
             {
                 std::vector<Eigen::Vector3f> p;
                 std::vector<Eigen::Vector3i> idx;
@@ -712,15 +710,15 @@ public:
 
         // engrave
         {
-            HeliumMesh a, b;
+            SGLHeliumMesh a, b;
             fresh(a, target); fresh(b, text);
 
             // Step 2-2: fresh copies must stay watertight (manifold, not soup)
             VerifyInputMesh(a, "Step2-2 fresh A (plate)", plate_z0, plate_z1);
             VerifyInputMesh(b, "Step2-2 fresh B (text)", 0.0f, depth);
 
-            meshes.emplace_back(std::make_unique<HeliumMesh>());
-            HeliumMesh& engraved = *meshes.back();
+            meshes.emplace_back(std::make_unique<SGLHeliumMesh>());
+            SGLHeliumMesh& engraved = *meshes.back();
             BooleanInto(engraved, a, b, "diff");
             engraved.offset = Eigen::Vector3f(0.0f, 0.0f, 0.0f);
             engraved.mesh_color = Eigen::Vector4f(1.0f, 0.6f, 0.2f, 1.0f);
@@ -730,11 +728,11 @@ public:
 
         // emboss
         {
-            HeliumMesh a, b;
+            SGLHeliumMesh a, b;
             fresh(a, target); fresh(b, text);
 
-            meshes.emplace_back(std::make_unique<HeliumMesh>());
-            HeliumMesh& embossed = *meshes.back();
+            meshes.emplace_back(std::make_unique<SGLHeliumMesh>());
+            SGLHeliumMesh& embossed = *meshes.back();
             BooleanInto(embossed, a, b, "union");
             embossed.offset = Eigen::Vector3f(0.0f, 50.0f, 0.0f);
             embossed.mesh_color = Eigen::Vector4f(0.4f, 1.0f, 0.4f, 1.0f);
@@ -750,7 +748,7 @@ public:
             });
     }
 
-    std::vector<std::unique_ptr<HeliumMesh>> meshes;
+    std::vector<std::unique_ptr<SGLHeliumMesh>> meshes;
 };
 
 REGISTER_APP(AppTextMesh, "AppTextMesh");

@@ -28,6 +28,9 @@
     <Filter Include="Apps\Core\Operations">
       <UniqueIdentifier>{edae16e0-b553-4f44-8c75-82b6f86d3bfd}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Apps\OLD">
+      <UniqueIdentifier>{90e49e74-63a5-493f-a70e-81b6f2a508cc}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -44,9 +47,6 @@
     </ClInclude>
     <ClInclude Include="TextMeshGenerator.h">
       <Filter>헤더 파일</Filter>
-    </ClInclude>
-    <ClInclude Include="Apps\Apps.h">
-      <Filter>Apps</Filter>
     </ClInclude>
     <ClInclude Include="Apps\Core\DataStructures\VoxelDataBase.h">
       <Filter>Apps\Core\DataStructures</Filter>
@@ -91,15 +91,21 @@
       <Filter>Apps\Core\DataStructures</Filter>
     </ClInclude>
     <ClInclude Include="Apps\SimpleGeometryLibrary.hpp">
-      <Filter>Apps</Filter>
+      <Filter>Apps\OLD</Filter>
     </ClInclude>
     <ClInclude Include="Apps\SimpleGeometryLibrary_Primitives.hpp">
-      <Filter>Apps</Filter>
+      <Filter>Apps\OLD</Filter>
     </ClInclude>
     <ClInclude Include="Apps\HeliumMesh.h">
       <Filter>Apps</Filter>
     </ClInclude>
     <ClInclude Include="Apps\TextMeshGenerator.hpp">
+      <Filter>Apps</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\RobustGeometricOperations.h">
+      <Filter>Apps</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\Apps.h">
       <Filter>Apps</Filter>
     </ClInclude>
   </ItemGroup>
@@ -110,46 +116,52 @@
     <ClCompile Include="TextMeshGenerator.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="Apps\AppVoxelDataBaseMemoryUsageCheck.cpp">
-      <Filter>Apps</Filter>
-    </ClCompile>
-    <ClCompile Include="Apps\AppDensityAnalyzing.cpp">
-      <Filter>Apps</Filter>
-    </ClCompile>
-    <ClCompile Include="Apps\AppTSDF.cpp">
-      <Filter>Apps</Filter>
-    </ClCompile>
     <ClCompile Include="Apps\AppClustering.cpp">
-      <Filter>Apps</Filter>
-    </ClCompile>
-    <ClCompile Include="Apps\AppSDFFiltering.cpp">
-      <Filter>Apps</Filter>
-    </ClCompile>
-    <ClCompile Include="Apps\AppMorphology.cpp">
-      <Filter>Apps</Filter>
-    </ClCompile>
-    <ClCompile Include="Apps\AppMorphologyDebug.cpp">
-      <Filter>Apps</Filter>
+      <Filter>Apps\OLD</Filter>
     </ClCompile>
     <ClCompile Include="Apps\AppClusteringDevice_OLD.cpp">
-      <Filter>Apps</Filter>
+      <Filter>Apps\OLD</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppDensityAnalyzing.cpp">
+      <Filter>Apps\OLD</Filter>
     </ClCompile>
     <ClCompile Include="Apps\AppICP.cpp">
-      <Filter>Apps</Filter>
+      <Filter>Apps\OLD</Filter>
     </ClCompile>
-    <ClCompile Include="Apps\AppTSDFDevice.cpp">
-      <Filter>Apps</Filter>
+    <ClCompile Include="Apps\AppManifold.cpp">
+      <Filter>Apps\OLD</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppMorphology.cpp">
+      <Filter>Apps\OLD</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppMorphologyDebug.cpp">
+      <Filter>Apps\OLD</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppSDFFiltering.cpp">
+      <Filter>Apps\OLD</Filter>
     </ClCompile>
     <ClCompile Include="Apps\AppSTL.cpp">
-      <Filter>Apps</Filter>
+      <Filter>Apps\OLD</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppTextMesh.cpp">
+      <Filter>Apps\OLD</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppTSDF.cpp">
+      <Filter>Apps\OLD</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppTSDFDevice.cpp">
+      <Filter>Apps\OLD</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppVoxelDataBaseMemoryUsageCheck.cpp">
+      <Filter>Apps\OLD</Filter>
     </ClCompile>
     <ClCompile Include="Apps\AppHalfEdgeMesh.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
-    <ClCompile Include="Apps\AppManifold.cpp">
+    <ClCompile Include="Apps\AppRGO.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
-    <ClCompile Include="Apps\AppTextMesh.cpp">
+    <ClCompile Include="Apps\RobustGeometricOperations.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
   </ItemGroup>
@@ -167,12 +179,6 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="Apps\AppVVV.cu">
-      <Filter>Apps</Filter>
-    </CudaCompile>
-    <CudaCompile Include="Apps\AppVoxelDataBase.cu">
-      <Filter>Apps</Filter>
-    </CudaCompile>
     <CudaCompile Include="Apps\Core\DataStructures\VoxelDataBase.cu">
       <Filter>Apps\Core\DataStructures</Filter>
     </CudaCompile>
@@ -182,38 +188,44 @@
     <CudaCompile Include="Apps\Core\DataStructures\SparseCells.cu">
       <Filter>Apps\Core\DataStructures</Filter>
     </CudaCompile>
-    <CudaCompile Include="Apps\AppVoxelStreaming.cu">
-      <Filter>Apps</Filter>
-    </CudaCompile>
-    <CudaCompile Include="Apps\AppMergePointClouds.cu">
-      <Filter>Apps</Filter>
-    </CudaCompile>
-    <CudaCompile Include="Apps\AppMergePointClouds_Local.cu">
-      <Filter>Apps</Filter>
-    </CudaCompile>
-    <CudaCompile Include="Apps\AppOperationPointCloudMerge.cu">
-      <Filter>Apps</Filter>
-    </CudaCompile>
     <CudaCompile Include="Apps\Core\Operations\OperationPointCloudMerge.cu">
       <Filter>Apps\Core\Operations</Filter>
     </CudaCompile>
     <CudaCompile Include="Apps\Core\DataStructures\VoxelCache.cu">
       <Filter>Apps\Core\DataStructures</Filter>
     </CudaCompile>
-    <CudaCompile Include="Apps\AppVoxelCache.cu">
-      <Filter>Apps</Filter>
-    </CudaCompile>
-    <CudaCompile Include="Apps\AppPerframeNoiseFilter.cu">
-      <Filter>Apps</Filter>
-    </CudaCompile>
-    <CudaCompile Include="Apps\AppICP.cu">
-      <Filter>Apps</Filter>
+    <CudaCompile Include="Apps\AppClusteringDevice.cu">
+      <Filter>Apps\OLD</Filter>
     </CudaCompile>
     <CudaCompile Include="Apps\AppDataFrames.cu">
-      <Filter>Apps</Filter>
+      <Filter>Apps\OLD</Filter>
     </CudaCompile>
-    <CudaCompile Include="Apps\AppClusteringDevice.cu">
-      <Filter>Apps</Filter>
+    <CudaCompile Include="Apps\AppICP.cu">
+      <Filter>Apps\OLD</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppMergePointClouds.cu">
+      <Filter>Apps\OLD</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppMergePointClouds_Local.cu">
+      <Filter>Apps\OLD</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppOperationPointCloudMerge.cu">
+      <Filter>Apps\OLD</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppPerframeNoiseFilter.cu">
+      <Filter>Apps\OLD</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppVoxelCache.cu">
+      <Filter>Apps\OLD</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppVoxelDataBase.cu">
+      <Filter>Apps\OLD</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppVoxelStreaming.cu">
+      <Filter>Apps\OLD</Filter>
+    </CudaCompile>
+    <CudaCompile Include="Apps\AppVVV.cu">
+      <Filter>Apps\OLD</Filter>
     </CudaCompile>
   </ItemGroup>
 </Project>

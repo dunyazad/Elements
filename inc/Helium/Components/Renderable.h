@@ -425,6 +425,9 @@ public:
         forcedColor = color;
     }
 
+    void SetLineWidth(float width) { lineWidth = width; }
+    float GetLineWidth() const { return lineWidth; }
+
 protected:
     void DrawImplementation();
 
@@ -458,6 +461,8 @@ private:
 
     bool useForcedColor = false;
     Eigen::Vector3f forcedColor = Eigen::Vector3f(1.0f, 1.0f, 1.0f);
+
+    float lineWidth = 1.0f;
 };
 
 class HELIUM_API DebuggingRenderable : public Renderable

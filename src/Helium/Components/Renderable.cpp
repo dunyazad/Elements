@@ -130,19 +130,17 @@ void Renderable::Draw()
 {
     if (!visible || drawingMode == None) return;
     if (vertices.Size() == 0 && indices.Size() == 0) return;
-
     Shader* shader = GetActiveShader();
     if (shader) shader->Bind();
-
     glBindVertexArray(vao);
-
     GLint oldPolygonMode[2];
     glGetIntegerv(GL_POLYGON_MODE, oldPolygonMode);
-
     GLboolean oldCullFaceEnabled = glIsEnabled(GL_CULL_FACE);
     GLint oldCullFaceMode;
     glGetIntegerv(GL_CULL_FACE_MODE, &oldCullFaceMode);
-
+    GLfloat oldLineWidth = 1.0f;
+    glGetFloatv(GL_LINE_WIDTH, &oldLineWidth);
+    glLineWidth(lineWidth);
     switch (faceCullingMode)
     {
     case NoCulling:
@@ -163,7 +161,6 @@ void Renderable::Draw()
     default:
         break;
     }
-
     switch (drawingMode)
     {
     case Solid:
@@ -187,19 +184,16 @@ void Renderable::Draw()
         glPolygonOffset(1.0f, 1.0f);
         DrawImplementation();
         glDisable(GL_POLYGON_OFFSET_FILL);
-
         SetForcedColor(true, Eigen::Vector3f(0.0f, 0.0f, 0.0f));
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         DrawImplementation();
-
         SetForcedColor(false);
         break;
     default:
         break;
     }
-
+    glLineWidth(oldLineWidth);
     glPolygonMode(GL_FRONT_AND_BACK, oldPolygonMode[0]);
-
     if (oldCullFaceEnabled)
     {
         glEnable(GL_CULL_FACE);
@@ -209,7 +203,6 @@ void Renderable::Draw()
         glDisable(GL_CULL_FACE);
     }
     glCullFace(oldCullFaceMode);
-
     glBindVertexArray(0);
 }
 

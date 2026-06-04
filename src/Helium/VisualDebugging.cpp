@@ -1326,3 +1326,17 @@ void VisualDebugging::SetInstanceScale(const std::string& tag, const Eigen::Vect
             }
 		});
 }
+
+void VisualDebugging::SetLineWidth(const std::string& tag, float width)
+{
+    std::lock_guard<std::mutex> lock(commandMutex);
+    commandQueue.emplace_back([=]()
+        {
+            if (false == initialized) Initialize();
+
+            auto it = debuggingRenderables.find(tag);
+            if (it == debuggingRenderables.end()) return;
+
+            it->second->SetLineWidth(width);
+        });
+}

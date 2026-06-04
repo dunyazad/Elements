@@ -282,6 +282,8 @@ public:
 	static void SetInstanceScale(const std::string& tag, const Eigen::Vector3f& newScale, size_t index);
 	static void SetInstanceScale(const std::string& tag, const Eigen::Vector3f& newScale);
 
+	static void SetLineWidth(const std::string& tag, float width);
+
 private:
 	static bool initialized;
 

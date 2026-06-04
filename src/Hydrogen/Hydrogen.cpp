@@ -36,9 +36,9 @@ using VD = VisualDebugging;
 
 #include "Apps/Apps.h"
 
+const std::string appName = "AppRGO";
 //const std::string appName = "AppTextMesh";
-//const std::string appName = "AppSGL";
-const std::string appName = "AppHalfEdgeMesh";
+//const std::string appName = "AppHalfEdgeMesh";
 //const std::string appName = "AppManifold";
 //const std::string appName = "AppSTL";
 //const std::string appName = "AppSimple";

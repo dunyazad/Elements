@@ -1,6 +1,3 @@
-#define _USE_MATH_DEFINES
-#define _SILENCE_CXX17_NEGATORS_DEPRECATION_WARNING
-
 #include "Apps.h"
 
 #include <execution>
@@ -29,7 +26,7 @@ class AppHalfEdgeMesh : public App
 {
 public:
     // load an STL into a welded mesh (deduplicate identical vertices first)
-    void LoadWelded(HeliumMesh& mesh, const std::string& path)
+    void LoadWelded(SGLHeliumMesh& mesh, const std::string& path)
     {
         STLFormat stl;
         stl.Deserialize(path);
@@ -58,12 +55,12 @@ public:
     // so cut-curve vertices are bit-identical on both meshes.
     void ExecuteSplittingShared()
     {
-        meshes.emplace_back(std::make_unique<HeliumMesh>());
-        HeliumMesh& mesh_a = *meshes.back();
+        meshes.emplace_back(std::make_unique<SGLHeliumMesh>());
+        SGLHeliumMesh& mesh_a = *meshes.back();
         LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\A_Maxillar.stl");
 
-        meshes.emplace_back(std::make_unique<HeliumMesh>());
-        HeliumMesh& mesh_b = *meshes.back();
+        meshes.emplace_back(std::make_unique<SGLHeliumMesh>());
+        SGLHeliumMesh& mesh_b = *meshes.back();
         LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\A_Tooth.stl");
 
         mesh_a.BuildSpatialHashMap();
@@ -246,7 +243,7 @@ public:
         std::cout << "[Classify] A groups=" << ngA << " B groups=" << ngB << std::endl;
 
         // report group sizes so we can eyeball the split
-        auto report_groups = [](HeliumMesh& m, const std::vector<int>& grp, int ng)
+        auto report_groups = [](SGLHeliumMesh& m, const std::vector<int>& grp, int ng)
             {
                 std::vector<int> sz(ng, 0);
                 for (auto f_it = m.faces_begin(); f_it != m.faces_end(); ++f_it)
@@ -260,8 +257,8 @@ public:
         // per-group inside/outside by nearest-face majority vote. nearest-face
         // is robust on open meshes (the jaw has a protected opening), unlike a
         // ray-crossing test that would miscount through the opening.
-        auto classify_inside = [](HeliumMesh& self, const std::vector<int>& grp, int ng,
-            HeliumMesh& other) -> std::vector<int>
+        auto classify_inside = [](SGLHeliumMesh& self, const std::vector<int>& grp, int ng,
+            SGLHeliumMesh& other) -> std::vector<int>
             {
                 // collect a few sample faces per group
                 std::vector<std::vector<OpenMesh::FaceHandle>> samples(ng);
@@ -342,8 +339,8 @@ public:
         {
             auto sel = build_selection(op.aIn, op.bIn, op.flipB);
 
-            meshes.emplace_back(std::make_unique<HeliumMesh>());
-            HeliumMesh& mr = *meshes.back();
+            meshes.emplace_back(std::make_unique<SGLHeliumMesh>());
+            SGLHeliumMesh& mr = *meshes.back();
             mr.Build(sel.first, sel.second);
             mr.WeldVerticesByPosition(diag * 1e-5f);
             int holes_filled = mr.FillSmallBoundaryHoles(8);
@@ -398,7 +395,7 @@ public:
         ExecuteSplittingShared();
     }
 
-    std::vector<std::unique_ptr<HeliumMesh>> meshes;
+    std::vector<std::unique_ptr<SGLHeliumMesh>> meshes;
 };
 
 REGISTER_APP(AppHalfEdgeMesh, "AppHalfEdgeMesh");
