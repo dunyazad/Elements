@@ -161,7 +161,8 @@ namespace RGO
 			None,
 			Point,
 			Segment,
-			Triangle
+			Triangle,
+			Coplanar
 		};
 
 		struct TriangleIntersectionResult
@@ -211,6 +212,23 @@ namespace RGO
 			Eigen::Vector3f& out_point,
 			float epsilon = EPSILON);
 
+		// Clips a segment that lies in (or within epsilon of) the plane
+		// of the given triangle against that triangle, in 2D. Endpoints
+		// are first projected onto the triangle plane. Returns false when
+		// the clipped piece is empty or shorter than epsilon. This is the
+		// robust path for tangent configurations (a triangle edge lying
+		// in the other triangle's plane), where the generic transversal
+		// intersection depends on fragile on-boundary epsilon decisions.
+		static bool CoplanarSegmentToTriangle(
+			const Eigen::Vector3f& s0,
+			const Eigen::Vector3f& s1,
+			const Eigen::Vector3f& v0,
+			const Eigen::Vector3f& v1,
+			const Eigen::Vector3f& v2,
+			Eigen::Vector3f& out_p0,
+			Eigen::Vector3f& out_p1,
+			float epsilon = EPSILON);
+
 		static TriangleIntersectionResult TriangleToTriangle(
 			const Eigen::Vector3f& a0, const Eigen::Vector3f& a1, const Eigen::Vector3f& a2,
 			const Eigen::Vector3f& b0, const Eigen::Vector3f& b1, const Eigen::Vector3f& b2,
@@ -257,6 +275,22 @@ namespace RGO
 			float size,
 			float depth,
 			const Eigen::Matrix4f& transform = Eigen::Matrix4f::Identity());
+
+		// Seam-bounded flood fill: assigns a patch id to every face,
+		// treating edges flagged in edge_is_seam as walls. Edge indices
+		// beyond the flag array are treated as not seam. Returns the
+		// patch count.
+		int BuildSeamBoundedPatches(
+			const std::vector<char>& edge_is_seam,
+			std::vector<int>& out_face_patch) const;
+
+		// Splits this mesh into per-patch welded geometry, using seam
+		// edges as patch boundaries. Patch ids match the flood fill order
+		// of BuildSeamBoundedPatches. Returns the patch count.
+		int SplitMeshBySeam(
+			const std::vector<char>& edge_is_seam,
+			std::vector<std::vector<Eigen::Vector3f>>& out_patch_points,
+			std::vector<std::vector<Eigen::Vector3i>>& out_patch_indices) const;
 
 	protected:
 		Eigen::Vector3f grid_min;
@@ -312,9 +346,16 @@ namespace RGO
 		size_t GetValidationFailureCount() const { return validation_failure_count; }
 		size_t GetCanonicalSnapCount() const { return canonical_snap_count; }
 		size_t GetCanonicalValidationFailureCount() const { return canonical_validation_failure_count; }
+		size_t GetOpenChainCount() const { return open_chain_count; }
+		// Coplanar overlapping (face_a, face_b) pairs, recorded during
+		// segment collection for the OnSurface classification stage.
+		const std::vector<std::pair<int, int>>& GetCoplanarFacePairs() const { return coplanar_face_pairs; }
 
 	protected:
-		void CollectSegmentsForFaceB(int face_b_index, std::vector<IntersectionSegment>& out_segments) const;
+		void CollectSegmentsForFaceB(
+			int face_b_index,
+			std::vector<IntersectionSegment>& out_segments,
+			std::vector<std::pair<int, int>>& out_coplanar_pairs) const;
 		void BuildFaceLookupTables();
 		void BuildLoops();
 
@@ -380,6 +421,35 @@ namespace RGO
 		size_t validation_failure_count = 0;
 		size_t canonical_snap_count = 0;
 		size_t canonical_validation_failure_count = 0;
+
+		struct InputBoundaryEdge
+		{
+			Eigen::Vector3f a;
+			Eigen::Vector3f b;
+		};
+
+		void CollectInputBoundaryEdges(const Mesh* mesh, const char* label);
+		float DistanceToInputBoundary(const Eigen::Vector3f& p) const;
+
+		// Open chain validation: an intersection curve may legitimately
+		// end where it runs off the open border of an input surface, but
+		// an endpoint stopping in the middle of both surfaces means
+		// missed segments and is a hard failure.
+		bool ValidateOpenChains();
+
+		size_t open_chain_count = 0;
+
+		std::vector<InputBoundaryEdge> input_boundary_edges;
+
+		// Failure forensics: prints every canonical segment endpoint
+		// within a small radius of the given point, with exact distances,
+		// owning segments and faces, and the count of bit-identical
+		// endpoints. Distinguishes a canonicalization split (a partner
+		// node a few EPSILON away) from a genuinely missing segment
+		// (nothing nearby).
+		void DumpEndpointNeighborhood(const Eigen::Vector3f& p, const char* tag) const;
+
+		std::vector<std::pair<int, int>> coplanar_face_pairs;
 	};
 
 	class OperatorCoRefine : public Operator

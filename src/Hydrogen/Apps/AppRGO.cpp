@@ -30,16 +30,17 @@ public:
 		TS(LoadingMesh_A);
 		meshes.emplace_back(std::make_unique<RGO::HeliumMesh>());
 		RGO::HeliumMesh& mesh_a = *meshes.back();
-		LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\A_Maxillar.stl");
+		//LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\A_Maxillar.stl");
 		//LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\Gadget.stl");
-		//mesh_a.BuildBox(
-		//	Eigen::Vector3f::Zero(),
-		//	Eigen::Vector3f(50.0f, 10.0f, 4.0f),
-		//	Eigen::MakeTransform(
-		//		Eigen::Vector3f(25.0f, 0.0f, -2.0f),
-		//		Eigen::Vector3f::UnitY(),
-		//		0.0f, Eigen::Vector3f::Ones()));
-		//TE(LoadingMesh_A);
+		//LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\rabbit.stl");
+		mesh_a.BuildBox(
+			Eigen::Vector3f::Zero(),
+			Eigen::Vector3f(50.0f, 10.0f, 5.0f),
+			Eigen::MakeTransform(
+				Eigen::Vector3f(25.0f, 0.0f, 0.0f),
+				Eigen::Vector3f::UnitY(),
+				0.0f, Eigen::Vector3f::Ones()));
+		TE(LoadingMesh_A);
 
 		TS(LoadingMesh_B);
 		meshes.emplace_back(std::make_unique<RGO::HeliumMesh>());
@@ -47,7 +48,8 @@ public:
 		mesh_b.mesh_color = Eigen::Vector4f(0.0f, 1.0f, 0.0f, 1.0f);
 		//LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\A_Tooth.stl");
 		//LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\Doughnut.stl");
-		//mesh_b.Build3DText("Hello 안녕 123 !@#", "..\\..\\res\\Fonts\\NanumGothic\\NanumGothic.ttf", 6.0f, 5.0f);
+		//LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\rabbit_upside_down.stl");
+		mesh_b.Build3DText("Hello 안녕 123 !@#", "..\\..\\res\\Fonts\\NanumGothic\\NanumGothic.ttf", 6.0f, 5.0f);
 		TE(LoadingMesh_B);
 
 		TS(BuildSpatialHashMap_A);
@@ -167,91 +169,18 @@ public:
 
 		TS(VisualizePatches);
 		// Each flood-fill patch becomes its own HeliumMesh with a distinct
-		// color, so patch separation is verifiable visually. The original
-		// meshes are cleared afterwards because the patch meshes occupy
-		// the exact same geometry and would z-fight with them. All line
+		// color and is saved as a separate STL file. The original meshes
+		// are cleared inside BuildPatchMeshes because the patch meshes
+		// occupy the same geometry and would z-fight with them. All line
 		// layers (seam, boundary) are drawn above, BEFORE the clear.
 		if (boolean_stage_ok)
 		{
-			// Golden ratio hue stepping gives well separated colors for
-			// any number of patches without a fixed palette.
-			auto patch_color = [](int index) -> Eigen::Vector4f
-				{
-					float h = std::fmod(static_cast<float>(index) * 0.61803398875f, 1.0f) * 6.0f;
-					float s = 0.85f;
-					float v = 1.0f;
-					int sector = static_cast<int>(h);
-					float f = h - static_cast<float>(sector);
-					float p = v * (1.0f - s);
-					float q = v * (1.0f - s * f);
-					float t = v * (1.0f - s * (1.0f - f));
-					float r;
-					float g;
-					float b;
-					switch (sector % 6)
-					{
-					case 0: r = v; g = t; b = p; break;
-					case 1: r = q; g = v; b = p; break;
-					case 2: r = p; g = v; b = t; break;
-					case 3: r = p; g = q; b = v; break;
-					case 4: r = t; g = p; b = v; break;
-					default: r = v; g = p; b = q; break;
-					}
-					return Eigen::Vector4f(r, g, b, 1.0f);
-				};
-
-			auto build_patch_meshes = [&](RGO::HeliumMesh& source, const RGO::OperatorBoolean::MeshSideData& data, int& color_index)
-				{
-					for (int p = 0; p < data.patch_count; ++p)
-					{
-						std::vector<Eigen::Vector3f> wp;
-						std::vector<Eigen::Vector3i> wi;
-						robin_hood::unordered_map<Eigen::Vector3f, int, RGO::Vector3fHash, RGO::Vector3fEqual> vm;
-
-						for (size_t i = 0; i < source.n_faces(); ++i)
-						{
-							auto fh = source.face_handle(static_cast<int>(i));
-							if (source.status(fh).deleted()) continue;
-							if (data.face_patch[i] != p) continue;
-
-							Eigen::Vector3f v0, v1, v2;
-							source.GetFaceVertices(fh, v0, v1, v2);
-							const Eigen::Vector3f tri_pts[3] = { v0, v1, v2 };
-
-							Eigen::Vector3i fi;
-							for (int j = 0; j < 3; ++j)
-							{
-								auto it = vm.find(tri_pts[j]);
-								if (it != vm.end())
-								{
-									fi[j] = it->second;
-								}
-								else
-								{
-									int ni = static_cast<int>(wp.size());
-									wp.push_back(tri_pts[j]);
-									vm[tri_pts[j]] = ni;
-									fi[j] = ni;
-								}
-							}
-							wi.push_back(fi);
-						}
-
-						if (wi.empty()) continue;
-
-						meshes.emplace_back(std::make_unique<RGO::HeliumMesh>());
-						meshes.back()->mesh_color = patch_color(color_index++);
-						meshes.back()->Build(wp, wi);
-					}
-
-					// Clear the source so it cannot cover the colored
-					// patch meshes built from it.
-					source.clear();
-				};
-
+			std::vector<std::pair<std::string, RGO::HeliumMesh*>> patch_meshes;
 			int color_index = 0;
-			build_patch_meshes(mesh_a, boolean_op->GetSideDataA(), color_index);
-			build_patch_meshes(mesh_b, boolean_op->GetSideDataB(), color_index);
+			BuildPatchMeshes(mesh_a, boolean_op->GetSideDataA(), "A", color_index, patch_meshes);
+			BuildPatchMeshes(mesh_b, boolean_op->GetSideDataB(), "B", color_index, patch_meshes);
+
+			SavePatchMeshesAsSTL(patch_meshes, "D:\\Temp\\Patch_");
 		}
 		TE(VisualizePatches);
 
@@ -284,6 +213,83 @@ public:
 			if (fi[0] != fi[1] && fi[1] != fi[2] && fi[2] != fi[0]) wi.push_back(fi);
 		}
 		mesh.Build(wp, wi);
+	}
+
+	Eigen::Vector4f PatchColor(int index)
+	{
+		// Golden ratio hue stepping gives well separated colors for
+		// any number of patches without a fixed palette.
+		float h = std::fmod(static_cast<float>(index) * 0.61803398875f, 1.0f) * 6.0f;
+		float s = 0.85f;
+		float v = 1.0f;
+		int sector = static_cast<int>(h);
+		float f = h - static_cast<float>(sector);
+		float p = v * (1.0f - s);
+		float q = v * (1.0f - s * f);
+		float t = v * (1.0f - s * (1.0f - f));
+		float r;
+		float g;
+		float b;
+		switch (sector % 6)
+		{
+		case 0: r = v; g = t; b = p; break;
+		case 1: r = q; g = v; b = p; break;
+		case 2: r = p; g = v; b = t; break;
+		case 3: r = p; g = q; b = v; break;
+		case 4: r = t; g = p; b = v; break;
+		default: r = v; g = p; b = q; break;
+		}
+		return Eigen::Vector4f(r, g, b, 1.0f);
+	}
+
+	void BuildPatchMeshes(
+		RGO::HeliumMesh& source,
+		const RGO::OperatorBoolean::MeshSideData& data,
+		const char* label,
+		int& color_index,
+		std::vector<std::pair<std::string, RGO::HeliumMesh*>>& out_patches)
+	{
+		// Splitting itself is a Mesh capability: one shared flood fill
+		// implementation serves both the boolean operator and this app.
+		std::vector<std::vector<Eigen::Vector3f>> patch_points;
+		std::vector<std::vector<Eigen::Vector3i>> patch_indices;
+		int patch_count = source.SplitMeshBySeam(data.edge_is_seam, patch_points, patch_indices);
+
+		for (int p = 0; p < patch_count; ++p)
+		{
+			if (patch_indices[p].empty()) continue;
+
+			meshes.emplace_back(std::make_unique<RGO::HeliumMesh>());
+			RGO::HeliumMesh* patch_mesh = meshes.back().get();
+			patch_mesh->mesh_color = PatchColor(color_index++);
+			patch_mesh->Build(patch_points[p], patch_indices[p]);
+
+			out_patches.push_back({ std::string(label) + "_" + std::to_string(p), patch_mesh });
+		}
+
+		// Clear the source so it cannot cover the colored patch meshes
+		// built from it. All line layers must be drawn before this.
+		source.clear();
+	}
+
+	void SavePatchMeshesAsSTL(
+		const std::vector<std::pair<std::string, RGO::HeliumMesh*>>& patches,
+		const std::string& path_prefix)
+	{
+		OpenMesh::IO::Options write_options = OpenMesh::IO::Options::Binary;
+
+		for (const auto& kvp : patches)
+		{
+			std::string path = path_prefix + kvp.first + ".stl";
+			if (OpenMesh::IO::write_mesh(*kvp.second, path, write_options))
+			{
+				std::cout << "[Info] SavePatchMeshesAsSTL: wrote " << path << std::endl;
+			}
+			else
+			{
+				std::cout << "[Error] SavePatchMeshesAsSTL: failed to write " << path << std::endl;
+			}
+		}
 	}
 
 	std::vector<std::unique_ptr<RGO::HeliumMesh>> meshes;

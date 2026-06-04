@@ -3,7 +3,7 @@
 #include <execution>
 #include <numeric>
 #include <iostream>
-
+#include <iomanip>
 #include <charconv>
 #include <cstdio>
 #include <cstring>
@@ -274,6 +274,85 @@ namespace RGO
 
 		out_point = s0 + dir * t;
 		return true;
+	}
+
+	bool Intersection::CoplanarSegmentToTriangle(
+		const Eigen::Vector3f& s0,
+		const Eigen::Vector3f& s1,
+		const Eigen::Vector3f& v0,
+		const Eigen::Vector3f& v1,
+		const Eigen::Vector3f& v2,
+		Eigen::Vector3f& out_p0,
+		Eigen::Vector3f& out_p1,
+		float epsilon)
+	{
+		Eigen::Vector3f n = (v1 - v0).cross(v2 - v0);
+		float n_len = n.norm();
+		if (n_len < 1e-12f) return false;
+		n /= n_len;
+
+		// Endpoints are assumed within epsilon of the plane: projecting
+		// them makes the whole computation exactly planar.
+		Eigen::Vector3f p0 = s0 - ((s0 - v0).dot(n)) * n;
+		Eigen::Vector3f p1 = s1 - ((s1 - v0).dot(n)) * n;
+
+		Eigen::Vector3f e1 = (v1 - v0).normalized();
+		Eigen::Vector3f e2 = n.cross(e1);
+
+		auto to2d = [&](const Eigen::Vector3f& p) -> Eigen::Vector2f
+			{
+				Eigen::Vector3f d = p - v0;
+				return Eigen::Vector2f(d.dot(e1), d.dot(e2));
+			};
+
+		Eigen::Vector2f t0 = to2d(v0);
+		Eigen::Vector2f t1 = to2d(v1);
+		Eigen::Vector2f t2 = to2d(v2);
+		Eigen::Vector2f q0 = to2d(p0);
+		Eigen::Vector2f q1 = to2d(p1);
+
+		// Triangle winding in 2D decides which side of an edge is inside
+		float area2 = (t1 - t0).x() * (t2 - t0).y() - (t1 - t0).y() * (t2 - t0).x();
+		if (std::abs(area2) < 1e-12f) return false;
+		float orient = (area2 > 0.0f) ? 1.0f : -1.0f;
+
+		// Clip the parameter interval of the segment against the three
+		// edge half-planes (classic interval clipping, exact boundaries)
+		float lo = 0.0f;
+		float hi = 1.0f;
+		const Eigen::Vector2f* tv[3] = { &t0, &t1, &t2 };
+		for (int e = 0; e < 3; ++e)
+		{
+			Eigen::Vector2f ea = *tv[e];
+			Eigen::Vector2f eb = *tv[(e + 1) % 3];
+			Eigen::Vector2f dir = eb - ea;
+			float len = dir.norm();
+			if (len < 1e-12f) return false;
+
+			auto signed_dist = [&](const Eigen::Vector2f& p) -> float
+				{
+					return orient * (dir.x() * (p.y() - ea.y()) - dir.y() * (p.x() - ea.x())) / len;
+				};
+
+			float d0 = signed_dist(q0);
+			float d1 = signed_dist(q1);
+
+			if (d0 < 0.0f && d1 < 0.0f) return false;
+			if (d0 < 0.0f)
+			{
+				lo = std::max(lo, d0 / (d0 - d1));
+			}
+			else if (d1 < 0.0f)
+			{
+				hi = std::min(hi, d0 / (d0 - d1));
+			}
+		}
+
+		if (hi <= lo) return false;
+
+		out_p0 = p0 + (p1 - p0) * lo;
+		out_p1 = p0 + (p1 - p0) * hi;
+		return (out_p1 - out_p0).squaredNorm() >= epsilon * epsilon;
 	}
 
 	Intersection::TriangleIntersectionResult Intersection::TriangleToTriangle(
@@ -1080,6 +1159,119 @@ namespace RGO
 		return true;
 	}
 
+	int Mesh::BuildSeamBoundedPatches(
+		const std::vector<char>& edge_is_seam,
+		std::vector<int>& out_face_patch) const
+	{
+		size_t num_faces = n_faces();
+		out_face_patch.assign(num_faces, -1);
+		int patch_count = 0;
+
+		// Edge indices beyond the flag array are treated as not seam, so
+		// callers may pass flags built before a topology change without
+		// out of range access.
+		auto is_seam = [&](int edge_idx) -> bool
+			{
+				return edge_idx >= 0
+					&& edge_idx < static_cast<int>(edge_is_seam.size())
+					&& 0 != edge_is_seam[edge_idx];
+			};
+
+		std::vector<int> stack;
+
+		for (size_t start = 0; start < num_faces; ++start)
+		{
+			FaceHandle sfh = face_handle(static_cast<int>(start));
+			if (status(sfh).deleted()) continue;
+			if (out_face_patch[start] >= 0) continue;
+
+			int patch_id = patch_count++;
+			out_face_patch[start] = patch_id;
+			stack.clear();
+			stack.push_back(static_cast<int>(start));
+
+			while (false == stack.empty())
+			{
+				int f = stack.back();
+				stack.pop_back();
+
+				FaceHandle fh = face_handle(f);
+				for (auto heh : fh_range(fh))
+				{
+					// Seam edges are walls: flood fill must not cross them
+					if (is_seam(edge_handle(heh).idx())) continue;
+
+					HalfedgeHandle opp = opposite_halfedge_handle(heh);
+					if (is_boundary(opp)) continue;
+
+					FaceHandle nfh = face_handle(opp);
+					if (false == nfh.is_valid()) continue;
+					if (status(nfh).deleted()) continue;
+					if (out_face_patch[nfh.idx()] >= 0) continue;
+
+					out_face_patch[nfh.idx()] = patch_id;
+					stack.push_back(nfh.idx());
+				}
+			}
+		}
+
+		return patch_count;
+	}
+
+	int Mesh::SplitMeshBySeam(
+		const std::vector<char>& edge_is_seam,
+		std::vector<std::vector<Eigen::Vector3f>>& out_patch_points,
+		std::vector<std::vector<Eigen::Vector3i>>& out_patch_indices) const
+	{
+		out_patch_points.clear();
+		out_patch_indices.clear();
+
+		std::vector<int> face_patch;
+		int patch_count = BuildSeamBoundedPatches(edge_is_seam, face_patch);
+		if (patch_count <= 0) return 0;
+
+		out_patch_points.resize(patch_count);
+		out_patch_indices.resize(patch_count);
+
+		// Per patch vertex weld maps. Seam vertices are shared by several
+		// patches, so each patch carries its own copy of them.
+		std::vector<robin_hood::unordered_map<Eigen::Vector3f, int, Vector3fHash, Vector3fEqual>> vertex_maps(patch_count);
+
+		size_t num_faces = n_faces();
+		for (size_t i = 0; i < num_faces; ++i)
+		{
+			FaceHandle fh = face_handle(static_cast<int>(i));
+			if (status(fh).deleted()) continue;
+
+			int p = face_patch[i];
+			if (p < 0) continue;
+
+			Eigen::Vector3f v0, v1, v2;
+			GetFaceVertices(fh, v0, v1, v2);
+			const Eigen::Vector3f tri_pts[3] = { v0, v1, v2 };
+
+			Eigen::Vector3i fi;
+			for (int j = 0; j < 3; ++j)
+			{
+				auto& vm = vertex_maps[p];
+				auto it = vm.find(tri_pts[j]);
+				if (it != vm.end())
+				{
+					fi[j] = it->second;
+				}
+				else
+				{
+					int ni = static_cast<int>(out_patch_points[p].size());
+					out_patch_points[p].push_back(tri_pts[j]);
+					vm[tri_pts[j]] = ni;
+					fi[j] = ni;
+				}
+			}
+			out_patch_indices[p].push_back(fi);
+		}
+
+		return patch_count;
+	}
 	// ------------------------------------------------------------
 	// Operators
 	// ------------------------------------------------------------
@@ -1095,21 +1287,44 @@ namespace RGO
 		loops.clear();
 		segments_by_face_a.clear();
 		segments_by_face_b.clear();
+		input_boundary_edges.clear();
+		coplanar_face_pairs.clear();
+		open_chain_count = 0;
 
 		if (nullptr == meshA || nullptr == meshB) return false;
 		if (0 == meshA->n_faces() || 0 == meshB->n_faces()) return false;
+
+		// Input boundary edges are recorded up front so open chains can
+		// later be judged against the input borders.
+		CollectInputBoundaryEdges(meshA, "meshA");
+		CollectInputBoundaryEdges(meshB, "meshB");
 
 		size_t num_faces_b = meshB->n_faces();
 
 		// Each B face writes only to its own slot: no mutex needed
 		std::vector<std::vector<IntersectionSegment>> per_face_segments(num_faces_b);
+		std::vector<std::vector<std::pair<int, int>>> per_face_coplanar(num_faces_b);
 		std::vector<int> face_indices(num_faces_b);
 		std::iota(face_indices.begin(), face_indices.end(), 0);
 
 		std::for_each(std::execution::par_unseq, face_indices.begin(), face_indices.end(), [&](int i)
 			{
-				CollectSegmentsForFaceB(i, per_face_segments[i]);
+				CollectSegmentsForFaceB(i, per_face_segments[i], per_face_coplanar[i]);
 			});
+
+		// Coplanar overlapping pairs mark the OnSurface configuration.
+		// They produce no curve segment here; the overlap region boundary
+		// comes from the tangent-edge and transversal cases. The pairs
+		// are recorded for the OnSurface classification stage.
+		for (const auto& list : per_face_coplanar)
+		{
+			coplanar_face_pairs.insert(coplanar_face_pairs.end(), list.begin(), list.end());
+		}
+		if (false == coplanar_face_pairs.empty())
+		{
+			std::cout << "[Info] OperatorIntersectionLoops: " << coplanar_face_pairs.size()
+				<< " coplanar overlapping face pairs recorded for the OnSurface stage." << std::endl;
+		}
 
 		size_t total = 0;
 		for (const auto& list : per_face_segments)
@@ -1138,18 +1353,22 @@ namespace RGO
 		// would leave boundary edges: report failure to the caller.
 		if (false == ValidateSegmentEndpoints()) return false;
 
-		// Open chains violate the watertight-input invariant
-		for (const auto& loop : loops)
-		{
-			if (false == loop.closed) return false;
-		}
+		// Open chains are not failures per se: on an open input the curve
+		// legitimately ends at the input border. They are failures when an
+		// endpoint stops in the middle of both surfaces, which means
+		// segments were missed upstream.
+		if (false == ValidateOpenChains()) return false;
 
 		return true;
 	}
 
-	void OperatorIntersectionLoops::CollectSegmentsForFaceB(int face_b_index, std::vector<IntersectionSegment>& out_segments) const
+	void OperatorIntersectionLoops::CollectSegmentsForFaceB(
+		int face_b_index,
+		std::vector<IntersectionSegment>& out_segments,
+		std::vector<std::pair<int, int>>& out_coplanar_pairs) const
 	{
 		out_segments.clear();
+		out_coplanar_pairs.clear();
 
 		OpenMesh::FaceHandle fb = meshB->face_handle(face_b_index);
 		if (meshB->status(fb).deleted()) return;
@@ -1165,6 +1384,25 @@ namespace RGO
 		meshA->QueryOverlappingFaces(b_min, b_max, candidates);
 		if (candidates.empty()) return;
 
+		Eigen::Vector3f nB = (b1 - b0).cross(b2 - b0);
+		float nB_len = nB.norm();
+		if (nB_len < 1e-12f) return;
+		nB /= nB_len;
+
+		const Eigen::Vector3f bv[3] = { b0, b1, b2 };
+
+		auto emit = [&](const Eigen::Vector3f& p0, const Eigen::Vector3f& p1, int face_a_index)
+			{
+				if ((p0 - p1).squaredNorm() < EPSILON * EPSILON) return;
+
+				IntersectionSegment seg;
+				seg.p0 = p0;
+				seg.p1 = p1;
+				seg.face_a = face_a_index;
+				seg.face_b = face_b_index;
+				out_segments.push_back(seg);
+			};
+
 		for (int face_a_index : candidates)
 		{
 			OpenMesh::FaceHandle fa = meshA->face_handle(face_a_index);
@@ -1178,6 +1416,115 @@ namespace RGO
 			Eigen::Vector3f a_max = a0.cwiseMax(a1).cwiseMax(a2) + pad;
 			if (false == Intersection::AABBtoAABB(a_min, a_max, b_min, b_max)) continue;
 
+			Eigen::Vector3f nA = (a1 - a0).cross(a2 - a0);
+			float nA_len = nA.norm();
+			if (nA_len < 1e-12f) continue;
+			nA /= nA_len;
+
+			const Eigen::Vector3f av[3] = { a0, a1, a2 };
+
+			// Vertex-plane classification with explicit epsilon bands.
+			// The generic transversal path is fragile exactly when
+			// vertices sit ON the other plane, so those configurations
+			// are routed to deterministic special cases instead.
+			int b_on_idx[3];
+			int b_on = 0;
+			int b_pos = 0;
+			int b_neg = 0;
+			for (int i = 0; i < 3; ++i)
+			{
+				float d = (bv[i] - a0).dot(nA);
+				if (std::abs(d) < EPSILON) { b_on_idx[b_on++] = i; }
+				else if (d > 0.0f) ++b_pos;
+				else ++b_neg;
+			}
+
+			// All of B in plane A: coplanar overlap, recorded for the
+			// OnSurface stage. No curve segment exists for this pair.
+			if (3 == b_on)
+			{
+				out_coplanar_pairs.push_back({ face_a_index, face_b_index });
+				continue;
+			}
+
+			int a_on_idx[3];
+			int a_on = 0;
+			int a_pos = 0;
+			int a_neg = 0;
+			for (int i = 0; i < 3; ++i)
+			{
+				float d = (av[i] - b0).dot(nB);
+				if (std::abs(d) < EPSILON) { a_on_idx[a_on++] = i; }
+				else if (d > 0.0f) ++a_pos;
+				else ++a_neg;
+			}
+
+			if (3 == a_on)
+			{
+				out_coplanar_pairs.push_back({ face_a_index, face_b_index });
+				continue;
+			}
+
+			// Tangent edge of B lying in plane A: the intersection is a
+			// sub-piece of that edge. Clip it to triangle A in 2D, which
+			// is deterministic, instead of the fragile generic path.
+			if (2 == b_on)
+			{
+				const Eigen::Vector3f& s0 = bv[b_on_idx[0]];
+				const Eigen::Vector3f& s1 = bv[b_on_idx[1]];
+
+				Eigen::Vector3f p0, p1;
+				if (Intersection::CoplanarSegmentToTriangle(s0, s1, a0, a1, a2, p0, p1))
+				{
+					if (2 == a_on)
+					{
+						// Both tangent: the two on-edges are collinear on
+						// the plane intersection line. Clamp to the
+						// overlap of the two intervals.
+						Eigen::Vector3f dir = p1 - p0;
+						float dl = dir.norm();
+						if (dl >= EPSILON)
+						{
+							dir /= dl;
+							float ta0 = (av[a_on_idx[0]] - p0).dot(dir);
+							float ta1 = (av[a_on_idx[1]] - p0).dot(dir);
+							float lo = std::max(0.0f, std::min(ta0, ta1));
+							float hi = std::min(dl, std::max(ta0, ta1));
+							if (hi - lo >= EPSILON)
+							{
+								emit(p0 + dir * lo, p0 + dir * hi, face_a_index);
+							}
+						}
+					}
+					else
+					{
+						emit(p0, p1, face_a_index);
+					}
+				}
+				continue;
+			}
+
+			// Tangent edge of A lying in plane B: symmetric case
+			if (2 == a_on)
+			{
+				const Eigen::Vector3f& s0 = av[a_on_idx[0]];
+				const Eigen::Vector3f& s1 = av[a_on_idx[1]];
+
+				Eigen::Vector3f p0, p1;
+				if (Intersection::CoplanarSegmentToTriangle(s0, s1, b0, b1, b2, p0, p1))
+				{
+					emit(p0, p1, face_a_index);
+				}
+				continue;
+			}
+
+			// A triangle that does not cross the other plane can only
+			// touch it at a vertex: a point contact, no constraint edge.
+			bool b_crosses = (b_pos > 0 && b_neg > 0);
+			bool a_crosses = (a_pos > 0 && a_neg > 0);
+			if (false == b_crosses || false == a_crosses) continue;
+
+			// Generic transversal intersection
 			Eigen::Vector3f ipA, ipB;
 			Intersection::TriangleIntersectionResult result =
 				Intersection::TriangleToTriangle(a0, a1, a2, b0, b1, b2, ipA, ipB);
@@ -1185,15 +1532,7 @@ namespace RGO
 			// Point contacts give no constraint edge for co-refinement: skip
 			if (result.type != Intersection::TriangleTriangleIntersectionType::Segment) continue;
 
-			// Near-degenerate segments poison CDT downstream: reject here
-			if ((result.pointA - result.pointB).squaredNorm() < EPSILON * EPSILON) continue;
-
-			IntersectionSegment seg;
-			seg.p0 = result.pointA;
-			seg.p1 = result.pointB;
-			seg.face_a = face_a_index;
-			seg.face_b = face_b_index;
-			out_segments.push_back(seg);
+			emit(result.pointA, result.pointB, face_a_index);
 		}
 	}
 
@@ -1216,6 +1555,16 @@ namespace RGO
 		// Scan the 27 neighbor cells so that two points within EPSILON
 		// but straddling a quantization cell boundary still weld together.
 		// Single-cell lookup would split closed loops into false open chains.
+		//
+		// The NEAREST node within EPSILON is selected, not the first one
+		// found. With several nodes inside the weld radius, first-found
+		// assignment depends on hash iteration order and can attach an
+		// endpoint to the wrong node, corrupting curve connectivity. The
+		// nearest choice is deterministic, and an exact duplicate of an
+		// existing node always rejoins that node (distance zero).
+		int best_id = -1;
+		float best_d2 = EPSILON * EPSILON;
+
 		for (int dz = -1; dz <= 1; ++dz)
 		{
 			for (int dy = -1; dy <= 1; ++dy)
@@ -1228,13 +1577,20 @@ namespace RGO
 
 					for (int node_id : it->second)
 					{
-						if ((node_positions[node_id] - p).squaredNorm() < EPSILON * EPSILON)
+						float d2 = (node_positions[node_id] - p).squaredNorm();
+						if (d2 < best_d2)
 						{
-							return node_id;
+							best_d2 = d2;
+							best_id = node_id;
 						}
 					}
 				}
 			}
+		}
+
+		if (best_id >= 0)
+		{
+			return best_id;
 		}
 
 		int new_id = static_cast<int>(node_positions.size());
@@ -1330,6 +1686,101 @@ namespace RGO
 		loops.clear();
 		if (segments.empty()) return;
 
+		std::vector<char> segment_used(segments.size(), 0);
+
+		// Pass 0: topological deduplication.
+		// The same geometric piece of the intersection curve is reported
+		// by several face pairs when it lies within EPSILON of shared
+		// edges of BOTH meshes at once: at a 2x2 face corner crossing the
+		// tiny corner piece is produced by both diagonal face pairs,
+		// bit-identical after canonicalization. The curve needs every
+		// piece exactly once. A duplicate raises the degree of both its
+		// nodes to an odd number, which makes closed traversal impossible
+		// and tears the loop into open chains. Duplicates are excluded
+		// from the topology here but remain in `segments`, so every face
+		// still receives its constraints for co-refinement.
+		{
+			struct SegKey
+			{
+				Eigen::Vector3f a;
+				Eigen::Vector3f b;
+			};
+			struct SegKeyHash
+			{
+				size_t operator()(const SegKey& k) const
+				{
+					Vector3fBitHash h;
+					return h(k.a) * 1000003ull ^ h(k.b);
+				}
+			};
+			struct SegKeyEqual
+			{
+				bool operator()(const SegKey& x, const SegKey& y) const
+				{
+					Vector3fBitEqual eq;
+					return eq(x.a, y.a) && eq(x.b, y.b);
+				}
+			};
+
+			auto less_xyz = [](const Eigen::Vector3f& a, const Eigen::Vector3f& b) -> bool
+				{
+					if (a.x() != b.x()) return a.x() < b.x();
+					if (a.y() != b.y()) return a.y() < b.y();
+					return a.z() < b.z();
+				};
+
+			robin_hood::unordered_map<SegKey, int, SegKeyHash, SegKeyEqual> first_by_pair;
+			first_by_pair.reserve(segments.size());
+
+			size_t duplicate_count = 0;
+			const size_t report_limit = 8;
+
+			for (int i = 0; i < static_cast<int>(segments.size()); ++i)
+			{
+				SegKey key;
+				if (less_xyz(segments[i].p0, segments[i].p1))
+				{
+					key.a = segments[i].p0;
+					key.b = segments[i].p1;
+				}
+				else
+				{
+					key.a = segments[i].p1;
+					key.b = segments[i].p0;
+				}
+
+				auto it = first_by_pair.find(key);
+				if (it == first_by_pair.end())
+				{
+					first_by_pair[key] = i;
+					continue;
+				}
+
+				segment_used[i] = 1;
+				++duplicate_count;
+
+				if (duplicate_count <= report_limit)
+				{
+					std::cout << "[Info] BuildLoops: segment " << i
+						<< " (faceA " << segments[i].face_a
+						<< ", faceB " << segments[i].face_b
+						<< ", len " << (segments[i].p0 - segments[i].p1).norm()
+						<< ") duplicates segment " << it->second
+						<< " (faceA " << segments[it->second].face_a
+						<< ", faceB " << segments[it->second].face_b
+						<< "): excluded from curve topology." << std::endl;
+				}
+			}
+
+			if (duplicate_count > 0)
+			{
+				std::cout << "[Info] BuildLoops: " << duplicate_count
+					<< " duplicate segments excluded from topology, "
+					<< (segments.size() - duplicate_count)
+					<< " remain for loop tracing." << std::endl;
+			}
+		}
+
 		std::vector<Eigen::Vector3f> node_positions;
 		node_positions.reserve(segments.size() * 2);
 		robin_hood::unordered_map<Eigen::Vector3i, std::vector<int>, Int3Hash, Int3Equal> cell_to_nodes;
@@ -1345,10 +1796,12 @@ namespace RGO
 
 		// Node to incident segment adjacency
 		std::vector<std::vector<int>> node_to_segments(node_positions.size());
-		std::vector<char> segment_used(segments.size(), 0);
 
 		for (size_t i = 0; i < segments.size(); ++i)
 		{
+			// Topology duplicates marked above must not contribute edges
+			if (segment_used[i]) continue;
+
 			// Both endpoints welded to the same node: zero length after welding.
 			// Mark used so it cannot seed or join any loop.
 			if (segment_nodes[i].first == segment_nodes[i].second)
@@ -1361,7 +1814,7 @@ namespace RGO
 		}
 
 		// Chain unused segments into loops
-		size_t open_chain_count = 0;
+		size_t open_chain_count_local = 0;
 		for (size_t i = 0; i < segments.size(); ++i)
 		{
 			if (segment_used[i]) continue;
@@ -1371,14 +1824,14 @@ namespace RGO
 
 			if (false == loop.closed)
 			{
-				++open_chain_count;
+				++open_chain_count_local;
 			}
 			loops.push_back(std::move(loop));
 		}
 
-		if (open_chain_count > 0)
+		if (open_chain_count_local > 0)
 		{
-			std::cout << "[Warning] BuildLoops: " << open_chain_count
+			std::cout << "[Warning] BuildLoops: " << open_chain_count_local
 				<< " open chains out of " << loops.size()
 				<< " curves. Watertight inputs must yield closed loops only;"
 				<< " check TriangleToTriangle for missed segments." << std::endl;
@@ -1772,6 +2225,118 @@ namespace RGO
 		return true;
 	}
 
+	void OperatorIntersectionLoops::CollectInputBoundaryEdges(const Mesh* mesh, const char* label)
+	{
+		size_t before = input_boundary_edges.size();
+
+		for (size_t i = 0; i < mesh->n_edges(); ++i)
+		{
+			OpenMesh::EdgeHandle eh = mesh->edge_handle(static_cast<int>(i));
+			if (mesh->status(eh).deleted()) continue;
+			if (false == mesh->is_boundary(eh)) continue;
+
+			OpenMesh::HalfedgeHandle heh = mesh->halfedge_handle(eh, 0);
+			auto pf = mesh->point(mesh->from_vertex_handle(heh));
+			auto pt = mesh->point(mesh->to_vertex_handle(heh));
+
+			InputBoundaryEdge be;
+			be.a = Eigen::Vector3f(pf[0], pf[1], pf[2]);
+			be.b = Eigen::Vector3f(pt[0], pt[1], pt[2]);
+			input_boundary_edges.push_back(be);
+		}
+
+		std::cout << "[Info] CollectInputBoundaryEdges(" << label << "): "
+			<< (input_boundary_edges.size() - before) << " boundary edges." << std::endl;
+	}
+
+	float OperatorIntersectionLoops::DistanceToInputBoundary(const Eigen::Vector3f& p) const
+	{
+		if (input_boundary_edges.empty())
+		{
+			return std::numeric_limits<float>::max();
+		}
+
+		float best2 = std::numeric_limits<float>::max();
+		for (const auto& e : input_boundary_edges)
+		{
+			float d2 = Distance::PointToLineSegmentSquared(p, e.a, e.b);
+			if (d2 < best2) best2 = d2;
+		}
+		return std::sqrt(best2);
+	}
+
+	bool OperatorIntersectionLoops::ValidateOpenChains()
+	{
+		open_chain_count = 0;
+		size_t invalid = 0;
+
+		// Canonicalization may move an endpoint by up to EPSILON off the
+		// border it geometrically lies on, so 2 * EPSILON is the correct
+		// acceptance distance, consistent with ValidateSegmentEndpoints.
+		const float tol = 2.0f * EPSILON;
+
+		for (size_t li = 0; li < loops.size(); ++li)
+		{
+			const IntersectionLoop& loop = loops[li];
+			if (loop.closed) continue;
+
+			++open_chain_count;
+
+			if (loop.points.size() < 2)
+			{
+				++invalid;
+				std::cout << "[Error] OpenChains: curve " << li
+					<< " is open with fewer than 2 points." << std::endl;
+				continue;
+			}
+
+			const Eigen::Vector3f& head = loop.points.front();
+			const Eigen::Vector3f& tail = loop.points.back();
+
+			float head_dist = DistanceToInputBoundary(head);
+			float tail_dist = DistanceToInputBoundary(tail);
+			bool head_ok = head_dist <= tol;
+			bool tail_ok = tail_dist <= tol;
+
+			if (head_ok && tail_ok)
+			{
+				std::cout << "[Info] OpenChains: curve " << li << " ("
+					<< loop.segment_indices.size() << " segments) ends on the"
+					<< " input border at both ends: accepted." << std::endl;
+				continue;
+			}
+
+			++invalid;
+			std::cout << "[Error] OpenChains: curve " << li << " ("
+				<< loop.segment_indices.size() << " segments) ends in the"
+				<< " middle of the surfaces. head ("
+				<< head.x() << ", " << head.y() << ", " << head.z()
+				<< ") dist to input border " << head_dist << ", tail ("
+				<< tail.x() << ", " << tail.y() << ", " << tail.z()
+				<< ") dist " << tail_dist
+				<< ". This means missed intersection segments, not an open input." << std::endl;
+
+			// Forensics for the first few failures only, to keep the log
+			// readable when many chains break at once.
+			if (invalid <= 4)
+			{
+				DumpEndpointNeighborhood(head, "head");
+				if (false == (tail.x() == head.x() && tail.y() == head.y() && tail.z() == head.z()))
+				{
+					DumpEndpointNeighborhood(tail, "tail");
+				}
+			}
+		}
+
+		if (open_chain_count > 0 && 0 == invalid)
+		{
+			std::cout << "[Info] OpenChains: " << open_chain_count
+				<< " open chains, all ending on input borders." << std::endl;
+		}
+
+		return 0 == invalid;
+	}
+
 	Eigen::Vector3f OperatorIntersectionLoops::CanonicalizePoint(
 		const Eigen::Vector3f& p,
 		int face_a,
@@ -1809,6 +2374,52 @@ namespace RGO
 
 		out_snapped = false;
 		return p;
+	}
+
+	void OperatorIntersectionLoops::DumpEndpointNeighborhood(const Eigen::Vector3f& p, const char* tag) const
+	{
+		const float radius = 10.0f * EPSILON;
+		const float radius2 = radius * radius;
+
+		// Full precision is required here: the differences being hunted
+		// are a few EPSILON and vanish at the default 6 significant
+		// digits.
+		std::cout << std::setprecision(10);
+		std::cout << "[Debug] Neighborhood(" << tag << ") of ("
+			<< p.x() << ", " << p.y() << ", " << p.z()
+			<< "), radius " << radius << ":" << std::endl;
+
+		size_t exact_degree = 0;
+		size_t found = 0;
+
+		for (size_t i = 0; i < segments.size(); ++i)
+		{
+			const IntersectionSegment& s = segments[i];
+			const Eigen::Vector3f* endpoints[2] = { &s.p0, &s.p1 };
+
+			for (int e = 0; e < 2; ++e)
+			{
+				float d2 = (*endpoints[e] - p).squaredNorm();
+				if (d2 > radius2) continue;
+
+				bool exact = endpoints[e]->x() == p.x()
+					&& endpoints[e]->y() == p.y()
+					&& endpoints[e]->z() == p.z();
+				if (exact) ++exact_degree;
+
+				++found;
+				std::cout << "[Debug]   segment " << i << " endpoint " << e
+					<< " (" << endpoints[e]->x() << ", " << endpoints[e]->y()
+					<< ", " << endpoints[e]->z() << ") dist " << std::sqrt(d2)
+					<< (exact ? " EXACT" : "")
+					<< " faceA " << s.face_a << " faceB " << s.face_b
+					<< " len " << (s.p0 - s.p1).norm() << std::endl;
+			}
+		}
+
+		std::cout << "[Debug]   " << found << " endpoints in radius, "
+			<< exact_degree << " bit-identical (node degree)." << std::endl;
+		std::cout << std::setprecision(6);
 	}
 
 	OperatorCoRefine::OperatorCoRefine(Mesh* a, Mesh* b, const OperatorIntersectionLoops* loops)
@@ -2591,6 +3202,74 @@ namespace RGO
 
 		data.edge_is_seam.assign(mesh->n_edges(), 0);
 
+		// The seam is identified BIT-EXACTLY: an edge is a seam edge if
+		// and only if its endpoint pair equals the canonical endpoint
+		// pair of some intersection segment. Canonicalization keeps
+		// constraint coordinates bit-identical through carving and
+		// welding, so no geometric tolerance is needed here.
+		//
+		// The previous tolerance test (endpoints and midpoint within
+		// EPSILON of a segment) was proven wrong on pinch contacts: near
+		// collinear canonical points produce CDT sliver triangles whose
+		// free third edge hugs the segment within EPSILON. Those free
+		// edges were flagged as seam, doubling the chain and breaking
+		// degree parity.
+		struct SegKey
+		{
+			Eigen::Vector3f a;
+			Eigen::Vector3f b;
+		};
+		struct SegKeyHash
+		{
+			size_t operator()(const SegKey& k) const
+			{
+				Vector3fBitHash h;
+				return h(k.a) * 1000003ull ^ h(k.b);
+			}
+		};
+		struct SegKeyEqual
+		{
+			bool operator()(const SegKey& x, const SegKey& y) const
+			{
+				Vector3fBitEqual eq;
+				return eq(x.a, y.a) && eq(x.b, y.b);
+			}
+		};
+
+		auto less_xyz = [](const Eigen::Vector3f& a, const Eigen::Vector3f& b) -> bool
+			{
+				if (a.x() != b.x()) return a.x() < b.x();
+				if (a.y() != b.y()) return a.y() < b.y();
+				return a.z() < b.z();
+			};
+
+		auto make_key = [&](const Eigen::Vector3f& a, const Eigen::Vector3f& b) -> SegKey
+			{
+				SegKey key;
+				if (less_xyz(a, b))
+				{
+					key.a = a;
+					key.b = b;
+				}
+				else
+				{
+					key.a = b;
+					key.b = a;
+				}
+				return key;
+			};
+
+		// Value: matched flag, so every segment pair can be verified to
+		// exist as a mesh edge afterwards. Duplicate segments (same
+		// canonical pair from several face pairs) collapse into one entry,
+		// which is correct: the mesh carves that piece once.
+		robin_hood::unordered_map<SegKey, char, SegKeyHash, SegKeyEqual> segment_pairs;
+		segment_pairs.reserve(segments.size());
+		for (const auto& s : segments)
+		{
+			segment_pairs[make_key(s.p0, s.p1)] = 0;
+		}
+
 		size_t seam_count = 0;
 		double seam_length = 0.0;
 
@@ -2605,52 +3284,44 @@ namespace RGO
 			Eigen::Vector3f a(pf[0], pf[1], pf[2]);
 			Eigen::Vector3f b(pt[0], pt[1], pt[2]);
 
-			// Both endpoints must be canonical intersection points
-			auto it_a = endpoint_segments.find(a);
-			if (it_a == endpoint_segments.end()) continue;
-			auto it_b = endpoint_segments.find(b);
-			if (it_b == endpoint_segments.end()) continue;
+			auto it = segment_pairs.find(make_key(a, b));
+			if (it == segment_pairs.end()) continue;
 
-			// The edge is a seam only when it runs ALONG some segment, not
-			// merely between two seam vertices (CDT diagonals do that too).
-			// Testing both endpoints and the midpoint distinguishes the two
-			// cases, and also accepts sub-edges of a constraint that CDT
-			// split at another canonical point lying on it.
-			Eigen::Vector3f mid = (a + b) * 0.5f;
+			it->second = 1;
+			data.edge_is_seam[i] = 1;
+			++seam_count;
+			seam_length += static_cast<double>((b - a).norm());
+		}
 
-			auto runs_along = [&](int seg_idx) -> bool
-				{
-					const auto& s = segments[seg_idx];
-					if (Distance::PointToLineSegmentSquared(a, s.p0, s.p1) >= EPSILON * EPSILON) return false;
-					if (Distance::PointToLineSegmentSquared(b, s.p0, s.p1) >= EPSILON * EPSILON) return false;
-					if (Distance::PointToLineSegmentSquared(mid, s.p0, s.p1) >= EPSILON * EPSILON) return false;
-					return true;
-				};
-
-			bool is_seam = false;
-			for (int seg_idx : it_a->second)
+		// Reverse check: every segment must exist in the mesh as one edge
+		// with exactly its canonical endpoints. A miss means the carve
+		// did not deliver this constraint (or CDT split it), and the seam
+		// would have a gap: fail loudly here, before flood fill.
+		size_t missing = 0;
+		for (const auto& kvp : segment_pairs)
+		{
+			if (0 != kvp.second) continue;
+			++missing;
+			if (missing <= 10)
 			{
-				if (runs_along(seg_idx)) { is_seam = true; break; }
+				std::cout << "[Error] BuildSeamEdgeFlags(" << label << "): segment ("
+					<< kvp.first.a.x() << ", " << kvp.first.a.y() << ", " << kvp.first.a.z()
+					<< ") - ("
+					<< kvp.first.b.x() << ", " << kvp.first.b.y() << ", " << kvp.first.b.z()
+					<< ") has no matching mesh edge." << std::endl;
 			}
-			if (false == is_seam)
-			{
-				for (int seg_idx : it_b->second)
-				{
-					if (runs_along(seg_idx)) { is_seam = true; break; }
-				}
-			}
-
-			if (is_seam)
-			{
-				data.edge_is_seam[i] = 1;
-				++seam_count;
-				seam_length += static_cast<double>((b - a).norm());
-			}
+		}
+		if (missing > 10)
+		{
+			std::cout << "[Error] BuildSeamEdgeFlags(" << label << "): "
+				<< (missing - 10) << " more missing segments not shown." << std::endl;
 		}
 
 		std::cout << "[Info] BuildSeamEdgeFlags(" << label << "): " << seam_count
-			<< " seam edges, total length " << seam_length << "." << std::endl;
-		return true;
+			<< " seam edges (bit-exact, " << segment_pairs.size()
+			<< " unique segment pairs), total length " << seam_length << "." << std::endl;
+
+		return 0 == missing;
 	}
 
 	bool OperatorBoolean::ValidateSeamIntegrity(const Mesh* mesh, const MeshSideData& data, const char* label) const
@@ -2682,6 +3353,69 @@ namespace RGO
 			}
 		}
 
+		// Forensics for odd-degree vertices: every incident edge is
+		// dumped with full precision, its seam flag, the segment its
+		// geometry matched, and the exact distances of both endpoints to
+		// that segment. This separates the real carved seam chain from a
+		// ghost chain (split original mesh edges hugging the curve within
+		// EPSILON) that the tolerance-based seam test wrongly flags.
+		auto dump_vertex = [&](int vidx, int degree)
+			{
+				OpenMesh::VertexHandle vh = mesh->vertex_handle(vidx);
+				auto p = mesh->point(vh);
+				Eigen::Vector3f a(p[0], p[1], p[2]);
+
+				std::cout << std::setprecision(10);
+				std::cout << "[Debug] SeamVertex(" << label << ") ("
+					<< a.x() << ", " << a.y() << ", " << a.z()
+					<< ") seam degree " << degree << ", incident edges:" << std::endl;
+
+				for (auto voh_it = mesh->cvoh_iter(vh); voh_it.is_valid(); ++voh_it)
+				{
+					OpenMesh::EdgeHandle eh = mesh->edge_handle(*voh_it);
+					auto q = mesh->point(mesh->to_vertex_handle(*voh_it));
+					Eigen::Vector3f b(q[0], q[1], q[2]);
+
+					bool is_seam = 0 != data.edge_is_seam[eh.idx()];
+
+					Eigen::Vector3f mid = (a + b) * 0.5f;
+					int match = -1;
+					float dist_a = -1.0f;
+					float dist_b = -1.0f;
+					float dist_m = -1.0f;
+					for (size_t si = 0; si < segments.size(); ++si)
+					{
+						const auto& s = segments[si];
+						float da2 = Distance::PointToLineSegmentSquared(a, s.p0, s.p1);
+						if (da2 >= EPSILON * EPSILON) continue;
+						float db2 = Distance::PointToLineSegmentSquared(b, s.p0, s.p1);
+						if (db2 >= EPSILON * EPSILON) continue;
+						float dm2 = Distance::PointToLineSegmentSquared(mid, s.p0, s.p1);
+						if (dm2 >= EPSILON * EPSILON) continue;
+
+						match = static_cast<int>(si);
+						dist_a = std::sqrt(da2);
+						dist_b = std::sqrt(db2);
+						dist_m = std::sqrt(dm2);
+						break;
+					}
+
+					std::cout << "[Debug]   to (" << b.x() << ", " << b.y() << ", " << b.z()
+						<< ") len " << (b - a).norm()
+						<< (is_seam ? " SEAM" : " ----");
+					if (match >= 0)
+					{
+						std::cout << " runs along segment " << match
+							<< " (faceA " << segments[match].face_a
+							<< ", faceB " << segments[match].face_b
+							<< ", len " << (segments[match].p0 - segments[match].p1).norm()
+							<< ") dists " << dist_a << " / " << dist_m << " / " << dist_b;
+					}
+					std::cout << std::endl;
+				}
+				std::cout << std::setprecision(6);
+			};
+
 		// Check 2: seam degree parity. Seam curves are closed, so every
 		// vertex must touch an even number of seam edges. Odd degree marks
 		// a broken seam end, the exact leak this stage must rule out.
@@ -2702,6 +3436,7 @@ namespace RGO
 			seam_length += static_cast<double>((b - a).norm());
 		}
 
+		size_t odd_dumped = 0;
 		for (size_t i = 0; i < seam_degree.size(); ++i)
 		{
 			if (0 != (seam_degree[i] % 2))
@@ -2711,6 +3446,12 @@ namespace RGO
 				std::cout << "[Error] SeamIntegrity(" << label << "): vertex ("
 					<< p[0] << ", " << p[1] << ", " << p[2] << ") has odd seam degree "
 					<< seam_degree[i] << ": the seam is broken here." << std::endl;
+
+				if (odd_dumped < 4)
+				{
+					++odd_dumped;
+					dump_vertex(static_cast<int>(i), seam_degree[i]);
+				}
 			}
 		}
 
