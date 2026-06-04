@@ -95,7 +95,7 @@ public:
 			mesh_result->mesh_color = Eigen::Vector4f(1.0f, 0.5f, 0.0f, 1.0f);
 
 			boolean_op = std::make_unique<RGO::OperatorBoolean>(
-				RGO::OperatorBoolean::Union, &mesh_a, &mesh_b, &op, mesh_result);
+				RGO::OperatorBoolean::Difference, &mesh_a, &mesh_b, &op, mesh_result);
 			boolean_ok = boolean_op->Execute();
 
 			if (false == boolean_ok)

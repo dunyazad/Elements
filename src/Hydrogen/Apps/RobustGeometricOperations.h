@@ -402,23 +402,51 @@ namespace RGO
 		// input points within a single face.
 		void CanonicalizeSegments();
 
-		bool TrySnapToFaceVertex(
+		// Node-level canonicalization. Endpoints are welded into logical
+		// nodes FIRST, then ONE snap decision is made per node against
+		// the union of features of all faces incident to that node.
+		// Vertices win over edges across classes, the nearest candidate
+		// wins within a class, and the decision is iterated to a fixed
+		// point. This makes canonicalization idempotent by construction,
+		// removing the snap-vs-weld interference of the previous
+		// per-face-pair snapping order at the root.
+		enum class SnapClass
+		{
+			Free = 0,
+			Edge = 1,
+			Vertex = 2
+		};
+
+		void GatherNodeFaces(
+			const std::vector<std::pair<int, int>>& segment_nodes,
+			size_t node_count,
+			std::vector<std::vector<int>>& out_faces_a,
+			std::vector<std::vector<int>>& out_faces_b) const;
+
+		bool SnapPointToNearestVertex(
 			const Eigen::Vector3f& p,
-			const Mesh* mesh,
-			int face_index,
+			const std::vector<int>& faces_a,
+			const std::vector<int>& faces_b,
 			Eigen::Vector3f& out_point) const;
 
-		bool TrySnapToFaceEdge(
+		bool SnapPointToNearestEdge(
 			const Eigen::Vector3f& p,
-			const Mesh* mesh,
-			int face_index,
+			const std::vector<int>& faces_a,
+			const std::vector<int>& faces_b,
 			Eigen::Vector3f& out_point) const;
 
-		Eigen::Vector3f CanonicalizePoint(
+		SnapClass SnapNodePosition(
 			const Eigen::Vector3f& p,
-			int face_a,
-			int face_b,
-			bool& out_snapped) const;
+			const std::vector<int>& faces_a,
+			const std::vector<int>& faces_b,
+			Eigen::Vector3f& out_point) const;
+
+		void MergeSnappedNodes(
+			std::vector<Eigen::Vector3f>& node_positions,
+			std::vector<SnapClass>& node_snap_class,
+			std::vector<std::vector<int>>& node_faces_a,
+			std::vector<std::vector<int>>& node_faces_b,
+			std::vector<int>& out_node_remap) const;
 
 		// Canonicalization validation: checks the invariants that make
 		// downstream CDT safe. Must run after BuildFaceLookupTables.

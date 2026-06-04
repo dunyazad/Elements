@@ -2431,47 +2431,65 @@ namespace RGO
 		canonical_snap_count = 0;
 		if (segments.empty()) return;
 
-		// Pass 1: snap endpoints to mesh features.
-		// After this pass, every endpoint near a vertex carries the exact
-		// vertex coordinate and every endpoint near an edge lies exactly
-		// on that edge.
-		std::vector<char> p0_snapped(segments.size(), 0);
-		std::vector<char> p1_snapped(segments.size(), 0);
-
-		for (size_t i = 0; i < segments.size(); ++i)
-		{
-			IntersectionSegment& seg = segments[i];
-
-			bool s0 = false;
-			bool s1 = false;
-			seg.p0 = CanonicalizePoint(seg.p0, seg.face_a, seg.face_b, s0);
-			seg.p1 = CanonicalizePoint(seg.p1, seg.face_a, seg.face_b, s1);
-
-			if (s0) { p0_snapped[i] = 1; ++canonical_snap_count; }
-			if (s1) { p1_snapped[i] = 1; ++canonical_snap_count; }
-		}
-
-		// Pass 2: global weld. Snapped points are seeded first so that a
-		// cluster containing a feature-snapped point adopts the feature
-		// coordinate as its representative, never an arbitrary free point.
+		// Pass 1: weld RAW endpoints into logical nodes FIRST. Identity
+		// is decided before any snapping, so every instance of one
+		// intersection point joins the same node no matter which face
+		// pair reported it. The previous order (snap per face pair, then
+		// weld) let two instances of one point snap to different features
+		// of different faces; the weld then had to pick one coordinate
+		// arbitrarily, and re-canonicalization moved such points by up to
+		// EPSILON. That interference is removed here at the root.
 		std::vector<Eigen::Vector3f> node_positions;
 		node_positions.reserve(segments.size() * 2);
 		robin_hood::unordered_map<Eigen::Vector3i, std::vector<int>, Int3Hash, Int3Equal> cell_to_nodes;
 
+		std::vector<std::pair<int, int>> segment_nodes(segments.size());
 		for (size_t i = 0; i < segments.size(); ++i)
 		{
-			if (p0_snapped[i]) WeldEndpoint(segments[i].p0, cell_to_nodes, node_positions);
-			if (p1_snapped[i]) WeldEndpoint(segments[i].p1, cell_to_nodes, node_positions);
+			int n0 = WeldEndpoint(segments[i].p0, cell_to_nodes, node_positions);
+			int n1 = WeldEndpoint(segments[i].p1, cell_to_nodes, node_positions);
+			segment_nodes[i] = { n0, n1 };
 		}
 
-		for (auto& seg : segments)
+		// Pass 2: union of incident faces per node, gathered from every
+		// segment touching the node.
+		std::vector<std::vector<int>> node_faces_a;
+		std::vector<std::vector<int>> node_faces_b;
+		GatherNodeFaces(segment_nodes, node_positions.size(), node_faces_a, node_faces_b);
+
+		// Pass 3: ONE snap decision per node against ALL candidate
+		// features of all incident faces.
+		std::vector<SnapClass> node_snap_class(node_positions.size(), SnapClass::Free);
+		for (size_t n = 0; n < node_positions.size(); ++n)
 		{
-			seg.p0 = node_positions[WeldEndpoint(seg.p0, cell_to_nodes, node_positions)];
-			seg.p1 = node_positions[WeldEndpoint(seg.p1, cell_to_nodes, node_positions)];
+			Eigen::Vector3f snapped;
+			SnapClass cls = SnapNodePosition(node_positions[n], node_faces_a[n], node_faces_b[n], snapped);
+			node_snap_class[n] = cls;
+			if (SnapClass::Free != cls)
+			{
+				node_positions[n] = snapped;
+				++canonical_snap_count;
+			}
 		}
 
-		// Pass 3: drop segments that collapsed to zero length.
-		// These would otherwise seed degenerate constraint edges in CDT.
+		// Pass 4: snapping can move two distinct nodes to within EPSILON
+		// of each other (for example both onto nearby spots of one edge).
+		// Such pairs are re-merged, and merged representatives are
+		// re-snapped with the merged face union so the final coordinate
+		// is again a single feature decision.
+		std::vector<int> node_remap;
+		MergeSnappedNodes(node_positions, node_snap_class, node_faces_a, node_faces_b, node_remap);
+
+		// Pass 5: write node coordinates back. All endpoints of one node
+		// are bit-identical by construction.
+		for (size_t i = 0; i < segments.size(); ++i)
+		{
+			segments[i].p0 = node_positions[node_remap[segment_nodes[i].first]];
+			segments[i].p1 = node_positions[node_remap[segment_nodes[i].second]];
+		}
+
+		// Pass 6: drop segments that collapsed to zero length. These
+		// would otherwise seed degenerate constraint edges in CDT.
 		size_t before = segments.size();
 		segments.erase(
 			std::remove_if(segments.begin(), segments.end(),
@@ -2483,82 +2501,355 @@ namespace RGO
 
 		size_t removed = before - segments.size();
 		std::cout << "[Info] CanonicalizeSegments: " << canonical_snap_count
-			<< " endpoints snapped to features, " << removed
+			<< " nodes snapped to features, " << removed
 			<< " degenerate segments removed, " << segments.size()
 			<< " segments remain." << std::endl;
 	}
 
-	bool OperatorIntersectionLoops::TrySnapToFaceVertex(
-		const Eigen::Vector3f& p,
-		const Mesh* mesh,
-		int face_index,
-		Eigen::Vector3f& out_point) const
+	void OperatorIntersectionLoops::GatherNodeFaces(
+		const std::vector<std::pair<int, int>>& segment_nodes,
+		size_t node_count,
+		std::vector<std::vector<int>>& out_faces_a,
+		std::vector<std::vector<int>>& out_faces_b) const
 	{
-		Eigen::Vector3f v0, v1, v2;
-		mesh->GetFaceVertices(mesh->face_handle(face_index), v0, v1, v2);
+		out_faces_a.assign(node_count, std::vector<int>());
+		out_faces_b.assign(node_count, std::vector<int>());
 
-		const Eigen::Vector3f* verts[3] = { &v0, &v1, &v2 };
-
-		// Pick the nearest vertex within tolerance, not the first match,
-		// so the snap is deterministic when two vertices are both close.
-		float best_d2 = EPSILON * EPSILON;
-		int best = -1;
-		for (int i = 0; i < 3; ++i)
+		for (size_t i = 0; i < segments.size(); ++i)
 		{
-			float d2 = (p - *verts[i]).squaredNorm();
-			if (d2 < best_d2)
+			const int nodes[2] = { segment_nodes[i].first, segment_nodes[i].second };
+			for (int e = 0; e < 2; ++e)
 			{
-				best_d2 = d2;
-				best = i;
+				out_faces_a[nodes[e]].push_back(segments[i].face_a);
+				out_faces_b[nodes[e]].push_back(segments[i].face_b);
 			}
 		}
 
-		if (best < 0) return false;
+		// Sorted unique lists make the snap scan order deterministic,
+		// which keeps tie-breaking on equal distances deterministic too.
+		auto sort_unique = [](std::vector<int>& v)
+			{
+				std::sort(v.begin(), v.end());
+				v.erase(std::unique(v.begin(), v.end()), v.end());
+			};
 
-		out_point = *verts[best];
-		return true;
+		for (size_t n = 0; n < node_count; ++n)
+		{
+			sort_unique(out_faces_a[n]);
+			sort_unique(out_faces_b[n]);
+		}
 	}
 
-	bool OperatorIntersectionLoops::TrySnapToFaceEdge(
+	bool OperatorIntersectionLoops::SnapPointToNearestVertex(
 		const Eigen::Vector3f& p,
-		const Mesh* mesh,
-		int face_index,
+		const std::vector<int>& faces_a,
+		const std::vector<int>& faces_b,
 		Eigen::Vector3f& out_point) const
 	{
-		Eigen::Vector3f v0, v1, v2;
-		mesh->GetFaceVertices(mesh->face_handle(face_index), v0, v1, v2);
-
-		const Eigen::Vector3f* ea[3] = { &v0, &v1, &v2 };
-		const Eigen::Vector3f* eb[3] = { &v1, &v2, &v0 };
-
-		// Pick the nearest edge projection within tolerance
+		// Nearest vertex within EPSILON across ALL incident faces of both
+		// meshes. Strict less-than keeps the first candidate on exact
+		// ties, and the scan order is deterministic (sorted face lists,
+		// fixed mesh order A then B).
 		float best_d2 = EPSILON * EPSILON;
-		Eigen::Vector3f best_proj = Eigen::Vector3f::Zero();
 		bool found = false;
 
-		for (int i = 0; i < 3; ++i)
-		{
-			Eigen::Vector3f ab = *eb[i] - *ea[i];
-			float l2 = ab.squaredNorm();
-			if (l2 < EPSILON * EPSILON) continue;
-
-			float t = (p - *ea[i]).dot(ab) / l2;
-			t = std::max(0.0f, std::min(1.0f, t));
-
-			Eigen::Vector3f proj = *ea[i] + t * ab;
-			float d2 = (p - proj).squaredNorm();
-			if (d2 < best_d2)
+		auto scan = [&](const Mesh* mesh, const std::vector<int>& faces)
 			{
-				best_d2 = d2;
-				best_proj = proj;
-				found = true;
+				for (int f : faces)
+				{
+					Eigen::Vector3f v0, v1, v2;
+					mesh->GetFaceVertices(mesh->face_handle(f), v0, v1, v2);
+					const Eigen::Vector3f* verts[3] = { &v0, &v1, &v2 };
+
+					for (int i = 0; i < 3; ++i)
+					{
+						float d2 = (p - *verts[i]).squaredNorm();
+						if (d2 < best_d2)
+						{
+							best_d2 = d2;
+							out_point = *verts[i];
+							found = true;
+						}
+					}
+				}
+			};
+
+		scan(meshA, faces_a);
+		scan(meshB, faces_b);
+		return found;
+	}
+
+	bool OperatorIntersectionLoops::SnapPointToNearestEdge(
+		const Eigen::Vector3f& p,
+		const std::vector<int>& faces_a,
+		const std::vector<int>& faces_b,
+		Eigen::Vector3f& out_point) const
+	{
+		// Nearest edge projection within EPSILON across ALL incident
+		// faces of both meshes, deterministic for the same reasons as
+		// the vertex scan.
+		float best_d2 = EPSILON * EPSILON;
+		bool found = false;
+
+		auto scan = [&](const Mesh* mesh, const std::vector<int>& faces)
+			{
+				for (int f : faces)
+				{
+					Eigen::Vector3f v0, v1, v2;
+					mesh->GetFaceVertices(mesh->face_handle(f), v0, v1, v2);
+
+					const Eigen::Vector3f* ea[3] = { &v0, &v1, &v2 };
+					const Eigen::Vector3f* eb[3] = { &v1, &v2, &v0 };
+
+					for (int i = 0; i < 3; ++i)
+					{
+						Eigen::Vector3f ab = *eb[i] - *ea[i];
+						float l2 = ab.squaredNorm();
+						if (l2 < EPSILON * EPSILON) continue;
+
+						float t = (p - *ea[i]).dot(ab) / l2;
+						t = std::max(0.0f, std::min(1.0f, t));
+
+						Eigen::Vector3f proj = *ea[i] + t * ab;
+						float d2 = (p - proj).squaredNorm();
+						if (d2 < best_d2)
+						{
+							best_d2 = d2;
+							out_point = proj;
+							found = true;
+						}
+					}
+				}
+			};
+
+		scan(meshA, faces_a);
+		scan(meshB, faces_b);
+		return found;
+	}
+
+	OperatorIntersectionLoops::SnapClass OperatorIntersectionLoops::SnapNodePosition(
+		const Eigen::Vector3f& p,
+		const std::vector<int>& faces_a,
+		const std::vector<int>& faces_b,
+		Eigen::Vector3f& out_point) const
+	{
+		// Vertex candidates win over edge candidates: a vertex is the
+		// most constrained feature. The decision is iterated because an
+		// edge snap can move the point into the EPSILON ball of a vertex
+		// that the raw position was just outside of; the vertex must then
+		// win. Vertex snaps are absorbing and a point lying on an edge
+		// re-selects that edge at distance zero, so the iteration reaches
+		// a fixed point in at most two steps: free -> edge -> vertex.
+		Eigen::Vector3f current = p;
+		SnapClass cls = SnapClass::Free;
+
+		for (int iter = 0; iter < 2; ++iter)
+		{
+			Eigen::Vector3f snapped;
+			if (SnapPointToNearestVertex(current, faces_a, faces_b, snapped))
+			{
+				out_point = snapped;
+				return SnapClass::Vertex;
+			}
+			if (false == SnapPointToNearestEdge(current, faces_a, faces_b, snapped))
+			{
+				break;
+			}
+			current = snapped;
+			cls = SnapClass::Edge;
+		}
+
+		out_point = current;
+		return cls;
+	}
+
+	void OperatorIntersectionLoops::MergeSnappedNodes(
+		std::vector<Eigen::Vector3f>& node_positions,
+		std::vector<SnapClass>& node_snap_class,
+		std::vector<std::vector<int>>& node_faces_a,
+		std::vector<std::vector<int>>& node_faces_b,
+		std::vector<int>& out_node_remap) const
+	{
+		size_t node_count = node_positions.size();
+		out_node_remap.assign(node_count, -1);
+
+		// Representatives are registered in class priority order so a
+		// vertex-snapped node can never be absorbed by an edge-snapped or
+		// free node: the most constrained coordinate always survives.
+		std::vector<int> order(node_count);
+		std::iota(order.begin(), order.end(), 0);
+		std::stable_sort(order.begin(), order.end(),
+			[&](int a, int b)
+			{
+				return static_cast<int>(node_snap_class[a]) > static_cast<int>(node_snap_class[b]);
+			});
+
+		robin_hood::unordered_map<Eigen::Vector3i, std::vector<int>, Int3Hash, Int3Equal> cell_to_reps;
+		std::vector<char> rep_dirty(node_count, 0);
+		std::vector<int> dirty_reps;
+
+		auto merge_faces = [](std::vector<int>& target, const std::vector<int>& source)
+			{
+				target.insert(target.end(), source.begin(), source.end());
+				std::sort(target.begin(), target.end());
+				target.erase(std::unique(target.begin(), target.end()), target.end());
+			};
+
+		size_t merged_count = 0;
+
+		for (int n : order)
+		{
+			const Eigen::Vector3f& p = node_positions[n];
+			Eigen::Vector3i cell = QuantizePoint(p);
+
+			// 27-cell scan, nearest representative within EPSILON, same
+			// rationale as WeldEndpoint.
+			int best_rep = -1;
+			float best_d2 = EPSILON * EPSILON;
+
+			for (int dz = -1; dz <= 1; ++dz)
+			{
+				for (int dy = -1; dy <= 1; ++dy)
+				{
+					for (int dx = -1; dx <= 1; ++dx)
+					{
+						auto it = cell_to_reps.find(Eigen::Vector3i(cell.x() + dx, cell.y() + dy, cell.z() + dz));
+						if (it == cell_to_reps.end()) continue;
+
+						for (int rep : it->second)
+						{
+							float d2 = (node_positions[rep] - p).squaredNorm();
+							if (d2 < best_d2)
+							{
+								best_d2 = d2;
+								best_rep = rep;
+							}
+						}
+					}
+				}
+			}
+
+			if (best_rep >= 0)
+			{
+				out_node_remap[n] = best_rep;
+				++merged_count;
+
+				// The representative inherits the member's incident faces
+				// and is re-snapped below with the merged union, so the
+				// final coordinate reflects one decision over all faces.
+				merge_faces(node_faces_a[best_rep], node_faces_a[n]);
+				merge_faces(node_faces_b[best_rep], node_faces_b[n]);
+				if (0 == rep_dirty[best_rep])
+				{
+					rep_dirty[best_rep] = 1;
+					dirty_reps.push_back(best_rep);
+				}
+				continue;
+			}
+
+			out_node_remap[n] = n;
+			cell_to_reps[cell].push_back(n);
+		}
+
+		// Re-snap merged representatives once. Vertex snaps are absorbing
+		// and edge re-selection at distance zero is stable, so one pass
+		// reaches the fixed point. Residual sub-EPSILON proximities that
+		// could in principle remain are exactly what ConstraintSpacing
+		// validates afterwards.
+		for (int rep : dirty_reps)
+		{
+			Eigen::Vector3f snapped;
+			SnapClass cls = SnapNodePosition(node_positions[rep], node_faces_a[rep], node_faces_b[rep], snapped);
+			if (SnapClass::Free != cls)
+			{
+				node_positions[rep] = snapped;
+				node_snap_class[rep] = cls;
 			}
 		}
 
-		if (false == found) return false;
+		if (merged_count > 0)
+		{
+			std::cout << "[Info] MergeSnappedNodes: " << merged_count
+				<< " nodes merged after snapping, " << dirty_reps.size()
+				<< " representatives re-snapped with merged face unions." << std::endl;
+		}
+	}
 
-		out_point = best_proj;
-		return true;
+	bool OperatorIntersectionLoops::ValidateCanonicalIdempotence()
+	{
+		// One snap decision exists per canonical point, so re-running the
+		// node-level snap on a canonical coordinate must return that same
+		// coordinate: a point on a vertex re-selects the vertex and a
+		// point on an edge re-selects that edge, both at distance zero.
+		// The only residual movement is float rounding of the edge
+		// re-projection (a + t * ab), a few ULPs: at coordinate magnitude
+		// 50 one ULP is already 3.8e-6. The tolerance of half EPSILON is
+		// far above ULP noise but strict enough that any real second
+		// feature decision (about EPSILON of movement) still fails loudly.
+		const float move_tol = 0.5f * EPSILON;
+		const float move_tol2 = move_tol * move_tol;
+
+		// Bit-identical endpoint clusters with their incident face
+		// unions. After MergeSnappedNodes these clusters correspond
+		// one-to-one to the final nodes, so the union gathered here is
+		// exactly the information the node-level snap consumed.
+		struct PointFaces
+		{
+			std::vector<int> faces_a;
+			std::vector<int> faces_b;
+		};
+
+		robin_hood::unordered_map<Eigen::Vector3f, PointFaces, Vector3fBitHash, Vector3fBitEqual> clusters;
+		clusters.reserve(segments.size() * 2);
+
+		for (const auto& seg : segments)
+		{
+			const Eigen::Vector3f* endpoints[2] = { &seg.p0, &seg.p1 };
+			for (int e = 0; e < 2; ++e)
+			{
+				PointFaces& pf = clusters[*endpoints[e]];
+				pf.faces_a.push_back(seg.face_a);
+				pf.faces_b.push_back(seg.face_b);
+			}
+		}
+
+		auto sort_unique = [](std::vector<int>& v)
+			{
+				std::sort(v.begin(), v.end());
+				v.erase(std::unique(v.begin(), v.end()), v.end());
+			};
+
+		size_t failures = 0;
+		float max_move = 0.0f;
+
+		for (auto& kvp : clusters)
+		{
+			sort_unique(kvp.second.faces_a);
+			sort_unique(kvp.second.faces_b);
+
+			Eigen::Vector3f again;
+			SnapNodePosition(kvp.first, kvp.second.faces_a, kvp.second.faces_b, again);
+
+			float moved2 = (again - kvp.first).squaredNorm();
+			max_move = std::max(max_move, std::sqrt(moved2));
+
+			if (moved2 > move_tol2)
+			{
+				++failures;
+				std::cout << "[Error] CanonicalIdempotence: canonical point ("
+					<< kvp.first.x() << ", " << kvp.first.y() << ", " << kvp.first.z()
+					<< ") moved by " << std::sqrt(moved2)
+					<< " on re-snap (tolerance " << move_tol
+					<< "). The node-level snap is not at a fixed point." << std::endl;
+			}
+		}
+
+		std::cout << "[Info] CanonicalIdempotence: " << clusters.size()
+			<< " canonical points checked, max re-snap movement "
+			<< max_move << " (tolerance " << move_tol << ")." << std::endl;
+
+		canonical_validation_failure_count += failures;
+		return 0 == failures;
 	}
 
 	bool OperatorIntersectionLoops::ValidateCanonicalization()
@@ -2585,60 +2876,6 @@ namespace RGO
 				<< " invariant violations. CDT input safety is not guaranteed." << std::endl;
 		}
 		return ok;
-	}
-
-	bool OperatorIntersectionLoops::ValidateCanonicalIdempotence()
-	{
-		// Re-applying CanonicalizePoint to a canonical endpoint may move it
-		// by a few float ULPs: edge re-projection (a + t * ab) rounds, and
-		// adjacent faces sharing the same geometric edge fetch its vertices
-		// in different order, rounding differently. At coordinate magnitude
-		// 50, one ULP is already 3.8e-6, so an absolute tolerance below
-		// that is physically unsatisfiable in float.
-		//
-		// The invariant that actually matters is that re-canonicalization
-		// cannot flip any identity decision: movement strictly below half
-		// of EPSILON can neither split a welded pair (< EPSILON) nor merge
-		// a separated pair (>= EPSILON). Genuine snap-weld interference
-		// moves points by about EPSILON and is still caught.
-		const float move_tol = 0.5f * EPSILON;
-		const float move_tol2 = move_tol * move_tol;
-
-		size_t failures = 0;
-		float max_move = 0.0f;
-
-		for (size_t i = 0; i < segments.size(); ++i)
-		{
-			const IntersectionSegment& seg = segments[i];
-			const Eigen::Vector3f* endpoints[2] = { &seg.p0, &seg.p1 };
-
-			for (int e = 0; e < 2; ++e)
-			{
-				bool snapped = false;
-				Eigen::Vector3f again = CanonicalizePoint(*endpoints[e], seg.face_a, seg.face_b, snapped);
-
-				float moved2 = (again - *endpoints[e]).squaredNorm();
-				max_move = std::max(max_move, std::sqrt(moved2));
-
-				if (moved2 > move_tol2)
-				{
-					++failures;
-					std::cout << "[Error] CanonicalIdempotence: segment " << i
-						<< " endpoint " << e << " moved by " << std::sqrt(moved2)
-						<< " on re-canonicalization (tolerance " << move_tol
-						<< "). Snap and weld tolerances interfere." << std::endl;
-				}
-			}
-		}
-
-		// Max movement is reported even on success: a creeping increase
-		// toward the tolerance is an early warning that coordinate
-		// magnitudes are getting too large for float precision vs EPSILON.
-		std::cout << "[Info] CanonicalIdempotence: max re-canonicalization movement "
-			<< max_move << " (tolerance " << move_tol << ")." << std::endl;
-
-		canonical_validation_failure_count += failures;
-		return 0 == failures;
 	}
 
 	bool OperatorIntersectionLoops::ValidateNoDegenerateSegments()
@@ -2923,45 +3160,6 @@ namespace RGO
 		}
 
 		return 0 == invalid;
-	}
-
-	Eigen::Vector3f OperatorIntersectionLoops::CanonicalizePoint(
-		const Eigen::Vector3f& p,
-		int face_a,
-		int face_b,
-		bool& out_snapped) const
-	{
-		// Priority order matters and must be globally consistent:
-		// vertex of A, vertex of B, edge of A, edge of B, then free point.
-		// A vertex is the most constrained feature, so it wins over an edge.
-		// Without a fixed priority, two segments sharing one logical point
-		// could canonicalize it to two slightly different coordinates,
-		// which is exactly the degenerate-CDT-input failure mode.
-		Eigen::Vector3f snapped;
-
-		if (TrySnapToFaceVertex(p, meshA, face_a, snapped))
-		{
-			out_snapped = true;
-			return snapped;
-		}
-		if (TrySnapToFaceVertex(p, meshB, face_b, snapped))
-		{
-			out_snapped = true;
-			return snapped;
-		}
-		if (TrySnapToFaceEdge(p, meshA, face_a, snapped))
-		{
-			out_snapped = true;
-			return snapped;
-		}
-		if (TrySnapToFaceEdge(p, meshB, face_b, snapped))
-		{
-			out_snapped = true;
-			return snapped;
-		}
-
-		out_snapped = false;
-		return p;
 	}
 
 	void OperatorIntersectionLoops::DumpEndpointNeighborhood(const Eigen::Vector3f& p, const char* tag) const
