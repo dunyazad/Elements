@@ -35,7 +35,7 @@ public:
 		//LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\rabbit.stl");
 		mesh_a.BuildSineWaveBox(
 			Eigen::Vector3f::Zero(),
-			Eigen::Vector3f(60.0f, 12.0f, 4.0f),
+			Eigen::Vector3f(80.0f, 12.0f, 4.0f),
 			1.5f, 4.0f, 120, 12,
 			Eigen::MakeTransform(
 				Eigen::Vector3f(25.0f, 0.0f, 0.0f),
@@ -50,7 +50,7 @@ public:
 		//LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\A_Tooth.stl");
 		//LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\Doughnut.stl");
 		//LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\rabbit_upside_down.stl");
-		mesh_b.Build3DText("Hello 안녕 123 !@#", "..\\..\\res\\Fonts\\NanumGothic\\NanumGothic.ttf", 6.0f, 5.0f);
+		mesh_b.Build3DText("Hello 안녕 123 !@# 漢字", "..\\..\\res\\Fonts\\NanumGothic\\NanumGothic.ttf", 6.0f, 5.0f);
 		TE(LoadingMesh_B);
 
 		TS(BuildSpatialHashMap_A);
