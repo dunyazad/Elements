@@ -746,4 +746,181 @@ namespace RGO
 		OpenMesh::FaceHandle fh;
 		Eigen::Vector3f hit_point;
 	};
+
+	class OperatorRemesh : public Operator
+	{
+	public:
+		// Per-pass enable flags, so a single pass can be isolated and its
+		// effect on the invariants observed in the log. Default is all on.
+		struct PassFlags
+		{
+			bool split = true;
+			bool collapse = true;
+			bool flip = true;
+			bool relax = true;
+		};
+
+		// target_edge_length is an absolute world-space length. Edges longer
+		// than 4/3 of it are split, shorter than 4/5 are collapsed, so the
+		// post-remesh edge lengths concentrate around target_edge_length.
+		// iterations is the number of split/collapse/flip/relax rounds.
+		// feature_angle_degree is the dihedral angle above which an interior
+		// edge is treated as a sharp feature and preserved.
+		OperatorRemesh(
+			Mesh* target,
+			float target_edge_length,
+			int iterations,
+			float feature_angle_degree,
+			const PassFlags& passes = PassFlags());
+
+		virtual bool Execute() override;
+
+		size_t GetSplitCount() const { return total_split_count; }
+		size_t GetCollapseCount() const { return total_collapse_count; }
+		size_t GetFlipCount() const { return total_flip_count; }
+		size_t GetFeatureEdgeCount() const { return feature_edge_count; }
+
+		// Detected feature edges as endpoint pairs, for visualization.
+		void GetFeatureEdgeLines(std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>>& out_lines) const;
+
+		// Vertices flagged by the last ValidateFeatureParity call, for
+		// visualization as spheres.
+		const std::vector<Eigen::Vector3f>& GetBadFeatureVertices() const { return bad_feature_vertices; }
+
+		// Centroids flagged by the last CountFlippedFaces call.
+		const std::vector<Eigen::Vector3f>& GetFlippedFaceCenters() const { return flipped_face_centers; }
+
+	protected:
+		enum VertexFeature
+		{
+			// Interior vertex: free to move on the tangent plane.
+			VertexFree = 0,
+
+			// On exactly two feature edges meeting smoothly: may slide
+			// along the feature-curve tangent only.
+			VertexOnFeature = 1,
+
+			// A feature curve junction, endpoint, or a sharp bend in a
+			// feature curve: pinned, never moved.
+			VertexCorner = 2
+		};
+
+		// Pass 0, once before iterating: freeze the input surface as the
+		// reprojection target so smoothing cannot accumulate shrinkage.
+		void BuildReferenceSnapshot();
+
+		// Pass 0: flag feature edges (dihedral over threshold, plus all
+		// boundary edges) and classify each vertex.
+		void DetectFeatureEdges();
+		void ClassifyFeatureVertex(OpenMesh::VertexHandle vh, float corner_cos_threshold);
+
+		// Closest point on the original surface to p. Used to keep relaxed
+		// interior vertices on the input shape. Returns false if empty.
+		bool ReprojectToReference(const Eigen::Vector3f& p, Eigen::Vector3f& out_point) const;
+
+		// The four operators. Split/collapse/flip return their edit count.
+		size_t SplitLongEdges();
+		bool CollapseRingStaysValid(
+			OpenMesh::VertexHandle v_ring,
+			OpenMesh::VertexHandle v_from,
+			OpenMesh::VertexHandle v_to,
+			const Eigen::Vector3f& survivor) const;
+		bool CollapseKeepsFacesValid(
+			OpenMesh::VertexHandle v_from,
+			OpenMesh::VertexHandle v_to,
+			const Eigen::Vector3f& survivor) const;
+		size_t CollapseShortEdges();
+		bool FlipPreservesOrientation(
+			OpenMesh::VertexHandle va,
+			OpenMesh::VertexHandle vb,
+			OpenMesh::VertexHandle vc,
+			OpenMesh::VertexHandle vd) const;
+		size_t FlipToImproveValence();
+		bool RelaxMoveKeepsFacesValid(
+			OpenMesh::VertexHandle vh,
+			const Eigen::Vector3f& new_pos) const;
+		bool ComputeRelaxTarget(
+			OpenMesh::VertexHandle vh,
+			int cls,
+			Eigen::Vector3f& out_target) const;
+		void TangentialRelaxation();
+
+		int TargetValence(OpenMesh::VertexHandle vh) const;
+
+		// Verification, callable after any pass. Each returns a violation
+		// count (0 == clean) and logs the first few offenders.
+		size_t ValidateManifold(const char* stage_label) const;
+		size_t ValidateFeatureParity(const char* stage_label) const;
+		bool FaceNormalAndCentroid(
+			OpenMesh::FaceHandle fh,
+			Eigen::Vector3f& out_normal,
+			Eigen::Vector3f& out_centroid) const;
+		size_t CountFlippedFaces(const char* stage_label) const;
+		size_t CountBoundaryEdges() const;
+
+		// Runs the full invariant suite after a stage and returns true when
+		// all hold. boundary_expected is the input boundary count that must
+		// be preserved (0 for a closed solid).
+		bool ValidateStage(const char* stage_label, size_t boundary_expected) const;
+
+		void DiagnoseFeatureOnlyFaces(const char* stage_label) const;
+
+		float TriangleAspectRatio(
+			const Eigen::Vector3f& a,
+			const Eigen::Vector3f& b,
+			const Eigen::Vector3f& c) const;
+
+		void DiagnoseSurfaceDeviation(const char* stage_label) const;
+
+		bool ClosestPointOnReference(
+			const Eigen::Vector3f& p,
+			Eigen::Vector3f& out_point) const;
+
+		bool ReferenceNormalAt(
+			const Eigen::Vector3f& p,
+			Eigen::Vector3f& out_normal) const;
+
+		float MinAngleOfTwoTriangles(
+			const Eigen::Vector3f& a,
+			const Eigen::Vector3f& b,
+			const Eigen::Vector3f& c,
+			const Eigen::Vector3f& d) const;
+
+		bool VertexRingHasFold(OpenMesh::VertexHandle vh) const;
+
+		bool SplitKeepsFacesValid(
+			OpenMesh::EdgeHandle eh,
+			const Eigen::Vector3f& new_pos) const;
+
+		Mesh* meshTarget = nullptr;
+		float target_edge_length = 0.0f;
+		float edge_high = 0.0f;
+		float edge_low = 0.0f;
+		int iterations = 0;
+		float feature_angle_degree = 0.0f;
+		float corner_cos_threshold = 0.0f;
+		PassFlags passes;
+
+		Mesh reference_mesh;
+
+		OpenMesh::EPropHandleT<bool> prop_edge_feature;
+		OpenMesh::VPropHandleT<int> prop_vertex_feature;
+
+		size_t input_boundary_count = 0;
+		size_t total_split_count = 0;
+		size_t total_collapse_count = 0;
+		size_t total_flip_count = 0;
+		size_t feature_edge_count = 0;
+
+		// Positions of vertices that failed the most recent feature-parity
+		// check (degree != 2 but not pinned as a corner). Collected for
+		// external visualization. Cleared at the start of each check.
+		mutable std::vector<Eigen::Vector3f> bad_feature_vertices;
+
+		// Centroids of faces flagged by the last CountFlippedFaces call,
+		// for visualization. Cleared at the start of each call.
+		mutable std::vector<Eigen::Vector3f> flipped_face_centers;
+
+		mutable std::vector<Eigen::Vector3f> prev_stage_fold_mids;
+	};
 }

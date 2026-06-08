@@ -4920,4 +4920,1563 @@ namespace RGO
 		// to that scale explain non-manifold verdicts seen only there.
 		return ValidateTriangleSoup(points, indices, label, 100.0f * EPSILON);
 	}
+
+	// File-local: closest point on a triangle to p (Ericson's method).
+	static Eigen::Vector3f ClosestPointOnTriangle(
+		const Eigen::Vector3f& p,
+		const Eigen::Vector3f& a,
+		const Eigen::Vector3f& b,
+		const Eigen::Vector3f& c)
+	{
+		Eigen::Vector3f ab = b - a;
+		Eigen::Vector3f ac = c - a;
+		Eigen::Vector3f ap = p - a;
+
+		float d1 = ab.dot(ap);
+		float d2 = ac.dot(ap);
+		if (d1 <= 0.0f && d2 <= 0.0f) return a;
+
+		Eigen::Vector3f bp = p - b;
+		float d3 = ab.dot(bp);
+		float d4 = ac.dot(bp);
+		if (d3 >= 0.0f && d4 <= d3) return b;
+
+		float vc = d1 * d4 - d3 * d2;
+		if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
+		{
+			float v = d1 / (d1 - d3);
+			return a + v * ab;
+		}
+
+		Eigen::Vector3f cp = p - c;
+		float d5 = ab.dot(cp);
+		float d6 = ac.dot(cp);
+		if (d6 >= 0.0f && d5 <= d6) return c;
+
+		float vb = d5 * d2 - d1 * d6;
+		if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
+		{
+			float w = d2 / (d2 - d6);
+			return a + w * ac;
+		}
+
+		float va = d3 * d6 - d5 * d4;
+		if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
+		{
+			float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+			return b + w * (c - b);
+		}
+
+		float denom = 1.0f / (va + vb + vc);
+		float v = vb * denom;
+		float w = vc * denom;
+		return a + ab * v + ac * w;
+	}
+
+	OperatorRemesh::OperatorRemesh(
+		Mesh* target,
+		float target_edge_length,
+		int iterations,
+		float feature_angle_degree,
+		const PassFlags& passes)
+		: meshTarget(target)
+		, target_edge_length(target_edge_length)
+		, edge_high(4.0f / 3.0f * target_edge_length)
+		, edge_low(4.0f / 5.0f * target_edge_length)
+		, iterations(iterations)
+		, feature_angle_degree(feature_angle_degree)
+		, passes(passes)
+	{
+	}
+
+	void OperatorRemesh::BuildReferenceSnapshot()
+	{
+		std::vector<Eigen::Vector3f> points;
+		std::vector<Eigen::Vector3i> indices;
+		ExtractMeshSoup(meshTarget, points, indices);
+
+		reference_mesh.clear();
+		reference_mesh.Build(points, indices);
+	}
+
+	void OperatorRemesh::ClassifyFeatureVertex(OpenMesh::VertexHandle vh, float corner_threshold)
+	{
+		Eigen::Vector3f p(meshTarget->point(vh).data());
+
+		Eigen::Vector3f dir_first = Eigen::Vector3f::Zero();
+		Eigen::Vector3f dir_second = Eigen::Vector3f::Zero();
+		int feature_count = 0;
+
+		for (auto voh_it = meshTarget->voh_iter(vh); voh_it.is_valid(); ++voh_it)
+		{
+			OpenMesh::EdgeHandle e = meshTarget->edge_handle(*voh_it);
+			if (false == meshTarget->property(prop_edge_feature, e)) continue;
+
+			Eigen::Vector3f pn(meshTarget->point(meshTarget->to_vertex_handle(*voh_it)).data());
+			Eigen::Vector3f dir = pn - p;
+			float len = dir.norm();
+			if (len < 1e-12f) continue;
+			dir /= len;
+
+			if (0 == feature_count) dir_first = dir;
+			else if (1 == feature_count) dir_second = dir;
+			++feature_count;
+		}
+
+		int cls = VertexFree;
+		if (2 == feature_count)
+		{
+			// Straight curve: outgoing directions nearly opposite (dot ~ -1).
+			// A sharp bend pushes the dot above the corner threshold: pin it.
+			float d = dir_first.dot(dir_second);
+			cls = (d > corner_threshold) ? VertexCorner : VertexOnFeature;
+		}
+		else if (feature_count > 0)
+		{
+			// Endpoint (1) or junction (3+): always pinned.
+			cls = VertexCorner;
+		}
+
+		meshTarget->property(prop_vertex_feature, vh) = cls;
+	}
+
+	void OperatorRemesh::DetectFeatureEdges()
+	{
+		feature_edge_count = 0;
+
+		const float cos_threshold = std::cos(feature_angle_degree * static_cast<float>(M_PI) / 180.0f);
+		corner_cos_threshold = -cos_threshold;
+
+		for (size_t i = 0; i < meshTarget->n_edges(); ++i)
+		{
+			OpenMesh::EdgeHandle eh = meshTarget->edge_handle(static_cast<int>(i));
+			if (meshTarget->status(eh).deleted()) continue;
+
+			bool is_feature = false;
+
+			if (meshTarget->is_boundary(eh))
+			{
+				is_feature = true;
+			}
+			else
+			{
+				OpenMesh::HalfedgeHandle h0 = meshTarget->halfedge_handle(eh, 0);
+				OpenMesh::HalfedgeHandle h1 = meshTarget->halfedge_handle(eh, 1);
+
+				Eigen::Vector3f a0, a1, a2;
+				Eigen::Vector3f b0, b1, b2;
+				meshTarget->GetFaceVertices(meshTarget->face_handle(h0), a0, a1, a2);
+				meshTarget->GetFaceVertices(meshTarget->face_handle(h1), b0, b1, b2);
+
+				Eigen::Vector3f n0 = (a1 - a0).cross(a2 - a0);
+				Eigen::Vector3f n1 = (b1 - b0).cross(b2 - b0);
+				float l0 = n0.norm();
+				float l1 = n1.norm();
+				if (l0 > 1e-12f && l1 > 1e-12f)
+				{
+					float cos_angle = (n0 / l0).dot(n1 / l1);
+					if (cos_angle < cos_threshold) is_feature = true;
+				}
+			}
+
+			meshTarget->property(prop_edge_feature, eh) = is_feature;
+			if (is_feature) ++feature_edge_count;
+		}
+
+		for (size_t i = 0; i < meshTarget->n_vertices(); ++i)
+		{
+			OpenMesh::VertexHandle vh = meshTarget->vertex_handle(static_cast<int>(i));
+			if (meshTarget->status(vh).deleted()) continue;
+			ClassifyFeatureVertex(vh, corner_cos_threshold);
+		}
+
+		std::cout << "[Info] DetectFeatureEdges: " << feature_edge_count
+			<< " feature edges at dihedral angle > " << feature_angle_degree
+			<< " degrees." << std::endl;
+	}
+
+	bool OperatorRemesh::ReprojectToReference(const Eigen::Vector3f& p, Eigen::Vector3f& out_point) const
+	{
+		float radius = std::max(target_edge_length, 10.0f * EPSILON);
+
+		std::vector<int> candidates;
+		for (int attempt = 0; attempt < 8; ++attempt)
+		{
+			Eigen::Vector3f pad(radius, radius, radius);
+			reference_mesh.QueryOverlappingFaces(p - pad, p + pad, candidates);
+			if (false == candidates.empty()) break;
+			radius *= 2.0f;
+		}
+
+		if (candidates.empty())
+		{
+			out_point = p;
+			return false;
+		}
+
+		// Nearest reference face by clamped closest-point distance.
+		float best_d2 = std::numeric_limits<float>::max();
+		Eigen::Vector3f best_cp = p;
+		Eigen::Vector3f best_n = Eigen::Vector3f::Zero();
+		Eigen::Vector3f best_v0 = Eigen::Vector3f::Zero();
+		bool found = false;
+
+		for (int f : candidates)
+		{
+			OpenMesh::FaceHandle fh = reference_mesh.face_handle(f);
+			if (reference_mesh.status(fh).deleted()) continue;
+
+			Eigen::Vector3f v0, v1, v2;
+			reference_mesh.GetFaceVertices(fh, v0, v1, v2);
+
+			Eigen::Vector3f cp = ClosestPointOnTriangle(p, v0, v1, v2);
+			float d2 = (cp - p).squaredNorm();
+			if (d2 < best_d2)
+			{
+				Eigen::Vector3f n = (v1 - v0).cross(v2 - v0);
+				float nl = n.norm();
+				if (nl < 1e-12f) continue;
+
+				best_d2 = d2;
+				best_cp = cp;
+				best_n = n / nl;
+				best_v0 = v0;
+				found = true;
+			}
+		}
+
+		if (false == found)
+		{
+			out_point = p;
+			return false;
+		}
+
+		// Decide flat vs curved from the local reference normals. A flat
+		// region (the glyph walls and faces) has all nearby reference
+		// faces sharing the nearest face's normal: plane projection there
+		// keeps the wall dead flat and stops the ripple. A curved region
+		// (the round pillar of an 'l', the sine-wave top) has normals that
+		// fan out: plane projection onto a chord pulls the surface inward
+		// and the pillar caves in, so the clamped closest point, which
+		// stays ON the reference surface, is correct there.
+		bool flat = true;
+		for (int f : candidates)
+		{
+			OpenMesh::FaceHandle fh = reference_mesh.face_handle(f);
+			if (reference_mesh.status(fh).deleted()) continue;
+
+			Eigen::Vector3f v0, v1, v2;
+			reference_mesh.GetFaceVertices(fh, v0, v1, v2);
+
+			Eigen::Vector3f cp = ClosestPointOnTriangle(p, v0, v1, v2);
+			if ((cp - p).squaredNorm() > best_d2 + target_edge_length * target_edge_length) continue;
+
+			Eigen::Vector3f n = (v1 - v0).cross(v2 - v0);
+			float nl = n.norm();
+			if (nl < 1e-12f) continue;
+			n /= nl;
+
+			if (best_n.dot(n) < 0.98f) { flat = false; break; }
+		}
+
+		if (flat)
+		{
+			float signed_dist = (p - best_v0).dot(best_n);
+			out_point = p - signed_dist * best_n;
+		}
+		else
+		{
+			out_point = best_cp;
+		}
+		return true;
+	}
+
+	int OperatorRemesh::TargetValence(OpenMesh::VertexHandle vh) const
+	{
+		int cls = meshTarget->property(prop_vertex_feature, vh);
+		if (VertexFree == cls && false == meshTarget->is_boundary(vh))
+		{
+			return 6;
+		}
+		return 4;
+	}
+
+	size_t OperatorRemesh::SplitLongEdges()
+	{
+		std::vector<int> long_edges;
+		for (size_t i = 0; i < meshTarget->n_edges(); ++i)
+		{
+			OpenMesh::EdgeHandle eh = meshTarget->edge_handle(static_cast<int>(i));
+			if (meshTarget->status(eh).deleted()) continue;
+
+			OpenMesh::HalfedgeHandle heh = meshTarget->halfedge_handle(eh, 0);
+			Eigen::Vector3f a(meshTarget->point(meshTarget->from_vertex_handle(heh)).data());
+			Eigen::Vector3f b(meshTarget->point(meshTarget->to_vertex_handle(heh)).data());
+
+			if ((b - a).norm() > edge_high)
+			{
+				long_edges.push_back(static_cast<int>(i));
+			}
+		}
+
+		size_t split_count = 0;
+
+		for (int edge_idx : long_edges)
+		{
+			OpenMesh::EdgeHandle eh = meshTarget->edge_handle(edge_idx);
+			if (meshTarget->status(eh).deleted()) continue;
+
+			OpenMesh::HalfedgeHandle heh = meshTarget->halfedge_handle(eh, 0);
+			OpenMesh::VertexHandle v_from = meshTarget->from_vertex_handle(heh);
+			OpenMesh::VertexHandle v_to = meshTarget->to_vertex_handle(heh);
+
+			Eigen::Vector3f a(meshTarget->point(v_from).data());
+			Eigen::Vector3f b(meshTarget->point(v_to).data());
+			Eigen::Vector3f mid = (a + b) * 0.5f;
+
+			bool edge_is_feature = meshTarget->property(prop_edge_feature, eh);
+
+			// A non-feature edge spanning a curved region is split onto the
+			// original surface. A feature edge is a straight crease segment,
+			// so its midpoint already lies on the feature: no reprojection.
+			Eigen::Vector3f new_pos = mid;
+			if (false == edge_is_feature)
+			{
+				ReprojectToReference(mid, new_pos);
+			}
+
+			// Reject the split if the reprojected midpoint would fold either
+			// incident face. On narrow curved walls the projection can pull
+			// the midpoint across the strip; splitting there is what seeds
+			// the persistent dot -1 folds. Skipping the split leaves the
+			// long edge for a later iteration once relaxation has widened
+			// the local spacing.
+			if (false == SplitKeepsFacesValid(eh, new_pos)) continue;
+
+			OpenMesh::VertexHandle v_new = meshTarget->add_vertex(
+				Mesh::Point(new_pos.x(), new_pos.y(), new_pos.z()));
+			meshTarget->split(eh, v_new);
+			++split_count;
+
+			// Custom properties are not interpolated by split. The new
+			// vertex on a feature edge lies on exactly two feature halves.
+			meshTarget->property(prop_vertex_feature, v_new) =
+				edge_is_feature ? VertexOnFeature : VertexFree;
+
+			// Of the edges now incident to v_new, only the two collinear
+			// halves of the original feature edge inherit the feature flag;
+			// the spokes into the opposite apexes are interior.
+			for (auto voh_it = meshTarget->voh_iter(v_new); voh_it.is_valid(); ++voh_it)
+			{
+				OpenMesh::VertexHandle v_other = meshTarget->to_vertex_handle(*voh_it);
+				OpenMesh::EdgeHandle e_spoke = meshTarget->edge_handle(*voh_it);
+
+				bool collinear = (v_other == v_from) || (v_other == v_to);
+				meshTarget->property(prop_edge_feature, e_spoke) = edge_is_feature && collinear;
+			}
+		}
+
+		return split_count;
+	}
+
+	bool OperatorRemesh::CollapseRingStaysValid(
+		OpenMesh::VertexHandle v_ring,
+		OpenMesh::VertexHandle v_from,
+		OpenMesh::VertexHandle v_to,
+		const Eigen::Vector3f& survivor) const
+	{
+		// Predicts every face of v_ring's one-ring after the collapse. Both
+		// v_from and v_to map to the survivor position; all other corners
+		// keep their current coordinates. A face that contains BOTH v_from
+		// and v_to is destroyed by the collapse and is skipped.
+		for (auto vf_it = meshTarget->vf_iter(v_ring); vf_it.is_valid(); ++vf_it)
+		{
+			OpenMesh::FaceHandle fh = *vf_it;
+			if (meshTarget->status(fh).deleted()) continue;
+
+			bool has_from = false;
+			bool has_to = false;
+			for (auto fv_it = meshTarget->cfv_iter(fh); fv_it.is_valid(); ++fv_it)
+			{
+				if (*fv_it == v_from) has_from = true;
+				if (*fv_it == v_to) has_to = true;
+			}
+
+			// This face disappears in the collapse; it cannot fold.
+			if (has_from && has_to) continue;
+
+			Eigen::Vector3f p_old[3];
+			Eigen::Vector3f p_new[3];
+			int k = 0;
+			for (auto fv_it = meshTarget->cfv_iter(fh); fv_it.is_valid() && k < 3; ++fv_it, ++k)
+			{
+				Eigen::Vector3f pos(meshTarget->point(*fv_it).data());
+				p_old[k] = pos;
+				p_new[k] = ((*fv_it == v_from) || (*fv_it == v_to)) ? survivor : pos;
+			}
+			if (k < 3) continue;
+
+			Eigen::Vector3f n_old = (p_old[1] - p_old[0]).cross(p_old[2] - p_old[0]);
+			Eigen::Vector3f n_new = (p_new[1] - p_new[0]).cross(p_new[2] - p_new[0]);
+
+			if (n_old.dot(n_new) <= 0.0f) return false;
+
+			float area_old = n_old.norm();
+			float area_new = n_new.norm();
+			if (area_new < 0.1f * area_old) return false;
+			if (area_new < 1e-10f) return false;
+
+			// Reference-orientation guard. The before/after dot above only
+			// sees a single step's rotation, which stays positive on a
+			// curved wall even as the face is dragged across the wall onto
+			// the opposite sheet, where it ends up facing INTO the surface.
+			// The same reference test that defines a fold for detection is
+			// applied here predictively: if the post-collapse face opposes
+			// the local reference normal, the collapse is creating exactly
+			// the fold CountFlippedFaces would report, so it is rejected.
+			Eigen::Vector3f centroid_new = (p_new[0] + p_new[1] + p_new[2]) / 3.0f;
+			float new_len = n_new.norm();
+			if (new_len > 1e-12f)
+			{
+				Eigen::Vector3f unit_new = n_new / new_len;
+				Eigen::Vector3f ref_n;
+				if (ReferenceNormalAt(centroid_new, ref_n))
+				{
+					if (unit_new.dot(ref_n) < 0.0f) return false;
+				}
+			}
+		}
+
+		return true;
+	}
+
+	bool OperatorRemesh::CollapseKeepsFacesValid(
+		OpenMesh::VertexHandle v_from,
+		OpenMesh::VertexHandle v_to,
+		const Eigen::Vector3f& survivor) const
+	{
+		// A collapse merges v_from into v_to at the survivor position. The
+		// faces that can fold are NOT only v_from's: every face incident to
+		// v_to also has one corner (v_to) effectively repositioned to the
+		// survivor, and the faces brought over from v_from become newly
+		// adjacent to v_to's existing ring. Checking only v_from's faces (as
+		// the prior version did) misses folds that appear on v_to's side,
+		// which is exactly where the narrow curved-wall collapses fold. So
+		// both one-rings are predicted against the survivor position, and
+		// any face that would reverse or collapse to zero area rejects the
+		// move. Faces containing the edge v_from-v_to vanish in the collapse
+		// and are skipped.
+		if (false == CollapseRingStaysValid(v_from, v_from, v_to, survivor)) return false;
+		if (false == CollapseRingStaysValid(v_to, v_from, v_to, survivor)) return false;
+		return true;
+	}
+
+	size_t OperatorRemesh::CollapseShortEdges()
+	{
+		std::cout << "[Debug] CollapseShortEdges BUILD MARKER 2026-06-08-A: reference deviation guard active." << std::endl;
+
+		size_t collapse_count = 0;
+
+		for (size_t i = 0; i < meshTarget->n_edges(); ++i)
+		{
+			OpenMesh::EdgeHandle eh = meshTarget->edge_handle(static_cast<int>(i));
+			if (meshTarget->status(eh).deleted()) continue;
+
+			OpenMesh::HalfedgeHandle heh = meshTarget->halfedge_handle(eh, 0);
+			OpenMesh::VertexHandle v_from = meshTarget->from_vertex_handle(heh);
+			OpenMesh::VertexHandle v_to = meshTarget->to_vertex_handle(heh);
+
+			Eigen::Vector3f a(meshTarget->point(v_from).data());
+			Eigen::Vector3f b(meshTarget->point(v_to).data());
+			if ((b - a).norm() >= edge_low) continue;
+
+			int cls_from = meshTarget->property(prop_vertex_feature, v_from);
+			int cls_to = meshTarget->property(prop_vertex_feature, v_to);
+			if (VertexFree != cls_from) continue;
+			if (VertexFree != cls_to) continue;
+
+			if (false == meshTarget->is_collapse_ok(heh)) continue;
+
+			Eigen::Vector3f survivor = b;
+
+			Eigen::Vector3f ref_cp;
+			if (ClosestPointOnReference(survivor, ref_cp))
+			{
+				float dev = (survivor - ref_cp).norm();
+				if (dev > 0.5f * target_edge_length) continue;
+			}
+
+			bool reject = false;
+			for (auto voh_it = meshTarget->voh_iter(v_from); voh_it.is_valid(); ++voh_it)
+			{
+				OpenMesh::VertexHandle v_n = meshTarget->to_vertex_handle(*voh_it);
+				if (v_n == v_to) continue;
+
+				Eigen::Vector3f pn(meshTarget->point(v_n).data());
+				if ((pn - survivor).norm() > edge_high) { reject = true; break; }
+			}
+			if (reject) continue;
+
+			if (false == CollapseKeepsFacesValid(v_from, v_to, survivor)) continue;
+
+			meshTarget->collapse(heh);
+			++collapse_count;
+		}
+
+		meshTarget->garbage_collection();
+		return collapse_count;
+	}
+
+	bool OperatorRemesh::FlipPreservesOrientation(
+		OpenMesh::VertexHandle va,
+		OpenMesh::VertexHandle vb,
+		OpenMesh::VertexHandle vc,
+		OpenMesh::VertexHandle vd) const
+	{
+		Eigen::Vector3f a(meshTarget->point(va).data());
+		Eigen::Vector3f b(meshTarget->point(vb).data());
+		Eigen::Vector3f c(meshTarget->point(vc).data());
+		Eigen::Vector3f d(meshTarget->point(vd).data());
+
+		// Old triangles around the shared edge a-b:
+		//   T0 = (a, b, c)   T1 = (b, a, d)
+		// After flip the diagonal becomes c-d:
+		//   N0 = (a, c, d)   N1 = (b, d, c)
+		// The new pair must not oppose the old pair it replaces.
+		Eigen::Vector3f n_old0 = (b - a).cross(c - a);
+		Eigen::Vector3f n_old1 = (a - b).cross(d - b);
+		Eigen::Vector3f n_new0 = (c - a).cross(d - a);
+		Eigen::Vector3f n_new1 = (d - b).cross(c - b);
+
+		Eigen::Vector3f n_old = n_old0 + n_old1;
+		if (n_old.squaredNorm() < 1e-20f) return false;
+
+		if (n_new0.dot(n_old) <= 0.0f) return false;
+		if (n_new1.dot(n_old) <= 0.0f) return false;
+
+		return true;
+	}
+
+	size_t OperatorRemesh::FlipToImproveValence()
+	{
+		size_t flip_count = 0;
+
+		size_t reject_feature = 0;
+		size_t reject_boundary = 0;
+		size_t reject_flip_ok = 0;
+		size_t reject_angle = 0;
+		size_t reject_orientation = 0;
+		size_t considered = 0;
+
+		for (size_t i = 0; i < meshTarget->n_edges(); ++i)
+		{
+			OpenMesh::EdgeHandle eh = meshTarget->edge_handle(static_cast<int>(i));
+			if (meshTarget->status(eh).deleted()) continue;
+
+			if (meshTarget->property(prop_edge_feature, eh)) { ++reject_feature; continue; }
+			if (meshTarget->is_boundary(eh)) { ++reject_boundary; continue; }
+			if (false == meshTarget->is_flip_ok(eh)) { ++reject_flip_ok; continue; }
+
+			++considered;
+
+			OpenMesh::HalfedgeHandle h0 = meshTarget->halfedge_handle(eh, 0);
+			OpenMesh::HalfedgeHandle h1 = meshTarget->halfedge_handle(eh, 1);
+
+			OpenMesh::VertexHandle va = meshTarget->from_vertex_handle(h0);
+			OpenMesh::VertexHandle vb = meshTarget->to_vertex_handle(h0);
+			OpenMesh::VertexHandle vc = meshTarget->to_vertex_handle(meshTarget->next_halfedge_handle(h0));
+			OpenMesh::VertexHandle vd = meshTarget->to_vertex_handle(meshTarget->next_halfedge_handle(h1));
+
+			Eigen::Vector3f pa(meshTarget->point(va).data());
+			Eigen::Vector3f pb(meshTarget->point(vb).data());
+			Eigen::Vector3f pc(meshTarget->point(vc).data());
+			Eigen::Vector3f pd(meshTarget->point(vd).data());
+
+			float angle_before = MinAngleOfTwoTriangles(pa, pb, pc, pd);
+			float angle_after = MinAngleOfTwoTriangles(pc, pd, pb, pa);
+
+			const float margin = 0.01f;
+			if (angle_after <= angle_before + margin) { ++reject_angle; continue; }
+
+			if (false == FlipPreservesOrientation(va, vb, vc, vd)) { ++reject_orientation; continue; }
+
+			meshTarget->flip(eh);
+			++flip_count;
+		}
+
+		std::cout << "[Info] FlipDiag: considered " << considered
+			<< ", rejected feature " << reject_feature
+			<< ", boundary " << reject_boundary
+			<< ", flip_ok " << reject_flip_ok
+			<< ", angle " << reject_angle
+			<< ", orientation " << reject_orientation
+			<< ", flipped " << flip_count << "." << std::endl;
+
+		return flip_count;
+	}
+
+	bool OperatorRemesh::RelaxMoveKeepsFacesValid(
+		OpenMesh::VertexHandle vh,
+		const Eigen::Vector3f& new_pos) const
+	{
+		Eigen::Vector3f old_pos(meshTarget->point(vh).data());
+
+		// Diagnostic window around the persistent first fold at (14.91, 0.7, -2.3).
+		bool watch = (std::abs(old_pos.x() - 14.91f) < 0.1f)
+			&& (std::abs(old_pos.z() - (-2.3f)) < 0.2f);
+
+		for (auto vf_it = meshTarget->vf_iter(vh); vf_it.is_valid(); ++vf_it)
+		{
+			OpenMesh::FaceHandle fh = *vf_it;
+			if (meshTarget->status(fh).deleted()) continue;
+
+			Eigen::Vector3f q_old[3];
+			Eigen::Vector3f q_new[3];
+			int k = 0;
+			for (auto fv_it = meshTarget->cfv_iter(fh); fv_it.is_valid() && k < 3; ++fv_it, ++k)
+			{
+				Eigen::Vector3f pos(meshTarget->point(*fv_it).data());
+				q_old[k] = pos;
+				q_new[k] = (*fv_it == vh) ? new_pos : pos;
+			}
+			if (k < 3) continue;
+
+			Eigen::Vector3f n_old = (q_old[1] - q_old[0]).cross(q_old[2] - q_old[0]);
+			Eigen::Vector3f n_new = (q_new[1] - q_new[0]).cross(q_new[2] - q_new[0]);
+
+			if (n_old.dot(n_new) <= 0.0f)
+			{
+				if (watch)
+				{
+					std::cout << "[Debug] RelaxGuard REJECT at (" << old_pos.x() << ", "
+						<< old_pos.y() << ", " << old_pos.z() << ") -> (" << new_pos.x()
+						<< ", " << new_pos.y() << ", " << new_pos.z()
+						<< "): own-ring face would flip." << std::endl;
+				}
+				return false;
+			}
+
+			float area_old = n_old.norm();
+			float area_new = n_new.norm();
+			if (area_new < 0.1f * area_old) return false;
+			if (area_new < 1e-10f) return false;
+		}
+
+		if (watch)
+		{
+			std::cout << "[Debug] RelaxGuard PASS at (" << old_pos.x() << ", "
+				<< old_pos.y() << ", " << old_pos.z() << ") -> (" << new_pos.x()
+				<< ", " << new_pos.y() << ", " << new_pos.z()
+				<< "): all own-ring faces valid. Fold must be on a NEIGHBOR's ring." << std::endl;
+		}
+
+		return true;
+	}
+
+	bool OperatorRemesh::ComputeRelaxTarget(
+		OpenMesh::VertexHandle vh,
+		int cls,
+		Eigen::Vector3f& out_target) const
+	{
+		Eigen::Vector3f p(meshTarget->point(vh).data());
+
+		if (VertexOnFeature == cls)
+		{
+			Eigen::Vector3f tangent = Eigen::Vector3f::Zero();
+			Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
+			int feature_neighbors = 0;
+
+			for (auto voh_it = meshTarget->voh_iter(vh); voh_it.is_valid(); ++voh_it)
+			{
+				OpenMesh::EdgeHandle e = meshTarget->edge_handle(*voh_it);
+				if (false == meshTarget->property(prop_edge_feature, e)) continue;
+
+				Eigen::Vector3f pn(meshTarget->point(meshTarget->to_vertex_handle(*voh_it)).data());
+				Eigen::Vector3f dir = pn - p;
+				if (feature_neighbors > 0 && dir.dot(tangent) < 0.0f) dir = -dir;
+				tangent += dir;
+				centroid += pn;
+				++feature_neighbors;
+			}
+
+			if (feature_neighbors < 2) return false;
+			centroid /= static_cast<float>(feature_neighbors);
+
+			float tlen = tangent.norm();
+			if (tlen < 1e-12f) return false;
+			tangent /= tlen;
+
+			// Slide along the straight tangent toward the neighbor centroid.
+			Eigen::Vector3f move = centroid - p;
+			Eigen::Vector3f slid = p + move.dot(tangent) * tangent;
+
+			// The feature curve is not straight: on the sine-wave wall it
+			// bends. A straight-tangent slide therefore leaves the curved
+			// surface and cuts across it, folding the adjacent faces. The
+			// slid point is pulled back onto the reference surface so it
+			// follows the real curve instead of its chord. The midpoint of
+			// the two feature neighbors is the seed for the projection,
+			// which keeps the result near the curve even where the local
+			// reference patch is itself curved.
+			Eigen::Vector3f projected;
+			if (ReprojectToReference(slid, projected))
+			{
+				out_target = projected;
+			}
+			else
+			{
+				out_target = slid;
+			}
+			return true;
+		}
+
+		// Free vertex adjacent to any feature edge: held fixed, since
+		// smoothing pulls a narrow feature-bounded strip across its own
+		// boundary.
+		for (auto voh_it = meshTarget->voh_iter(vh); voh_it.is_valid(); ++voh_it)
+		{
+			if (meshTarget->property(prop_edge_feature, meshTarget->edge_handle(*voh_it)))
+			{
+				return false;
+			}
+		}
+
+		Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
+		int n = 0;
+		for (auto vv_it = meshTarget->vv_iter(vh); vv_it.is_valid(); ++vv_it)
+		{
+			centroid += Eigen::Vector3f(meshTarget->point(*vv_it).data());
+			++n;
+		}
+		if (0 == n) return false;
+		centroid /= static_cast<float>(n);
+
+		Eigen::Vector3f normal(meshTarget->normal(vh).data());
+		Eigen::Vector3f move = centroid - p;
+		if (normal.squaredNorm() > 1e-12f)
+		{
+			normal.normalize();
+			move -= move.dot(normal) * normal;
+		}
+
+		Eigen::Vector3f tangent_pos = p + move;
+		Eigen::Vector3f projected;
+		if (ReprojectToReference(tangent_pos, projected))
+		{
+			out_target = projected;
+		}
+		else
+		{
+			out_target = tangent_pos;
+		}
+		return true;
+	}
+
+	void OperatorRemesh::TangentialRelaxation()
+	{
+		// Sequential update with post-move fold verification. Computing the
+		// target from the current state and checking the predicted one-ring
+		// is not enough: when several corners of one face are relaxed in the
+		// same sweep, each individual move passes its own predictive guard,
+		// yet their cumulative displacement folds the shared face. So after
+		// applying a move, the vertex's one-ring is re-checked against the
+		// ACTUAL present geometry, and the move is reverted the instant a
+		// real fold appears across any of its non-feature edges. A reverted
+		// vertex simply keeps its prior position for this pass.
+		for (size_t i = 0; i < meshTarget->n_vertices(); ++i)
+		{
+			OpenMesh::VertexHandle vh = meshTarget->vertex_handle(static_cast<int>(i));
+			if (meshTarget->status(vh).deleted()) continue;
+
+			int cls = meshTarget->property(prop_vertex_feature, vh);
+			if (VertexCorner == cls) continue;
+
+			Eigen::Vector3f target;
+			if (false == ComputeRelaxTarget(vh, cls, target)) continue;
+
+			if (false == RelaxMoveKeepsFacesValid(vh, target)) continue;
+
+			Eigen::Vector3f old_pos(meshTarget->point(vh).data());
+			meshTarget->set_point(vh, Mesh::Point(target.x(), target.y(), target.z()));
+
+			// Post-move truth check against the cumulative geometry. If the
+			// applied move folded any one-ring face, revert it.
+			if (VertexRingHasFold(vh))
+			{
+				meshTarget->set_point(vh, Mesh::Point(old_pos.x(), old_pos.y(), old_pos.z()));
+			}
+		}
+	}
+
+	size_t OperatorRemesh::CountBoundaryEdges() const
+	{
+		size_t count = 0;
+		for (size_t i = 0; i < meshTarget->n_edges(); ++i)
+		{
+			OpenMesh::EdgeHandle eh = meshTarget->edge_handle(static_cast<int>(i));
+			if (meshTarget->status(eh).deleted()) continue;
+			if (meshTarget->is_boundary(eh)) ++count;
+		}
+		return count;
+	}
+
+	size_t OperatorRemesh::ValidateManifold(const char* stage_label) const
+	{
+		// Edge fan count: every live edge must bound exactly 2 faces for a
+		// closed manifold. Boundary edges (1 face) are counted separately by
+		// CountBoundaryEdges; here a non-boundary edge with != 2 faces, or any
+		// vertex whose one-ring is not a single fan, is the violation.
+		size_t non_manifold_edges = 0;
+		const size_t report_limit = 8;
+
+		for (size_t i = 0; i < meshTarget->n_edges(); ++i)
+		{
+			OpenMesh::EdgeHandle eh = meshTarget->edge_handle(static_cast<int>(i));
+			if (meshTarget->status(eh).deleted()) continue;
+
+			// OpenMesh guarantees <= 2 faces per edge by construction, so the
+			// only manifold defect an edge can show here is a complex/isolated
+			// edge flagged non-manifold by the kernel.
+			if (false == meshTarget->is_manifold(meshTarget->to_vertex_handle(meshTarget->halfedge_handle(eh, 0))))
+			{
+				// Vertex-level non-manifold is reported in the vertex pass below.
+			}
+		}
+
+		size_t non_manifold_vertices = 0;
+		for (size_t i = 0; i < meshTarget->n_vertices(); ++i)
+		{
+			OpenMesh::VertexHandle vh = meshTarget->vertex_handle(static_cast<int>(i));
+			if (meshTarget->status(vh).deleted()) continue;
+			if (false == meshTarget->is_manifold(vh))
+			{
+				++non_manifold_vertices;
+				if (non_manifold_vertices <= report_limit)
+				{
+					auto p = meshTarget->point(vh);
+					std::cout << "[Error] Manifold(" << stage_label << "): vertex ("
+						<< p[0] << ", " << p[1] << ", " << p[2]
+						<< ") is non-manifold." << std::endl;
+				}
+			}
+		}
+
+		size_t total = non_manifold_edges + non_manifold_vertices;
+		if (0 == total)
+		{
+			std::cout << "[Info] Manifold(" << stage_label << "): clean ("
+				<< meshTarget->n_vertices() << " vertices, "
+				<< meshTarget->n_faces() << " faces)." << std::endl;
+		}
+		else
+		{
+			std::cout << "[Error] Manifold(" << stage_label << "): "
+				<< non_manifold_vertices << " non-manifold vertices." << std::endl;
+		}
+		return total;
+	}
+
+	size_t OperatorRemesh::ValidateFeatureParity(const char* stage_label) const
+	{
+		if (false == prop_edge_feature.is_valid()) return 0;
+
+		bad_feature_vertices.clear();
+
+		// Feature-edge degree per vertex. A feature curve is locally a
+		// 1-manifold path, so a vertex it passes through has degree 2. The
+		// only OTHER admissible cases are a vertex off all feature curves
+		// (degree 0) and a curve endpoint or junction (degree 1 or 3+),
+		// which is geometrically a CORNER and MUST be pinned as such. So
+		// the correct invariant is not "all even", which wrongly flags the
+		// box's 3-edge corners; it is: every degree != 2 feature vertex is
+		// classified VertexCorner. A degree-1 or junction vertex left as
+		// VertexOnFeature is a real break, because relaxation would slide
+		// it off the curve end.
+		std::vector<int> feature_degree(meshTarget->n_vertices(), 0);
+
+		size_t feature_edges = 0;
+		for (size_t i = 0; i < meshTarget->n_edges(); ++i)
+		{
+			OpenMesh::EdgeHandle eh = meshTarget->edge_handle(static_cast<int>(i));
+			if (meshTarget->status(eh).deleted()) continue;
+			if (false == meshTarget->property(prop_edge_feature, eh)) continue;
+
+			++feature_edges;
+			OpenMesh::HalfedgeHandle heh = meshTarget->halfedge_handle(eh, 0);
+			feature_degree[meshTarget->from_vertex_handle(heh).idx()] += 1;
+			feature_degree[meshTarget->to_vertex_handle(heh).idx()] += 1;
+		}
+
+		size_t misclassified = 0;
+		size_t corners = 0;
+		size_t curve_points = 0;
+		const size_t report_limit = 8;
+
+		for (size_t i = 0; i < feature_degree.size(); ++i)
+		{
+			int deg = feature_degree[i];
+			if (0 == deg) continue;
+
+			OpenMesh::VertexHandle vh = meshTarget->vertex_handle(static_cast<int>(i));
+			if (meshTarget->status(vh).deleted()) continue;
+
+			int cls = meshTarget->property(prop_vertex_feature, vh);
+
+			if (2 == deg)
+			{
+				// A through-point: OnFeature (sliding) or Corner (pinned by
+				// a sharp bend) are both valid here. Nothing to check.
+				++curve_points;
+				continue;
+			}
+
+			// deg == 1 (endpoint) or deg >= 3 (junction): must be a corner.
+			++corners;
+			if (VertexCorner != cls)
+			{
+				++misclassified;
+				bad_feature_vertices.push_back(Eigen::Vector3f(
+					meshTarget->point(vh)[0],
+					meshTarget->point(vh)[1],
+					meshTarget->point(vh)[2]));
+
+				if (misclassified <= report_limit)
+				{
+					auto p = meshTarget->point(vh);
+					std::cout << "[Error] FeatureParity(" << stage_label << "): vertex ("
+						<< p[0] << ", " << p[1] << ", " << p[2] << ") has feature degree "
+						<< deg << " but class " << cls
+						<< " (degree != 2 must be VertexCorner)." << std::endl;
+				}
+			}
+		}
+
+		if (0 == misclassified)
+		{
+			std::cout << "[Info] FeatureParity(" << stage_label << "): intact ("
+				<< feature_edges << " feature edges, " << curve_points
+				<< " through-points, " << corners << " corners, all consistent)." << std::endl;
+		}
+		else
+		{
+			std::cout << "[Error] FeatureParity(" << stage_label << "): " << misclassified
+				<< " feature vertices with degree != 2 not pinned as corners."
+				<< " The feature curve is broken or a junction is unprotected." << std::endl;
+		}
+
+		return misclassified;
+	}
+
+	bool OperatorRemesh::FaceNormalAndCentroid(
+		OpenMesh::FaceHandle fh,
+		Eigen::Vector3f& out_normal,
+		Eigen::Vector3f& out_centroid) const
+	{
+		if (meshTarget->status(fh).deleted()) return false;
+
+		Eigen::Vector3f v0, v1, v2;
+		meshTarget->GetFaceVertices(fh, v0, v1, v2);
+
+		Eigen::Vector3f n = (v1 - v0).cross(v2 - v0);
+		float nl = n.norm();
+		if (nl < 1e-12f) return false;
+
+		out_normal = n / nl;
+		out_centroid = (v0 + v1 + v2) / 3.0f;
+		return true;
+	}
+
+	size_t OperatorRemesh::CountFlippedFaces(const char* stage_label) const
+	{
+		flipped_face_centers.clear();
+
+		size_t flipped_edges = 0;
+		const size_t report_limit = 8;
+
+		std::vector<Eigen::Vector3f> this_stage_folds;
+
+		const float carry_radius = 2.0f * target_edge_length;
+		const float carry_radius2 = carry_radius * carry_radius;
+
+		size_t carried = 0;
+		size_t fresh = 0;
+		size_t ridge_skipped = 0;
+
+		for (size_t i = 0; i < meshTarget->n_edges(); ++i)
+		{
+			OpenMesh::EdgeHandle eh = meshTarget->edge_handle(static_cast<int>(i));
+			if (meshTarget->status(eh).deleted()) continue;
+			if (meshTarget->is_boundary(eh)) continue;
+
+			if (prop_edge_feature.is_valid()
+				&& meshTarget->property(prop_edge_feature, eh)) continue;
+
+			OpenMesh::HalfedgeHandle h0 = meshTarget->halfedge_handle(eh, 0);
+			OpenMesh::HalfedgeHandle h1 = meshTarget->halfedge_handle(eh, 1);
+			OpenMesh::FaceHandle f0 = meshTarget->face_handle(h0);
+			OpenMesh::FaceHandle f1 = meshTarget->face_handle(h1);
+			if (false == f0.is_valid() || false == f1.is_valid()) continue;
+
+			Eigen::Vector3f n0, c0, n1, c1;
+			if (false == FaceNormalAndCentroid(f0, n0, c0)) continue;
+			if (false == FaceNormalAndCentroid(f1, n1, c1)) continue;
+
+			if (n0.dot(n1) >= 0.0f) continue;
+
+			// dot < 0 alone cannot tell a genuine fold (a face turned back
+			// onto the surface) from a valid sharp ridge that the feature
+			// detector missed (front wall meets side wall at ~90 degrees).
+			// The reference surface settles it: a fold has at least one
+			// face whose normal opposes the local reference normal, while a
+			// sharp ridge has BOTH faces agreeing with their own nearest
+			// reference face (each simply picks a different reference face
+			// across the crease). Only the former is a real defect; the
+			// latter is correct geometry whose edge merely lacks the
+			// feature flag, which is a feature-propagation gap, not a fold.
+			Eigen::Vector3f ref_n0, ref_n1;
+			bool have_r0 = ReferenceNormalAt(c0, ref_n0);
+			bool have_r1 = ReferenceNormalAt(c1, ref_n1);
+
+			if (have_r0 && have_r1)
+			{
+				bool f0_agrees = (n0.dot(ref_n0) > 0.0f);
+				bool f1_agrees = (n1.dot(ref_n1) > 0.0f);
+
+				// Both faces sit the right way up on the reference surface:
+				// this is a valid crease, not a fold. Skip it.
+				if (f0_agrees && f1_agrees)
+				{
+					++ridge_skipped;
+					continue;
+				}
+			}
+
+			++flipped_edges;
+			flipped_face_centers.push_back(c0);
+			flipped_face_centers.push_back(c1);
+
+			Eigen::Vector3f mid = 0.5f * (c0 + c1);
+			this_stage_folds.push_back(mid);
+
+			bool is_carried = false;
+			for (const Eigen::Vector3f& prev : prev_stage_fold_mids)
+			{
+				if ((prev - mid).squaredNorm() < carry_radius2)
+				{
+					is_carried = true;
+					break;
+				}
+			}
+			if (is_carried) ++carried;
+			else ++fresh;
+
+			if (flipped_edges <= report_limit)
+			{
+				std::cout << "[Error] FlippedFace(" << stage_label << "): faces across edge near ("
+					<< mid.x() << ", " << mid.y() << ", " << mid.z()
+					<< ") have opposing normals (dot " << n0.dot(n1) << ")"
+					<< (is_carried ? " [carried]" : " [NEW]") << "." << std::endl;
+			}
+		}
+
+		if (0 == flipped_edges)
+		{
+			std::cout << "[Info] FlippedFaces(" << stage_label << "): none ("
+				<< ridge_skipped << " valid sharp ridges skipped)." << std::endl;
+		}
+		else
+		{
+			std::cout << "[Error] FlippedFaces(" << stage_label << "): " << flipped_edges
+				<< " folded edges (" << fresh << " NEW, " << carried
+				<< " carried from previous stage, " << ridge_skipped
+				<< " valid sharp ridges skipped)." << std::endl;
+		}
+
+		prev_stage_fold_mids = this_stage_folds;
+
+		return flipped_edges;
+	}
+
+	bool OperatorRemesh::ValidateStage(const char* stage_label, size_t boundary_expected) const
+	{
+		size_t nm = ValidateManifold(stage_label);
+		size_t parity = ValidateFeatureParity(stage_label);
+		size_t flipped = CountFlippedFaces(stage_label);
+
+		size_t boundary = CountBoundaryEdges();
+		bool boundary_ok = (boundary == boundary_expected);
+		if (false == boundary_ok)
+		{
+			std::cout << "[Error] Boundary(" << stage_label << "): edge count "
+				<< boundary << " != expected " << boundary_expected << "." << std::endl;
+		}
+		else
+		{
+			std::cout << "[Info] Boundary(" << stage_label << "): " << boundary
+				<< " edges (preserved)." << std::endl;
+		}
+
+		bool ok = (0 == nm) && (0 == parity) && (0 == flipped) && boundary_ok;
+		std::cout << "[" << (ok ? "Info" : "Error") << "] ValidateStage(" << stage_label
+			<< "): " << (ok ? "PASS" : "FAIL") << "." << std::endl;
+		return ok;
+	}
+
+	void OperatorRemesh::GetFeatureEdgeLines(std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>>& out_lines) const
+	{
+		out_lines.clear();
+		if (false == prop_edge_feature.is_valid()) return;
+
+		for (size_t i = 0; i < meshTarget->n_edges(); ++i)
+		{
+			OpenMesh::EdgeHandle eh = meshTarget->edge_handle(static_cast<int>(i));
+			if (meshTarget->status(eh).deleted()) continue;
+			if (false == meshTarget->property(prop_edge_feature, eh)) continue;
+
+			OpenMesh::HalfedgeHandle heh = meshTarget->halfedge_handle(eh, 0);
+			auto pf = meshTarget->point(meshTarget->from_vertex_handle(heh));
+			auto pt = meshTarget->point(meshTarget->to_vertex_handle(heh));
+			out_lines.push_back({
+				Eigen::Vector3f(pf[0], pf[1], pf[2]),
+				Eigen::Vector3f(pt[0], pt[1], pt[2]) });
+		}
+	}
+
+	float OperatorRemesh::TriangleAspectRatio(
+		const Eigen::Vector3f& a,
+		const Eigen::Vector3f& b,
+		const Eigen::Vector3f& c) const
+	{
+		float la = (b - c).norm();
+		float lb = (c - a).norm();
+		float lc = (a - b).norm();
+
+		float longest = std::max(la, std::max(lb, lc));
+
+		float s = 0.5f * (la + lb + lc);
+		float area = std::sqrt(std::max(0.0f, s * (s - la) * (s - lb) * (s - lc)));
+		if (area < 1e-12f) return std::numeric_limits<float>::max();
+
+		float inradius = area / s;
+		if (inradius < 1e-12f) return std::numeric_limits<float>::max();
+
+		return longest / inradius;
+	}
+
+	void OperatorRemesh::DiagnoseFeatureOnlyFaces(const char* stage_label) const
+	{
+		if (false == prop_vertex_feature.is_valid()) return;
+
+		size_t total_faces = 0;
+		size_t feature_only_faces = 0;
+		size_t two_feature_faces = 0;
+
+		float worst_aspect = 0.0f;
+		Eigen::Vector3f worst_centroid = Eigen::Vector3f::Zero();
+
+		for (size_t i = 0; i < meshTarget->n_faces(); ++i)
+		{
+			OpenMesh::FaceHandle fh = meshTarget->face_handle(static_cast<int>(i));
+			if (meshTarget->status(fh).deleted()) continue;
+
+			++total_faces;
+
+			int feature_vertex_count = 0;
+			Eigen::Vector3f pos[3];
+			int k = 0;
+			for (auto fv_it = meshTarget->cfv_iter(fh); fv_it.is_valid() && k < 3; ++fv_it, ++k)
+			{
+				int cls = meshTarget->property(prop_vertex_feature, *fv_it);
+				if (VertexFree != cls) ++feature_vertex_count;
+				pos[k] = Eigen::Vector3f(meshTarget->point(*fv_it).data());
+			}
+			if (k < 3) continue;
+
+			if (3 == feature_vertex_count) ++feature_only_faces;
+			else if (2 == feature_vertex_count) ++two_feature_faces;
+
+			float aspect = TriangleAspectRatio(pos[0], pos[1], pos[2]);
+			if (aspect > worst_aspect)
+			{
+				worst_aspect = aspect;
+				worst_centroid = (pos[0] + pos[1] + pos[2]) / 3.0f;
+			}
+		}
+
+		std::cout << "[Info] FeatureOnlyFaces(" << stage_label << "): "
+			<< feature_only_faces << " of " << total_faces
+			<< " faces have all 3 vertices on features, "
+			<< two_feature_faces << " have exactly 2. Worst aspect ratio "
+			<< worst_aspect << " near (" << worst_centroid.x() << ", "
+			<< worst_centroid.y() << ", " << worst_centroid.z() << ")." << std::endl;
+	}
+
+	bool OperatorRemesh::ClosestPointOnReference(const Eigen::Vector3f& p, Eigen::Vector3f& out_point) const
+	{
+		float radius = std::max(target_edge_length, 10.0f * EPSILON);
+
+		std::vector<int> candidates;
+		for (int attempt = 0; attempt < 8; ++attempt)
+		{
+			Eigen::Vector3f pad(radius, radius, radius);
+			reference_mesh.QueryOverlappingFaces(p - pad, p + pad, candidates);
+			if (false == candidates.empty()) break;
+			radius *= 2.0f;
+		}
+
+		if (candidates.empty())
+		{
+			out_point = p;
+			return false;
+		}
+
+		float best_d2 = std::numeric_limits<float>::max();
+		Eigen::Vector3f best = p;
+
+		for (int f : candidates)
+		{
+			OpenMesh::FaceHandle fh = reference_mesh.face_handle(f);
+			if (reference_mesh.status(fh).deleted()) continue;
+
+			Eigen::Vector3f v0, v1, v2;
+			reference_mesh.GetFaceVertices(fh, v0, v1, v2);
+
+			Eigen::Vector3f cp = ClosestPointOnTriangle(p, v0, v1, v2);
+			float d2 = (cp - p).squaredNorm();
+			if (d2 < best_d2)
+			{
+				best_d2 = d2;
+				best = cp;
+			}
+		}
+
+		out_point = best;
+		return true;
+	}
+
+	void OperatorRemesh::DiagnoseSurfaceDeviation(const char* stage_label) const
+	{
+		float max_dev = 0.0f;
+		double sum_dev = 0.0;
+		size_t counted = 0;
+		Eigen::Vector3f worst_pos = Eigen::Vector3f::Zero();
+
+		for (size_t i = 0; i < meshTarget->n_vertices(); ++i)
+		{
+			OpenMesh::VertexHandle vh = meshTarget->vertex_handle(static_cast<int>(i));
+			if (meshTarget->status(vh).deleted()) continue;
+
+			Eigen::Vector3f p(meshTarget->point(vh).data());
+
+			Eigen::Vector3f cp;
+			if (false == ClosestPointOnReference(p, cp)) continue;
+
+			float dev = (cp - p).norm();
+			sum_dev += dev;
+			++counted;
+			if (dev > max_dev)
+			{
+				max_dev = dev;
+				worst_pos = p;
+			}
+		}
+
+		float mean_dev = (counted > 0) ? static_cast<float>(sum_dev / counted) : 0.0f;
+
+		std::cout << "[Info] SurfaceDeviation(" << stage_label << "): max "
+			<< max_dev << " near (" << worst_pos.x() << ", " << worst_pos.y()
+			<< ", " << worst_pos.z() << "), mean " << mean_dev
+			<< " over " << counted << " vertices." << std::endl;
+	}
+
+	float OperatorRemesh::MinAngleOfTwoTriangles(
+		const Eigen::Vector3f& a,
+		const Eigen::Vector3f& b,
+		const Eigen::Vector3f& c,
+		const Eigen::Vector3f& d) const
+	{
+		// Two triangles (a,b,c) and (a,c,d) sharing edge a-c. Returns the
+		// smallest interior angle over both, as a cosine-free proxy: the
+		// minimum of the six corner angles. A sliver has a near-zero angle,
+		// so maximizing this minimum is exactly the Delaunay (max-min-angle)
+		// criterion that removes slivers without moving any vertex.
+		float worst = std::numeric_limits<float>::max();
+
+		const Eigen::Vector3f* tri[2][3] = {
+			{ &a, &b, &c },
+			{ &a, &c, &d }
+		};
+
+		for (int t = 0; t < 2; ++t)
+		{
+			for (int k = 0; k < 3; ++k)
+			{
+				const Eigen::Vector3f& p0 = *tri[t][k];
+				const Eigen::Vector3f& p1 = *tri[t][(k + 1) % 3];
+				const Eigen::Vector3f& p2 = *tri[t][(k + 2) % 3];
+
+				Eigen::Vector3f e0 = p1 - p0;
+				Eigen::Vector3f e1 = p2 - p0;
+				float l0 = e0.norm();
+				float l1 = e1.norm();
+				if (l0 < 1e-12f || l1 < 1e-12f) return 0.0f;
+
+				float cos_angle = e0.dot(e1) / (l0 * l1);
+				cos_angle = std::max(-1.0f, std::min(1.0f, cos_angle));
+				float angle = std::acos(cos_angle);
+
+				if (angle < worst) worst = angle;
+			}
+		}
+
+		return worst;
+	}
+
+	bool OperatorRemesh::VertexRingHasFold(OpenMesh::VertexHandle vh) const
+	{
+		// Checks the ACTUAL current geometry of vh's one-ring for a fold,
+		// reading every face's real present coordinates. Unlike the
+		// predictive RelaxMoveKeepsFacesValid, this sees the cumulative
+		// result of all moves already applied this pass.
+		for (auto vf_it = meshTarget->vf_iter(vh); vf_it.is_valid(); ++vf_it)
+		{
+			OpenMesh::FaceHandle fh = *vf_it;
+			if (meshTarget->status(fh).deleted()) continue;
+
+			OpenMesh::HalfedgeHandle h_in_face;
+			bool found = false;
+			for (auto fh_it = meshTarget->fh_iter(fh); fh_it.is_valid(); ++fh_it)
+			{
+				if (meshTarget->to_vertex_handle(*fh_it) == vh)
+				{
+					h_in_face = *fh_it;
+					found = true;
+					break;
+				}
+			}
+			if (false == found) continue;
+
+			OpenMesh::HalfedgeHandle opp = meshTarget->opposite_halfedge_handle(h_in_face);
+			if (meshTarget->is_boundary(opp)) continue;
+
+			OpenMesh::EdgeHandle eh = meshTarget->edge_handle(h_in_face);
+			if (prop_edge_feature.is_valid()
+				&& meshTarget->property(prop_edge_feature, eh)) continue;
+
+			OpenMesh::FaceHandle nfh = meshTarget->face_handle(opp);
+			if (false == nfh.is_valid() || meshTarget->status(nfh).deleted()) continue;
+
+			Eigen::Vector3f n0, c0, n1, c1;
+			if (false == FaceNormalAndCentroid(fh, n0, c0)) continue;
+			if (false == FaceNormalAndCentroid(nfh, n1, c1)) continue;
+
+			// Two adjacent faces with opposing normals are only a real fold
+			// when at least one of them faces INTO the reference surface.
+			// On a curved glyph wall the two faces of a valid sharp ridge
+			// also oppose each other across a missed-feature edge, yet both
+			// agree with their own nearest reference face: that is correct
+			// geometry, not a fold, and reverting the relax move there would
+			// wrongly freeze the curved wall. This applies the same
+			// reference-based fold definition CountFlippedFaces uses, so the
+			// relax revert triggers on exactly the defects detection counts.
+			if (n0.dot(n1) >= 0.0f) continue;
+
+			Eigen::Vector3f ref_n0, ref_n1;
+			bool have_r0 = ReferenceNormalAt(c0, ref_n0);
+			bool have_r1 = ReferenceNormalAt(c1, ref_n1);
+
+			if (have_r0 && have_r1)
+			{
+				bool f0_agrees = (n0.dot(ref_n0) > 0.0f);
+				bool f1_agrees = (n1.dot(ref_n1) > 0.0f);
+
+				// Both faces sit the right way up on the reference: a valid
+				// crease, not a fold. Do not revert for this.
+				if (f0_agrees && f1_agrees) continue;
+			}
+
+			return true;
+		}
+
+		return false;
+	}
+
+	bool OperatorRemesh::SplitKeepsFacesValid(
+		OpenMesh::EdgeHandle eh,
+		const Eigen::Vector3f& new_pos) const
+	{
+		// A split replaces each of the (up to two) faces incident to the
+		// edge with two sub-triangles sharing the new midpoint vertex. On a
+		// narrow curved wall the reprojected midpoint can leave the original
+		// face plane enough to reverse one sub-triangle. This predicts each
+		// resulting sub-triangle's normal against its parent face normal and
+		// rejects the split if any would oppose it, so the split never
+		// introduces a fold.
+		OpenMesh::HalfedgeHandle h0 = meshTarget->halfedge_handle(eh, 0);
+		OpenMesh::HalfedgeHandle h1 = meshTarget->halfedge_handle(eh, 1);
+
+		OpenMesh::VertexHandle v_from = meshTarget->from_vertex_handle(h0);
+		OpenMesh::VertexHandle v_to = meshTarget->to_vertex_handle(h0);
+
+		Eigen::Vector3f a(meshTarget->point(v_from).data());
+		Eigen::Vector3f b(meshTarget->point(v_to).data());
+
+		// For each side, the apex is the third vertex of that face. The two
+		// sub-triangles are (a, mid, apex) and (mid, b, apex), which must
+		// keep the parent winding (a, b, apex).
+		auto side_ok = [&](OpenMesh::HalfedgeHandle h) -> bool
+			{
+				OpenMesh::FaceHandle fh = meshTarget->face_handle(h);
+				if (false == fh.is_valid()) return true;
+				if (meshTarget->status(fh).deleted()) return true;
+
+				OpenMesh::VertexHandle v_apex =
+					meshTarget->to_vertex_handle(meshTarget->next_halfedge_handle(h));
+				Eigen::Vector3f apex(meshTarget->point(v_apex).data());
+
+				Eigen::Vector3f n_parent = (b - a).cross(apex - a);
+
+				Eigen::Vector3f n_sub0 = (new_pos - a).cross(apex - a);
+				Eigen::Vector3f n_sub1 = (b - new_pos).cross(apex - new_pos);
+
+				if (n_parent.dot(n_sub0) <= 0.0f) return false;
+				if (n_parent.dot(n_sub1) <= 0.0f) return false;
+				return true;
+			};
+
+		if (false == side_ok(h0)) return false;
+		if (false == side_ok(h1)) return false;
+		return true;
+	}
+
+	bool OperatorRemesh::ReferenceNormalAt(
+		const Eigen::Vector3f& p,
+		Eigen::Vector3f& out_normal) const
+	{
+		float radius = std::max(target_edge_length, 10.0f * EPSILON);
+
+		std::vector<int> candidates;
+		for (int attempt = 0; attempt < 8; ++attempt)
+		{
+			Eigen::Vector3f pad(radius, radius, radius);
+			reference_mesh.QueryOverlappingFaces(p - pad, p + pad, candidates);
+			if (false == candidates.empty()) break;
+			radius *= 2.0f;
+		}
+
+		if (candidates.empty()) return false;
+
+		// Nearest reference face by clamped closest-point distance. Its
+		// oriented normal is the local surface direction the remeshed face
+		// must agree with. A genuine fold faces opposite this; a sharp but
+		// valid ridge faces along it (the two ridge faces simply pick two
+		// different reference faces, each agreeing with its own).
+		float best_d2 = std::numeric_limits<float>::max();
+		Eigen::Vector3f best_n = Eigen::Vector3f::Zero();
+		bool found = false;
+
+		for (int f : candidates)
+		{
+			OpenMesh::FaceHandle fh = reference_mesh.face_handle(f);
+			if (reference_mesh.status(fh).deleted()) continue;
+
+			Eigen::Vector3f v0, v1, v2;
+			reference_mesh.GetFaceVertices(fh, v0, v1, v2);
+
+			Eigen::Vector3f cp = ClosestPointOnTriangle(p, v0, v1, v2);
+			float d2 = (cp - p).squaredNorm();
+			if (d2 < best_d2)
+			{
+				Eigen::Vector3f n = (v1 - v0).cross(v2 - v0);
+				float nl = n.norm();
+				if (nl < 1e-12f) continue;
+
+				best_d2 = d2;
+				best_n = n / nl;
+				found = true;
+			}
+		}
+
+		if (false == found) return false;
+		out_normal = best_n;
+		return true;
+	}
+
+	bool OperatorRemesh::Execute()
+	{
+		total_split_count = 0;
+		total_collapse_count = 0;
+		total_flip_count = 0;
+		feature_edge_count = 0;
+		if (nullptr == meshTarget) return false;
+		if (0 == meshTarget->n_faces()) return false;
+		if (target_edge_length < EPSILON)
+		{
+			std::cout << "[Error] OperatorRemesh: target_edge_length must be positive." << std::endl;
+			return false;
+		}
+		meshTarget->add_property(prop_edge_feature, "remesh_edge_feature");
+		meshTarget->add_property(prop_vertex_feature, "remesh_vertex_feature");
+		meshTarget->request_vertex_normals();
+		meshTarget->request_face_normals();
+		BuildReferenceSnapshot();
+		DetectFeatureEdges();
+		input_boundary_count = CountBoundaryEdges();
+		// Baseline: the invariants must already hold on the input before any
+		// edit. If Pass 0 detection itself produced odd parity, the problem is
+		// in detection, not in the operators.
+		std::cout << "[Info] OperatorRemesh: --- stage Pass0 (detection) ---" << std::endl;
+		ValidateStage("Pass0", input_boundary_count);
+		DiagnoseFeatureOnlyFaces("Pass0");
+		DiagnoseSurfaceDeviation("Pass0");
+		bool all_ok = true;
+		for (int iter = 0; iter < iterations; ++iter)
+		{
+			std::cout << "[Info] OperatorRemesh: ===== iteration " << iter << " =====" << std::endl;
+			if (passes.split)
+			{
+				size_t s = SplitLongEdges();
+				total_split_count += s;
+				std::cout << "[Info] OperatorRemesh iter " << iter << ": " << s << " splits." << std::endl;
+				if (false == ValidateStage("split", input_boundary_count)) all_ok = false;
+				DiagnoseSurfaceDeviation("split");
+			}
+			if (passes.collapse)
+			{
+				size_t c = CollapseShortEdges();
+				total_collapse_count += c;
+				std::cout << "[Info] OperatorRemesh iter " << iter << ": " << c << " collapses." << std::endl;
+				if (false == ValidateStage("collapse", input_boundary_count)) all_ok = false;
+				DiagnoseSurfaceDeviation("collapse");
+			}
+			if (passes.flip)
+			{
+				size_t f = FlipToImproveValence();
+				total_flip_count += f;
+				std::cout << "[Info] OperatorRemesh iter " << iter << ": " << f << " flips." << std::endl;
+				if (false == ValidateStage("flip", input_boundary_count)) all_ok = false;
+				DiagnoseSurfaceDeviation("flip");
+			}
+			if (passes.relax)
+			{
+				meshTarget->update_face_normals();
+				meshTarget->update_vertex_normals();
+				TangentialRelaxation();
+				std::cout << "[Info] OperatorRemesh iter " << iter << ": relaxation done." << std::endl;
+				if (false == ValidateStage("relax", input_boundary_count)) all_ok = false;
+				DiagnoseSurfaceDeviation("relax");
+			}
+		}
+		DiagnoseFeatureOnlyFaces("final");
+		meshTarget->BuildSpatialHashMap();
+		std::vector<Eigen::Vector3f> points;
+		std::vector<Eigen::Vector3i> indices;
+		ExtractMeshSoup(meshTarget, points, indices);
+		bool soup_ok = ValidateTriangleSoup(points, indices, "remesh", 100.0f * EPSILON);
+		std::cout << "[Info] OperatorRemesh: " << total_split_count << " splits, "
+			<< total_collapse_count << " collapses, " << total_flip_count
+			<< " flips total over " << iterations << " iterations, "
+			<< indices.size() << " result triangles." << std::endl;
+		return soup_ok && all_ok;
+	}
 }

@@ -568,11 +568,44 @@ namespace RGO
 			return result;
 		}
 
+		void TestCellFacesForRay(
+			const std::vector<int>& face_list,
+			const Eigen::Vector3f& origin,
+			const Eigen::Vector3f& dir,
+			IntersectionResult& out_hit,
+			bool& hit) const
+		{
+			const int face_count = static_cast<int>(n_faces());
+
+			for (int f_idx : face_list)
+			{
+				// The hash map stores face indices captured when the grid was
+				// built. If the mesh changed afterwards, an index may be out of
+				// range, may name a deleted face, or (after a garbage
+				// collection) may name a different face entirely. Building a
+				// face handle from an out-of-range index yields an invalid
+				// handle whose dereference crashes, so the range and deletion
+				// state must both be checked before the handle is ever used.
+				if (f_idx < 0 || f_idx >= face_count) continue;
+
+				OpenMesh::FaceHandle fh = face_handle(f_idx);
+				if (false == fh.is_valid()) continue;
+				if (status(fh).deleted()) continue;
+
+				IntersectionResult res = IntersectRayFaceWithSnap(origin, dir, fh);
+				if (res.type != IntersectionType::None && res.t < out_hit.t)
+				{
+					out_hit = res;
+					out_hit.fh = fh;
+					hit = true;
+				}
+			}
+		}
+
 		bool IntersectGridRay(const Eigen::Vector3f& origin, const Eigen::Vector3f& dir, IntersectionResult& out_hit) const
 		{
 			out_hit.t = std::numeric_limits<float>::max();
 			out_hit.type = IntersectionType::None;
-
 			if (hash_map.empty()) return false;
 
 			Eigen::Vector3f inv_dir;
@@ -584,16 +617,13 @@ namespace RGO
 			Eigen::Vector3f t1 = (grid_max - origin).cwiseProduct(inv_dir);
 			Eigen::Vector3f tmin = t0.cwiseMin(t1);
 			Eigen::Vector3f tmax = t0.cwiseMax(t1);
-
 			float t_enter = tmin.maxCoeff();
 			float t_exit = tmax.minCoeff();
-
 			if (t_enter > t_exit || t_exit < 0.0f) return false;
-
 			t_enter = std::max(0.0f, t_enter);
+
 			Eigen::Vector3f start_pos = origin + dir * t_enter;
 			Eigen::Vector3f local_pos = start_pos - grid_min;
-
 			int cx = static_cast<int>(std::floor(local_pos.x() / grid_cell_size.x()));
 			int cy = static_cast<int>(std::floor(local_pos.y() / grid_cell_size.y()));
 			int cz = static_cast<int>(std::floor(local_pos.z() / grid_cell_size.z()));
@@ -601,11 +631,9 @@ namespace RGO
 			int stepX = (dir.x() > 0.0f) ? 1 : -1;
 			int stepY = (dir.y() > 0.0f) ? 1 : -1;
 			int stepZ = (dir.z() > 0.0f) ? 1 : -1;
-
 			float tDeltaX = std::abs(grid_cell_size.x() * inv_dir.x());
 			float tDeltaY = std::abs(grid_cell_size.y() * inv_dir.y());
 			float tDeltaZ = std::abs(grid_cell_size.z() * inv_dir.z());
-
 			float tMaxX = t_enter + ((stepX > 0) ? ((cx + 1) * grid_cell_size.x() - local_pos.x()) * std::abs(inv_dir.x()) : (local_pos.x() - cx * grid_cell_size.x()) * std::abs(inv_dir.x()));
 			float tMaxY = t_enter + ((stepY > 0) ? ((cy + 1) * grid_cell_size.y() - local_pos.y()) * std::abs(inv_dir.y()) : (local_pos.y() - cy * grid_cell_size.y()) * std::abs(inv_dir.y()));
 			float tMaxZ = t_enter + ((stepZ > 0) ? ((cz + 1) * grid_cell_size.z() - local_pos.z()) * std::abs(inv_dir.z()) : (local_pos.z() - cz * grid_cell_size.z()) * std::abs(inv_dir.z()));
@@ -625,18 +653,7 @@ namespace RGO
 				auto it = hash_map.find(cell_pos);
 				if (it != hash_map.end())
 				{
-					const std::vector<int>& face_list = it->second;
-					for (int f_idx : face_list)
-					{
-						IntersectionResult res = IntersectRayFaceWithSnap(origin, dir, face_handle(f_idx));
-
-						if (res.type != IntersectionType::None && res.t < out_hit.t)
-						{
-							out_hit = res;
-							out_hit.fh = face_handle(f_idx);
-							hit = true;
-						}
-					}
+					TestCellFacesForRay(it->second, origin, dir, out_hit, hit);
 				}
 
 				if (tMaxX < tMaxY) {
