@@ -310,6 +310,8 @@ namespace RGO
 			std::vector<std::vector<Eigen::Vector3f>>& out_patch_points,
 			std::vector<std::vector<Eigen::Vector3i>>& out_patch_indices) const;
 
+		std::vector<std::vector<OpenMesh::VertexHandle>> GetBorderLoops() const;
+		
 	protected:
 		Eigen::Vector3f grid_min;
 		Eigen::Vector3f grid_max;
@@ -343,6 +345,29 @@ namespace RGO
 		const std::vector<Eigen::Vector3i>& indices,
 		const char* label,
 		float near_pair_radius);
+
+	class OperatorCreateSkirt : public Operator
+	{
+	public:
+		OperatorCreateSkirt(Mesh* mesh, float skirt_height);
+		OperatorCreateSkirt(Mesh* mesh, float skirt_height, const Eigen::Vector3f& direction);
+		virtual bool Execute() override;
+
+		bool ComputeLoopDirection(
+			const std::vector<OpenMesh::VertexHandle>& loop,
+			Eigen::Vector3f& out_direction) const;
+	private:
+		bool BuildSkirtForLoop(
+			const std::vector<OpenMesh::VertexHandle>& loop,
+			const Eigen::Vector3f& offset,
+			std::vector<Eigen::Vector3f>& out_points,
+			std::vector<Eigen::Vector3i>& out_indices) const;
+
+		Mesh* meshTarget = nullptr;
+		float skirt_height = 0.0f;
+		Eigen::Vector3f skirt_direction = Eigen::Vector3f(0.0f, 0.0f, -1.0f);
+		bool has_explicit_direction = false;
+	};
 
 	class OperatorIntersectionLoops : public Operator
 	{

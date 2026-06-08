@@ -208,6 +208,7 @@
     <ClCompile Include="Apps\AppHalfEdgeMesh.cpp" />
     <ClCompile Include="Apps\AppICP.cpp" />
     <ClCompile Include="Apps\AppManifold.cpp" />
+    <ClCompile Include="Apps\AppModelBaseBuilder.cpp" />
     <ClCompile Include="Apps\AppMorphology.cpp" />
     <ClCompile Include="Apps\AppMorphologyDebug.cpp" />
     <ClCompile Include="Apps\AppRGO.cpp" />

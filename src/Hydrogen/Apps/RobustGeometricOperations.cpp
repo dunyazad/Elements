@@ -1466,6 +1466,56 @@ namespace RGO
 
 		return patch_count;
 	}
+
+	std::vector<std::vector<OpenMesh::VertexHandle>> Mesh::GetBorderLoops() const
+	{
+		std::vector<std::vector<OpenMesh::VertexHandle>> out_loops;
+
+		out_loops.clear();
+
+		// A boundary halfedge is one whose face side is empty. Following
+		// next_halfedge_handle from a boundary halfedge stays on the same
+		// border and returns to the start after one full traversal. Each
+		// halfedge is visited at most once via the visited mark, so a mesh
+		// with several holes yields one loop per hole and the walk
+		// terminates. The length cap is a hard stop against a corrupt
+		// next-link cycle that never returns to the seed.
+		std::vector<char> visited(n_halfedges(), 0);
+		const size_t max_chain = n_halfedges() + 1;
+
+		for (size_t i = 0; i < n_halfedges(); ++i)
+		{
+			OpenMesh::HalfedgeHandle start = halfedge_handle(static_cast<int>(i));
+			if (status(start).deleted()) continue;
+			if (false == is_boundary(start)) continue;
+			if (0 != visited[start.idx()]) continue;
+
+			std::vector<OpenMesh::VertexHandle> loop;
+			OpenMesh::HalfedgeHandle heh = start;
+			size_t guard = 0;
+
+			do
+			{
+				visited[heh.idx()] = 1;
+				loop.push_back(to_vertex_handle(heh));
+
+				heh = next_halfedge_handle(heh);
+				++guard;
+
+				if (false == heh.is_valid()) break;
+				if (guard > max_chain) break;
+
+			} while (heh != start);
+
+			if (loop.size() >= 3)
+			{
+				out_loops.push_back(std::move(loop));
+			}
+		}
+
+		return out_loops;
+	}
+
 	// ------------------------------------------------------------
 	// Operators
 	// ------------------------------------------------------------
@@ -1845,6 +1895,204 @@ namespace RGO
 		std::cout << "[Error] SoupTopology(" << label << "): " << failures
 			<< " failure categories." << std::endl;
 		return false;
+	}
+
+	OperatorCreateSkirt::OperatorCreateSkirt(Mesh* mesh, float skirt_height)
+		: meshTarget(mesh)
+		, skirt_height(skirt_height)
+		, skirt_direction(Eigen::Vector3f(0.0f, 0.0f, 1.0f))
+		, has_explicit_direction(false)
+	{
+	}
+	
+	OperatorCreateSkirt::OperatorCreateSkirt(Mesh* mesh, float skirt_height, const Eigen::Vector3f& direction)
+		: meshTarget(mesh)
+		, skirt_height(skirt_height)
+		, skirt_direction(direction)
+		, has_explicit_direction(true)
+	{
+	}
+
+	bool OperatorCreateSkirt::BuildSkirtForLoop(
+		const std::vector<OpenMesh::VertexHandle>& loop,
+		const Eigen::Vector3f& offset,
+		std::vector<Eigen::Vector3f>& out_points,
+		std::vector<Eigen::Vector3i>& out_indices) const
+	{
+		size_t n = loop.size();
+		if (n < 3) return false;
+
+		// The loop vertices are gathered in boundary-halfedge order, so
+		// consecutive entries loop[i] -> loop[i+1] form an existing border
+		// edge running in the boundary direction. The top ring reuses the
+		// border vertex coordinates; the bottom ring is the same ring
+		// pushed by offset. Two triangles per column stitch them, wound so
+		// the wall's outward normal is consistent with that border
+		// direction (the boundary halfedge has empty face on its left, so
+		// top_a -> top_b -> bottom_b keeps the wall facing outward).
+		int base = static_cast<int>(out_points.size());
+
+		for (size_t i = 0; i < n; ++i)
+		{
+			Eigen::Vector3f top(meshTarget->point(loop[i]).data());
+			out_points.push_back(top);
+		}
+		for (size_t i = 0; i < n; ++i)
+		{
+			Eigen::Vector3f top(meshTarget->point(loop[i]).data());
+			out_points.push_back(top + offset);
+		}
+
+		int top_base = base;
+		int bot_base = base + static_cast<int>(n);
+
+		for (size_t i = 0; i < n; ++i)
+		{
+			int ti0 = top_base + static_cast<int>(i);
+			int ti1 = top_base + static_cast<int>((i + 1) % n);
+			int bi0 = bot_base + static_cast<int>(i);
+			int bi1 = bot_base + static_cast<int>((i + 1) % n);
+
+			out_indices.emplace_back(ti0, ti1, bi1);
+			out_indices.emplace_back(ti0, bi1, bi0);
+		}
+
+		return true;
+	}
+
+	bool OperatorCreateSkirt::Execute()
+	{
+		if (nullptr == meshTarget) return false;
+		if (0 == meshTarget->n_faces()) return false;
+		if (skirt_height < EPSILON)
+		{
+			std::cout << "[Error] OperatorCreateSkirt: skirt_height must be positive, got "
+				<< skirt_height << "." << std::endl;
+			return false;
+		}
+
+		std::vector<std::vector<OpenMesh::VertexHandle>> loops = meshTarget->GetBorderLoops();
+		if (loops.empty())
+		{
+			std::cout << "[Warning] OperatorCreateSkirt: mesh has no border loops;"
+				<< " nothing to extend. The mesh may already be closed." << std::endl;
+			return false;
+		}
+
+		std::vector<Eigen::Vector3f> flat_points;
+		std::vector<Eigen::Vector3i> flat_indices;
+		ExtractMeshSoup(meshTarget, flat_points, flat_indices);
+
+		size_t loops_built = 0;
+		for (const auto& loop : loops)
+		{
+			// The skirt direction is derived from the loop itself. An
+			// explicit direction, when supplied, overrides the computed one
+			// for every loop; otherwise each loop gets its own outward
+			// plane normal, which is correct when a mesh has several holes
+			// lying in different planes.
+			Eigen::Vector3f dir;
+			if (has_explicit_direction)
+			{
+				dir = skirt_direction;
+			}
+			else if (false == ComputeLoopDirection(loop, dir))
+			{
+				std::cout << "[Warning] OperatorCreateSkirt: a border loop is degenerate;"
+					<< " skipped." << std::endl;
+				continue;
+			}
+
+			float dlen = dir.norm();
+			if (dlen < 1e-12f) continue;
+			dir /= dlen;
+
+			Eigen::Vector3f offset = dir * skirt_height;
+
+			if (BuildSkirtForLoop(loop, offset, flat_points, flat_indices))
+			{
+				++loops_built;
+			}
+		}
+
+		std::cout << "[Info] OperatorCreateSkirt: extended " << loops_built
+			<< " of " << loops.size() << " border loops by height "
+			<< skirt_height << " (direction computed from each loop)." << std::endl;
+
+		meshTarget->clear();
+		meshTarget->Build(flat_points, flat_indices);
+
+		return loops_built > 0;
+	}
+
+	bool OperatorCreateSkirt::ComputeLoopDirection(
+		const std::vector<OpenMesh::VertexHandle>& loop,
+		Eigen::Vector3f& out_direction) const
+	{
+		size_t n = loop.size();
+		if (n < 3) return false;
+
+		// Loop centroid and Newell-method plane normal. Newell accumulates
+		// the cross terms over every edge of the loop, so it yields a
+		// stable area-weighted normal even when the loop is slightly
+		// non-planar or has nearly collinear consecutive points, where a
+		// single three-point cross product would collapse to zero.
+		Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
+		for (size_t i = 0; i < n; ++i)
+		{
+			centroid += Eigen::Vector3f(meshTarget->point(loop[i]).data());
+		}
+		centroid /= static_cast<float>(n);
+
+		Eigen::Vector3f normal = Eigen::Vector3f::Zero();
+		for (size_t i = 0; i < n; ++i)
+		{
+			Eigen::Vector3f cur(meshTarget->point(loop[i]).data());
+			Eigen::Vector3f nxt(meshTarget->point(loop[(i + 1) % n]).data());
+
+			normal.x() += (cur.y() - nxt.y()) * (cur.z() + nxt.z());
+			normal.y() += (cur.z() - nxt.z()) * (cur.x() + nxt.x());
+			normal.z() += (cur.x() - nxt.x()) * (cur.y() + nxt.y());
+		}
+
+		float nlen = normal.norm();
+		if (nlen < 1e-12f) return false;
+		normal /= nlen;
+
+		// Sign disambiguation. The skirt must grow AWAY from the surface.
+		// Averaging the centroids of the faces incident to the loop
+		// vertices gives a point on the surface side of the border; the
+		// vector from the loop centroid toward that point therefore points
+		// into the surface, so the skirt normal must oppose it. If the
+		// plane normal currently agrees with the inward direction, flip it.
+		Eigen::Vector3f surface_side = Eigen::Vector3f::Zero();
+		size_t face_count = 0;
+		for (size_t i = 0; i < n; ++i)
+		{
+			for (auto vf_it = meshTarget->vf_iter(loop[i]); vf_it.is_valid(); ++vf_it)
+			{
+				OpenMesh::FaceHandle fh = *vf_it;
+				if (meshTarget->status(fh).deleted()) continue;
+
+				Eigen::Vector3f v0, v1, v2;
+				meshTarget->GetFaceVertices(fh, v0, v1, v2);
+				surface_side += (v0 + v1 + v2) / 3.0f;
+				++face_count;
+			}
+		}
+
+		if (face_count > 0)
+		{
+			surface_side /= static_cast<float>(face_count);
+			Eigen::Vector3f inward = surface_side - centroid;
+			if (normal.dot(inward) > 0.0f)
+			{
+				normal = -normal;
+			}
+		}
+
+		out_direction = normal;
+		return true;
 	}
 
 	OperatorIntersectionLoops::OperatorIntersectionLoops(Mesh* a, Mesh* b)
