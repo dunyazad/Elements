@@ -170,6 +170,13 @@ public:
             });
     }
 
+    template<typename EventType>
+    bool HasEventCallback(Entity entity, const std::string& layerName)
+    {
+        if (!eventSystem) return false;
+		return eventSystem->HasSubscribers<EventType>(layerName);
+	}
+
     template<typename T>
     void RemoveEventCallback(Entity entity)
     {

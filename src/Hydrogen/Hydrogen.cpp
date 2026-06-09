@@ -36,7 +36,8 @@ using VD = VisualDebugging;
 
 #include "Apps/Apps.h"
 
-const std::string appName = "AppModelBaseBuilder";
+const std::string appName = "AppMeshSplineCut";
+//const std::string appName = "AppModelBaseBuilder";
 //const std::string appName = "AppRGO";
 //const std::string appName = "AppTextMesh";
 //const std::string appName = "AppHalfEdgeMesh";
@@ -126,18 +127,26 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 	Cu_Initialize();
 
+	RECT lastRect;
+
 	g_renderingThread = std::thread([&]() {
+		Apps::Initialize(appName);
+
 		He_Initialize(hWnd, 0);
 		He_InitializeScene3D();
 
 		RECT rect;
 		if (GetClientRect(hWnd, &rect))
 		{
-			int width = rect.right - rect.left;
-			int height = rect.bottom - rect.top;
-			if (width > 0 && height > 0)
+			if (lastRect.left != rect.left || lastRect.top != rect.top || lastRect.right != rect.right || lastRect.bottom != rect.bottom)
 			{
-				He_Resize(width, height);
+				int width = rect.right - rect.left;
+				int height = rect.bottom - rect.top;
+				if (width > 0 && height > 0)
+				{
+					He_Resize(width, height);
+					lastRect = rect;
+				}
 			}
 		}
 

@@ -60,6 +60,40 @@ public:
     }
 
     template<typename EventType>
+    bool HasSubscribers(const std::string& layerName)
+    {
+        EventLayer* layer = GetLayer(layerName);
+        if (nullptr == layer) return false;
+        auto& handlers = layer->handlers;
+        for (auto& h : handlers)
+        {
+            auto wrapper = std::static_pointer_cast<EventHandlerWrapper<EventType>>(h);
+            if (wrapper->callback) return true;
+        }
+        return false;
+	}
+
+    template<typename EventType>
+    bool Unsubscribe(const std::string& layerName, std::function<void(const EventType&)> handler)
+    {
+        EventLayer* layer = GetLayer(layerName);
+        if (nullptr == layer) return false;
+        auto& handlers = layer->handlers;
+        auto it = std::remove_if(handlers.begin(), handlers.end(),
+            [&handler](const std::shared_ptr<void>& h) {
+                auto wrapper = std::static_pointer_cast<EventHandlerWrapper<EventType>>(h);
+                return wrapper->callback.target_type() == handler.target_type() &&
+                    wrapper->callback.target<void(const EventType&)>() == handler.target<void(const EventType&)>();
+            });
+        if (it != handlers.end())
+        {
+            handlers.erase(it, handlers.end());
+            return true;
+        }
+        return false;
+	}
+
+    template<typename EventType>
     void Dispatch(const EventType& event)
     {
         for (auto& layer : layers)

@@ -28,6 +28,10 @@ using namespace Huvitz;
 class AppDataFrames : public App
 {
 public:
+    virtual void Initialize() override
+    {
+    }
+
     virtual void Execute() override
     {
         nvDriverSetting.forceGPUPerformance();

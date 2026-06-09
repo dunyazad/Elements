@@ -206,6 +206,10 @@ public:
 class AppSDFFiltering : public App
 {
 public:
+	virtual void Initialize() override
+	{
+	}
+
 	virtual void Execute() override
 	{
 		// 1. 데이터 로드

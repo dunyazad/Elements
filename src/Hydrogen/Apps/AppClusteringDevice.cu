@@ -452,6 +452,10 @@ private:
 class AppClusteringDevice : public App
 {
 public:
+	virtual void Initialize() override
+	{
+	}
+
 	virtual void Execute() override
 	{
 		CheckDeviceMemory("Initial");

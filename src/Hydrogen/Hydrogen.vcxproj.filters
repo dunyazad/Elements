@@ -31,6 +31,9 @@
     <Filter Include="Apps\OLD">
       <UniqueIdentifier>{90e49e74-63a5-493f-a70e-81b6f2a508cc}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Apps\RGO">
+      <UniqueIdentifier>{f83158ed-00c6-4b9e-88cf-00a49a496a7b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -96,17 +99,20 @@
     <ClInclude Include="Apps\SimpleGeometryLibrary_Primitives.hpp">
       <Filter>Apps\OLD</Filter>
     </ClInclude>
-    <ClInclude Include="Apps\HeliumMesh.h">
-      <Filter>Apps</Filter>
-    </ClInclude>
-    <ClInclude Include="Apps\TextMeshGenerator.hpp">
-      <Filter>Apps</Filter>
-    </ClInclude>
-    <ClInclude Include="Apps\RobustGeometricOperations.h">
-      <Filter>Apps</Filter>
-    </ClInclude>
     <ClInclude Include="Apps\Apps.h">
       <Filter>Apps</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\RGO\HeliumMesh.h">
+      <Filter>Apps\RGO</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\RGO\RobustGeometricOperations.h">
+      <Filter>Apps\RGO</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\RGO\TextMeshGenerator.hpp">
+      <Filter>Apps\RGO</Filter>
+    </ClInclude>
+    <ClInclude Include="Apps\RGO\RGOCommon.h">
+      <Filter>Apps\RGO</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -161,10 +167,16 @@
     <ClCompile Include="Apps\AppRGO.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
-    <ClCompile Include="Apps\RobustGeometricOperations.cpp">
+    <ClCompile Include="Apps\AppModelBaseBuilder.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
-    <ClCompile Include="Apps\AppModelBaseBuilder.cpp">
+    <ClCompile Include="Apps\RGO\RobustGeometricOperations.cpp">
+      <Filter>Apps\RGO</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\RGO\RGOCommon.cpp">
+      <Filter>Apps\RGO</Filter>
+    </ClCompile>
+    <ClCompile Include="Apps\AppMeshSplineCut.cpp">
       <Filter>Apps</Filter>
     </ClCompile>
   </ItemGroup>

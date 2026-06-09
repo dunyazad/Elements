@@ -67,6 +67,10 @@
 //class AppICP : public App
 //{
 //public:
+//	  virtual void Initialize() override
+//	  {
+//	  }
+//
 //    virtual void Execute() override
 //    {
 //		PLYFormat ply;

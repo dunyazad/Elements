@@ -247,6 +247,10 @@ void ExtractPointsFromHashMapDevice(
 class AppMergePointClouds_Local : public App
 {
 public:
+    virtual void Initialize() override
+    {
+    }
+
     void Tool()
     {
         CUDAWarmUp();

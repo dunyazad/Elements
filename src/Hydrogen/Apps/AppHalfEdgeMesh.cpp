@@ -18,13 +18,17 @@
 using VD = VisualDebugging;
 
 #include "SimpleGeometryLibrary.hpp"
-#include "HeliumMesh.h"
+#include "RGO/HeliumMesh.h"
 #include <OpenMesh/Core/IO/MeshIO.hh>
 
 
 class AppHalfEdgeMesh : public App
 {
 public:
+    virtual void Initialize() override
+    {
+    }
+
     // load an STL into a welded mesh (deduplicate identical vertices first)
     void LoadWelded(SGLHeliumMesh& mesh, const std::string& path)
     {

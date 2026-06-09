@@ -655,6 +655,10 @@ inline std::vector<BlockCoord> frustumCull(const CameraParams& cam, float halfFo
 class AppVoxelStreaming : public App
 {
 public:
+    virtual void Initialize() override
+    {
+    }
+
     virtual void Execute() override
     {
         nvDriverSetting.forceGPUPerformance();

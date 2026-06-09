@@ -77,6 +77,10 @@ struct DVoxel
 class AppVoxelCache : public App
 {
 public:
+    virtual void Initialize() override
+    {
+    }
+
     virtual void Execute() override
     {
         CUDAWarmUp();

@@ -612,6 +612,10 @@ private:
 class AppClustering : public App
 {
 public:
+	virtual void Initialize() override
+	{
+	}
+
 	virtual void Execute() override
 	{
 		PLYFormat ply;

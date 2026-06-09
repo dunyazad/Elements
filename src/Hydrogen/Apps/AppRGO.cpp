@@ -17,14 +17,18 @@
 #include <Helium/VisualDebugging.h>
 using VD = VisualDebugging;
 
-#include "RobustGeometricOperations.h"
+#include "RGO/RobustGeometricOperations.h"
 #include <OpenMesh/Core/IO/MeshIO.hh>
-#include "HeliumMesh.h"
+#include "RGO/HeliumMesh.h"
 
 
 class AppRGO : public App
 {
 public:
+	virtual void Initialize() override
+	{
+	}
+
 	virtual void Execute() override
 	{
 		TS(LoadingMesh_A);

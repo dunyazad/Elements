@@ -89,6 +89,10 @@ __global__ void Kernel_InsertToHashMap(
 class AppICP : public App
 {
 public:
+    virtual void Initialize() override
+    {
+    }
+
     virtual void Execute() override
     {
         CUDAWarmUp();

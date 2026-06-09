@@ -25,6 +25,10 @@ namespace Eigen {
 class AppSTL : public App
 {
 public:
+	virtual void Initialize() override
+	{
+	}
+
 	virtual void Execute() override
 	{
 		//STLFormat;

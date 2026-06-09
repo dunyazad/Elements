@@ -118,6 +118,10 @@ std::vector<Point> GetAllPointsFromHashMap(CudaHashMap<uint64_t, Point>& hash_ma
 class AppMergePointClouds : public App
 {
 public:
+    virtual void Initialize() override
+    {
+    }
+
     virtual void Execute() override
     {
         CUDAWarmUp();

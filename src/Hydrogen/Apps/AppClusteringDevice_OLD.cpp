@@ -18,7 +18,11 @@ using VD = VisualDebugging;
 class AppClusteringDevice_OLD : public App
 {
 public:
-    virtual void Execute_NotSorted() 
+    virtual void Initialize() override
+    {
+    }
+
+    virtual void Execute_NotSorted()
     {
         cudaFree(0);
 

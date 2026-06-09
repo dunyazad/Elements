@@ -50,7 +50,7 @@ public:
             renderable->AddShader(Helium.CreateShader("Default", File("../../res/Shaders/Default.vs"), File("../../res/Shaders/Default.fs")));
             renderable->SetFaceCullingMode(Renderable::NoCulling);
 
-            Helium.CreateEventCallback<KeyEvent>(entity, "Mesh", [this](Entity e, const KeyEvent& event)
+            Helium.CreateEventCallback<KeyEvent>(entity, "3D", [this](Entity e, const KeyEvent& event)
                 {
                     auto current_renderable = Helium.GetComponent<Renderable>(e);
                     if (nullptr == current_renderable) return;
@@ -73,7 +73,7 @@ public:
                         current_mode = OperationMode::SplitFace;
                 });
 
-            Helium.CreateEventCallback<MouseButtonEvent>(entity, "Mesh", [this](Entity e, const MouseButtonEvent& event)
+            Helium.CreateEventCallback<MouseButtonEvent>(entity, "3D", [this](Entity e, const MouseButtonEvent& event)
                 {
                     if (event.action == 1 && event.button == MouseButton::Left)
                     {
@@ -281,106 +281,19 @@ namespace RGO
 
 		void Update()
 		{
-			using VD = VisualDebugging;
-
 			if (false == is_dirty) return;
 
-			Renderable* renderable = nullptr;
+			EnsureEntity();
 
-			if (InvalidEntity == entity)
-			{
-				entity = Helium.CreateEntity("HeliumMesh");
-				renderable = Helium.CreateComponent<Renderable>(entity);
-				renderable->Initialize(Renderable::Triangles);
-				renderable->AddShader(Helium.CreateShader("Default", File("../../res/Shaders/Default.vs"), File("../../res/Shaders/Default.fs")));
-				renderable->SetFaceCullingMode(Renderable::NoCulling);
-
-				Helium.CreateEventCallback<KeyEvent>(entity, "Mesh", [this](Entity e, const KeyEvent& event)
-					{
-						auto current_renderable = Helium.GetComponent<Renderable>(e);
-						if (nullptr == current_renderable) return;
-
-						if (event.action == 1 && KeyCode::D1 == event.keyCode)
-							current_renderable->SetDrawingMode(Renderable::Solid);
-						else if (event.action == 1 && KeyCode::D2 == event.keyCode)
-							current_renderable->SetDrawingMode(Renderable::WireFrame);
-						else if (event.action == 1 && KeyCode::D3 == event.keyCode)
-							current_renderable->SetDrawingMode(Renderable::WireFrameOverSolid);
-						else if (event.action == 1 && KeyCode::D4 == event.keyCode)
-							current_renderable->SetDrawingMode(Renderable::Point);
-						else if (event.action == 1 && KeyCode::D5 == event.keyCode)
-							current_renderable->SetDrawingMode(Renderable::None);
-						else if (event.action == 1 && KeyCode::F1 == event.keyCode)
-							current_mode = OperationMode::None;
-						else if (event.action == 1 && KeyCode::F2 == event.keyCode)
-							current_mode = OperationMode::FlipEdge;
-						else if (event.action == 1 && KeyCode::F3 == event.keyCode)
-							current_mode = OperationMode::SplitFace;
-					});
-
-				Helium.CreateEventCallback<MouseButtonEvent>(entity, "Mesh", [this](Entity e, const MouseButtonEvent& event)
-					{
-						if (event.action == 1 && event.button == MouseButton::Left)
-						{
-							auto current_renderable = Helium.GetComponent<Renderable>(e);
-							if (nullptr == current_renderable) return;
-
-							auto camera_entity = Helium.GetEntityByName("MainCamera");
-							auto camera = Helium.GetComponent<Camera>(camera_entity);
-							if (nullptr == camera) return;
-
-							TS(Picking);
-							Ray ray = camera->ScreenPointToRay(
-								(float)event.xpos,
-								(float)event.ypos,
-								Helium.GetWidth(),
-								Helium.GetHeight()
-							);
-
-							Eigen::Vector3f local_origin = ray.origin - offset;
-
-							IntersectionResult hit_result;
-							bool is_hit = IntersectGridRay(local_origin, ray.direction, hit_result);
-							TE(Picking);
-
-							if (is_hit)
-							{
-								auto world_picked_point = hit_result.hit_point + offset;
-
-								if (event.IsCtrlPressed())
-								{
-									auto cameraEntity = Helium.GetEntityByName("MainCamera");
-									Helium.GetComponent<Camera>(cameraEntity)->SetTarget(world_picked_point);
-								}
-
-								if (OperationMode::None == current_mode)
-								{
-									VD::Clear("PickedTriangle");
-									VD::Clear("PickedTrianglePoints");
-								}
-								else if (OperationMode::FlipEdge == current_mode)
-								{
-									HandleFlipEdge(hit_result);
-								}
-								else if (OperationMode::SplitFace == current_mode)
-								{
-									HandleSplitFace(hit_result);
-								}
-
-								VD::Clear("Picked");
-								VD::AddSphere("Picked", world_picked_point, { 0.0f, 0.0f, 1.0f }, 0.005f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
-							}
-						}
-					});
-			}
-			else
-			{
-				renderable = Helium.GetComponent<Renderable>(entity);
-			}
-
+			Renderable* renderable = Helium.GetComponent<Renderable>(entity);
 			if (renderable)
 			{
 				UploadToRenderable(renderable);
+			}
+
+			if (update_callback)
+			{
+				update_callback();
 			}
 
 			is_dirty = false;
@@ -716,5 +629,114 @@ namespace RGO
 
 			return true;
 		}
+		
+		void SetUpdateCallback(std::function<void (void)> callback)
+		{
+			update_callback = callback;
+		}
+
+		void SetOnEntityCreatedCallback(std::function<void(void)> callback)
+		{
+			on_entity_created = callback;
+		}
+
+		void EnsureEntity()
+		{
+			if (InvalidEntity != entity) return;
+
+			entity = Helium.CreateEntity("HeliumMesh");
+
+			Renderable* renderable = Helium.CreateComponent<Renderable>(entity);
+			renderable->Initialize(Renderable::Triangles);
+			renderable->AddShader(Helium.CreateShader("Default", File("../../res/Shaders/Default.vs"), File("../../res/Shaders/Default.fs")));
+			renderable->SetFaceCullingMode(Renderable::NoCulling);
+
+			Helium.CreateEventCallback<KeyEvent>(entity, "3D", [this](Entity e, const KeyEvent& event)
+				{
+					auto current_renderable = Helium.GetComponent<Renderable>(e);
+					if (nullptr == current_renderable) return;
+
+					if (event.action == 1 && KeyCode::D1 == event.keyCode)
+						current_renderable->SetDrawingMode(Renderable::Solid);
+					else if (event.action == 1 && KeyCode::D2 == event.keyCode)
+						current_renderable->SetDrawingMode(Renderable::WireFrame);
+					else if (event.action == 1 && KeyCode::D3 == event.keyCode)
+						current_renderable->SetDrawingMode(Renderable::WireFrameOverSolid);
+					else if (event.action == 1 && KeyCode::D4 == event.keyCode)
+						current_renderable->SetDrawingMode(Renderable::Point);
+					else if (event.action == 1 && KeyCode::D5 == event.keyCode)
+						current_renderable->SetDrawingMode(Renderable::None);
+					else if (event.action == 1 && KeyCode::F1 == event.keyCode)
+						current_mode = OperationMode::None;
+					else if (event.action == 1 && KeyCode::F2 == event.keyCode)
+						current_mode = OperationMode::FlipEdge;
+					else if (event.action == 1 && KeyCode::F3 == event.keyCode)
+						current_mode = OperationMode::SplitFace;
+				});
+
+			/*Helium.CreateEventCallback<MouseButtonEvent>(entity, "3D", [this](Entity e, const MouseButtonEvent& event)
+				{
+					if (event.action == 1 && event.button == MouseButton::Left)
+					{
+						auto current_renderable = Helium.GetComponent<Renderable>(e);
+						if (nullptr == current_renderable) return;
+
+						auto camera_entity = Helium.GetEntityByName("MainCamera");
+						auto camera = Helium.GetComponent<Camera>(camera_entity);
+						if (nullptr == camera) return;
+
+						TS(Picking);
+						Ray ray = camera->ScreenPointToRay(
+							(float)event.xpos,
+							(float)event.ypos,
+							Helium.GetWidth(),
+							Helium.GetHeight()
+						);
+
+						Eigen::Vector3f local_origin = ray.origin - offset;
+
+						IntersectionResult hit_result;
+						bool is_hit = IntersectGridRay(local_origin, ray.direction, hit_result);
+						TE(Picking);
+
+						if (is_hit)
+						{
+							auto world_picked_point = hit_result.hit_point + offset;
+
+							if (event.IsCtrlPressed())
+							{
+								auto cameraEntity = Helium.GetEntityByName("MainCamera");
+								Helium.GetComponent<Camera>(cameraEntity)->SetTarget(world_picked_point);
+							}
+
+							if (OperationMode::None == current_mode)
+							{
+								VisualDebugging::Clear("PickedTriangle");
+								VisualDebugging::Clear("PickedTrianglePoints");
+							}
+							else if (OperationMode::FlipEdge == current_mode)
+							{
+								HandleFlipEdge(hit_result);
+							}
+							else if (OperationMode::SplitFace == current_mode)
+							{
+								HandleSplitFace(hit_result);
+							}
+
+							VisualDebugging::Clear("Picked");
+							VisualDebugging::AddSphere("Picked", world_picked_point, { 0.0f, 0.0f, 1.0f }, 0.005f, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
+						}
+					}
+				});*/
+
+			if (on_entity_created)
+			{
+				on_entity_created();
+				on_entity_created = nullptr;
+			}
+		}
+	protected:
+		std::function<void (void)> update_callback;
+		std::function<void (void)> on_entity_created;
 	};
 }

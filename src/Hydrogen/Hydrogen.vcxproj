@@ -190,11 +190,12 @@
     <ClInclude Include="Apps\Core\DataStructures\VoxelCache.h" />
     <ClInclude Include="Apps\Core\DataStructures\VoxelDataBase.h" />
     <ClInclude Include="Apps\Core\Operations\OperationPointCloudMerge.h" />
-    <ClInclude Include="Apps\HeliumMesh.h" />
-    <ClInclude Include="Apps\RobustGeometricOperations.h" />
+    <ClInclude Include="Apps\RGO\HeliumMesh.h" />
+    <ClInclude Include="Apps\RGO\RGOCommon.h" />
+    <ClInclude Include="Apps\RGO\RobustGeometricOperations.h" />
+    <ClInclude Include="Apps\RGO\TextMeshGenerator.hpp" />
     <ClInclude Include="Apps\SimpleGeometryLibrary.hpp" />
     <ClInclude Include="Apps\SimpleGeometryLibrary_Primitives.hpp" />
-    <ClInclude Include="Apps\TextMeshGenerator.hpp" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Hydrogen.h" />
     <ClInclude Include="Resource.h" />
@@ -208,6 +209,7 @@
     <ClCompile Include="Apps\AppHalfEdgeMesh.cpp" />
     <ClCompile Include="Apps\AppICP.cpp" />
     <ClCompile Include="Apps\AppManifold.cpp" />
+    <ClCompile Include="Apps\AppMeshSplineCut.cpp" />
     <ClCompile Include="Apps\AppModelBaseBuilder.cpp" />
     <ClCompile Include="Apps\AppMorphology.cpp" />
     <ClCompile Include="Apps\AppMorphologyDebug.cpp" />
@@ -218,7 +220,8 @@
     <ClCompile Include="Apps\AppTSDF.cpp" />
     <ClCompile Include="Apps\AppTSDFDevice.cpp" />
     <ClCompile Include="Apps\AppVoxelDataBaseMemoryUsageCheck.cpp" />
-    <ClCompile Include="Apps\RobustGeometricOperations.cpp" />
+    <ClCompile Include="Apps\RGO\RGOCommon.cpp" />
+    <ClCompile Include="Apps\RGO\RobustGeometricOperations.cpp" />
     <ClCompile Include="Hydrogen.cpp" />
     <ClCompile Include="TextMeshGenerator.cpp" />
   </ItemGroup>

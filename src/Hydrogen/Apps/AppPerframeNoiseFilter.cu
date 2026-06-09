@@ -77,6 +77,10 @@ struct DVoxel
 class AppPerframeNoiseFilter : public App
 {
 public:
+    virtual void Initialize() override
+    {
+    }
+
     virtual void Execute() override
     {
         CUDAWarmUp();

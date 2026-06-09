@@ -1373,6 +1373,10 @@ using namespace Huvitz;
 class AppVoxelDataBase : public App
 {
 public:
+	virtual void Initialize() override
+	{
+	}
+
 #if DTSDF
 	virtual void Execute() override
 	{

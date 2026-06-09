@@ -17,39 +17,48 @@
 #include <Helium/VisualDebugging.h>
 using VD = VisualDebugging;
 
-#include "RobustGeometricOperations.h"
+#include "RGO/RobustGeometricOperations.h"
 #include <OpenMesh/Core/IO/MeshIO.hh>
-#include "HeliumMesh.h"
+#include "RGO/HeliumMesh.h"
 
 
 class AppModelBaseBuilder : public App
 {
 public:
+	virtual void Initialize() override
+	{
+	}
+
 	virtual void Execute() override
 	{
 		TS(LoadingMesh_A);
 		meshes.emplace_back(std::make_unique<RGO::HeliumMesh>());
 		RGO::HeliumMesh& mesh_a = *meshes.back();
-		LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\maxillar_open.stl");
+		//LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\maxillar_open_rotated.stl");
+		LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\md.stl");
 		TE(LoadingMesh_A);
 
-		auto borderLoops = mesh_a.GetBorderLoops();
+		RGO::Pipeline pipeline;
+		pipeline.RegisterOperator<RGO::OperatorCreateSkirt>("OperatorCreateSkirt", &mesh_a, 10.0f);
+		pipeline.Run();
 
-		for (auto& loop : borderLoops)
-		{
-			for (size_t i = 0; i < loop.size(); i++)
-			{
-				auto p0 = mesh_a.point(loop[i]);
-				auto p1 = mesh_a.point(loop[(i + 1) % loop.size()]);
+		//auto borderLoops = mesh_a.GetBorderLoops();
 
-				printf("Border edge: (%f, %f, %f) -> (%f, %f, %f)\n", p0[0], p0[1], p0[2], p1[0], p1[1], p1[2]);
+		//for (auto& loop : borderLoops)
+		//{
+		//	for (size_t i = 0; i < loop.size(); i++)
+		//	{
+		//		auto p0 = mesh_a.point(loop[i]);
+		//		auto p1 = mesh_a.point(loop[(i + 1) % loop.size()]);
 
-				VD::AddLine("BorderLoop", { p0[0], p0[1], p0[2] }, { p1[0], p1[1], p1[2] }, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
-			}
-		}
+		//		printf("Border edge: (%f, %f, %f) -> (%f, %f, %f)\n", p0[0], p0[1], p0[2], p1[0], p1[1], p1[2]);
 
-		RGO::OperatorCreateSkirt op(&mesh_a, 10.0f, {1.0f, 0.0f, 1.0f});
-		op.Execute();
+		//		VD::AddLine("BorderLoop", { p0[0], p0[1], p0[2] }, { p1[0], p1[1], p1[2] }, Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
+		//	}
+		//}
+
+		//RGO::OperatorCreateSkirt op(&mesh_a, 10.0f, {1.0f, 0.0f, 1.0f});
+		//op.Execute();
 
 		Helium.AddOnUpdateCallback([this](float time_delta)
 			{

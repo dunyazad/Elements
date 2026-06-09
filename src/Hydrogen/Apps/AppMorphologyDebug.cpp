@@ -165,6 +165,10 @@ public:
 class AppMorphologyDebug : public App
 {
 public:
+	virtual void Initialize() override
+	{
+	}
+
 	void DrawVoxels(const MorphEngine::VoxelSet& voxels, float voxelSize, const Eigen::Vector4f& color, const std::string& name)
 	{
 		std::vector<Eigen::Vector3f> centers;

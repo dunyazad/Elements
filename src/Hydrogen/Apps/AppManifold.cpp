@@ -28,6 +28,10 @@ namespace Eigen {
 class AppManifold : public App
 {
 public:
+	virtual void Initialize() override
+	{
+	}
+
 	virtual void Execute() override
 	{
 		TS(LoadingMeshA);
@@ -148,7 +152,7 @@ public:
 		renderable->AddColors4(colors);
 		renderable->AddIndices(indices);
 
-		Helium.CreateEventCallback<KeyEvent>(entity, "Mesh", [renderable](Entity e, const KeyEvent& event) {
+		Helium.CreateEventCallback<KeyEvent>(entity, "3D", [renderable](Entity e, const KeyEvent& event) {
 			if (event.action == 1 && KeyCode::D1 == event.keyCode)
 			{
 				renderable->SetDrawingMode(Renderable::Solid);
