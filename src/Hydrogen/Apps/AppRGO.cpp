@@ -34,17 +34,17 @@ public:
 		TS(LoadingMesh_A);
 		meshes.emplace_back(std::make_unique<RGO::HeliumMesh>());
 		RGO::HeliumMesh& mesh_a = *meshes.back();
-		LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\A_Maxillar_T.stl");
+		//LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\A_Maxillar_T.stl");
 		//LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\Gadget.stl");
 		//LoadWelded(mesh_a, "D:\\Resources\\3D\\STL\\rabbit.stl");
-		//mesh_a.BuildSineWaveBox(
-		//	Eigen::Vector3f::Zero(),
-		//	Eigen::Vector3f(80.0f, 12.0f, 4.0f),
-		//	1.5f, 4.0f, 120, 12,
-		//	Eigen::MakeTransform(
-		//		Eigen::Vector3f(25.0f, 0.0f, 0.0f),
-		//		Eigen::Vector3f::UnitY(),
-		//		0.0f, Eigen::Vector3f::Ones()));
+		mesh_a.BuildSineWaveBox(
+			Eigen::Vector3f::Zero(),
+			Eigen::Vector3f(80.0f, 12.0f, 4.0f),
+			1.5f, 4.0f, 120, 12,
+			Eigen::MakeTransform(
+				Eigen::Vector3f(25.0f, 0.0f, 0.0f),
+				Eigen::Vector3f::UnitY(),
+				0.0f, Eigen::Vector3f::Ones()));
 		//mesh_a.BuildSineWaveBox(
 		//	Eigen::Vector3f::Zero(),
 		//	Eigen::Vector3f(60.0f, 12.0f, 4.0f),
@@ -59,10 +59,10 @@ public:
 		meshes.emplace_back(std::make_unique<RGO::HeliumMesh>());
 		RGO::HeliumMesh& mesh_b = *meshes.back();
 		mesh_b.mesh_color = Eigen::Vector4f(0.0f, 1.0f, 0.0f, 1.0f);
-		LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\A_Tooth.stl");
+		//LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\A_Tooth.stl");
 		//LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\Doughnut.stl");
 		//LoadWelded(mesh_b, "D:\\Resources\\3D\\STL\\rabbit_upside_down.stl");
-		//mesh_b.Build3DText("Hello 안녕 123 !@# 漢字", "..\\..\\res\\Fonts\\NanumGothic\\NanumGothic.ttf", 6.0f, 5.0f);
+		mesh_b.Build3DText("Hello 안녕 123 !@# 漢字", "..\\..\\res\\Fonts\\NanumGothic\\NanumGothic.ttf", 6.0f, 5.0f);
 		TE(LoadingMesh_B);
 
 		TS(BuildSpatialHashMap_A);
@@ -106,7 +106,7 @@ public:
 			mesh_result = meshes.back().get();
 			mesh_result->mesh_color = Eigen::Vector4f(1.0f, 0.5f, 0.0f, 1.0f);
 
-			boolean_op = std::make_unique<RGO::OperatorBoolean>(RGO::OperatorBoolean::Intersection, &mesh_a, &mesh_b, &op, mesh_result);
+			boolean_op = std::make_unique<RGO::OperatorBoolean>(RGO::OperatorBoolean::Union, &mesh_a, &mesh_b, &op, mesh_result);
 			boolean_ok = boolean_op->Execute();
 
 			if (false == boolean_ok)
@@ -121,86 +121,86 @@ public:
 		TE(Boolean);
 
 		
-		TS(Remesh);
-		// Isotropic remeshing of the boolean result, producing a uniform
-		// triangle distribution suitable as input to the offset stage. The
-		// result is a closed solid, so feature preservation keeps the box
-		// edges and the glyph outlines sharp; without it those creases
-		// would round off. Runs only on a validated boolean result.
-		bool remesh_ok = false;
-		if (boolean_ok && nullptr != mesh_result)
-		{
-			// target_edge_length is absolute world units. The sine-wave box
-			// spans 60 in x and the glyphs are about 6 tall with strokes
-			// near 0.5 wide, so a target around 0.5 keeps glyph detail while
-			// still simplifying the flat sine-wave regions. feature angle 30
-			// degrees flags the box corners and glyph creases as features.
-			RGO::OperatorRemesh remesh(mesh_result, 0.5f, 5, 50.0f);
-			remesh_ok = remesh.Execute();
+		//TS(Remesh);
+		//// Isotropic remeshing of the boolean result, producing a uniform
+		//// triangle distribution suitable as input to the offset stage. The
+		//// result is a closed solid, so feature preservation keeps the box
+		//// edges and the glyph outlines sharp; without it those creases
+		//// would round off. Runs only on a validated boolean result.
+		//bool remesh_ok = false;
+		//if (boolean_ok && nullptr != mesh_result)
+		//{
+		//	// target_edge_length is absolute world units. The sine-wave box
+		//	// spans 60 in x and the glyphs are about 6 tall with strokes
+		//	// near 0.5 wide, so a target around 0.5 keeps glyph detail while
+		//	// still simplifying the flat sine-wave regions. feature angle 30
+		//	// degrees flags the box corners and glyph creases as features.
+		//	RGO::OperatorRemesh remesh(mesh_result, 0.5f, 5, 50.0f);
+		//	remesh_ok = remesh.Execute();
 
-			std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> feature_lines;
-			remesh.GetFeatureEdgeLines(feature_lines);
+		//	std::vector<std::pair<Eigen::Vector3f, Eigen::Vector3f>> feature_lines;
+		//	remesh.GetFeatureEdgeLines(feature_lines);
 
-			for (const auto& line : feature_lines)
-			{
-				VD::AddLine(
-					"FeatureEdges",
-					line.first,
-					line.second,
-					Eigen::Vector4f(1.0f, 0.0f, 1.0f, 1.0f));
-			}
-			VD::SetLineWidth("FeatureEdges", 4.0f);
+		//	for (const auto& line : feature_lines)
+		//	{
+		//		VD::AddLine(
+		//			"FeatureEdges",
+		//			line.first,
+		//			line.second,
+		//			Eigen::Vector4f(1.0f, 0.0f, 1.0f, 1.0f));
+		//	}
+		//	VD::SetLineWidth("FeatureEdges", 4.0f);
 
-			std::cout << "[Info] AppRGO: drew " << feature_lines.size()
-				<< " remesh feature edges." << std::endl;
+		//	std::cout << "[Info] AppRGO: drew " << feature_lines.size()
+		//		<< " remesh feature edges." << std::endl;
 
-			TS(VisualizeBadVertices);
-			// Yellow spheres mark vertices where the feature curve network is
-			// broken (degree != 2 but not pinned as a corner). They localize
-			// exactly where detection or an operator tore the curve.
-			if (remesh_ok)
-			{
-				const std::vector<Eigen::Vector3f>& bad = remesh.GetBadFeatureVertices();
-				for (const auto& v : bad)
-				{
-					VD::AddSphere(
-						"BadFeatureVertices",
-						v,
-						Eigen::Vector3f(0.0f, 0.0f, 1.0f),
-						0.5f,
-						Eigen::Vector4f(1.0f, 1.0f, 0.0f, 1.0f));
-				}
-				std::cout << "[Info] AppRGO: drew " << bad.size()
-					<< " bad feature vertices." << std::endl;
-			}
-			TE(VisualizeBadVertices);
+		//	TS(VisualizeBadVertices);
+		//	// Yellow spheres mark vertices where the feature curve network is
+		//	// broken (degree != 2 but not pinned as a corner). They localize
+		//	// exactly where detection or an operator tore the curve.
+		//	if (remesh_ok)
+		//	{
+		//		const std::vector<Eigen::Vector3f>& bad = remesh.GetBadFeatureVertices();
+		//		for (const auto& v : bad)
+		//		{
+		//			VD::AddSphere(
+		//				"BadFeatureVertices",
+		//				v,
+		//				Eigen::Vector3f(0.0f, 0.0f, 1.0f),
+		//				0.5f,
+		//				Eigen::Vector4f(1.0f, 1.0f, 0.0f, 1.0f));
+		//		}
+		//		std::cout << "[Info] AppRGO: drew " << bad.size()
+		//			<< " bad feature vertices." << std::endl;
+		//	}
+		//	TE(VisualizeBadVertices);
 
-			TS(VisualizeFlippedFaces);
-			// Red spheres mark faces CountFlippedFaces judged as folded
-			// relative to the reference surface. Used to confirm whether these
-			// are real folds or a misjudgment of the check on thin walls.
-			if (remesh_ok)
-			{
-				const std::vector<Eigen::Vector3f>& flipped = remesh.GetFlippedFaceCenters();
-				for (const auto& c : flipped)
-				{
-					VD::AddSphere(
-						"FlippedFaces",
-						c,
-						Eigen::Vector3f(0.0f, 0.0f, 1.0f),
-						0.08f,
-						Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
-				}
-				std::cout << "[Info] AppRGO: drew " << flipped.size()
-					<< " flipped face centers." << std::endl;
-			}
-			TE(VisualizeFlippedFaces);
-		}
-		else
-		{
-			std::cout << "[Info] AppRGO: skipping remesh (no valid boolean result)." << std::endl;
-		}
-		TE(Remesh);
+		//	TS(VisualizeFlippedFaces);
+		//	// Red spheres mark faces CountFlippedFaces judged as folded
+		//	// relative to the reference surface. Used to confirm whether these
+		//	// are real folds or a misjudgment of the check on thin walls.
+		//	if (remesh_ok)
+		//	{
+		//		const std::vector<Eigen::Vector3f>& flipped = remesh.GetFlippedFaceCenters();
+		//		for (const auto& c : flipped)
+		//		{
+		//			VD::AddSphere(
+		//				"FlippedFaces",
+		//				c,
+		//				Eigen::Vector3f(0.0f, 0.0f, 1.0f),
+		//				0.08f,
+		//				Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f));
+		//		}
+		//		std::cout << "[Info] AppRGO: drew " << flipped.size()
+		//			<< " flipped face centers." << std::endl;
+		//	}
+		//	TE(VisualizeFlippedFaces);
+		//}
+		//else
+		//{
+		//	std::cout << "[Info] AppRGO: skipping remesh (no valid boolean result)." << std::endl;
+		//}
+		//TE(Remesh);
 		
 
 		TS(VisualizeSeamEdges);

@@ -375,8 +375,8 @@ namespace RGO
 		// that already lies on the surface; the polyline is then Laplacian
 		// smoothed with every moved point reprojected onto the surface, while
 		// the picked anchors stay fixed so the curve passes through them.
-		// closed makes a loop (the dental margin case). Requires a built
-		// spatial hash. Returns false on degenerate input.
+		// closed makes a loop. Requires a built spatial hash. Returns false
+		// on degenerate input.
 		bool BuildGeodesicSurfaceCurve(
 			const std::vector<Eigen::Vector3f>& picked_points,
 			bool closed,
@@ -384,6 +384,36 @@ namespace RGO
 			float smoothing_strength,
 			std::vector<Eigen::Vector3f>& out_curve,
 			std::vector<OpenMesh::FaceHandle>& out_faces) const;
+
+		// Builds the geodesic vertex loop used as a cut seam from picked
+		// points, the same anchors and geodesics that BuildGeodesicSurfaceCurve
+		// visualizes. The loop is the unsmoothed vertex sequence so every
+		// consecutive pair is a real mesh edge. out_loop lists vertices once
+		// around the loop (no repeated closing vertex). Returns false if a
+		// geodesic is missing, if any consecutive pair is not an edge, or if
+		// the loop is not simple (revisits a vertex). closed cut only.
+		bool BuildCutSeamVertexLoop(
+			const std::vector<Eigen::Vector3f>& picked_points,
+			std::vector<OpenMesh::VertexHandle>& out_loop) const;
+
+		// Converts a vertex loop into a seam edge flag vector indexed by edge
+		// index, sized to n_edges(). Each consecutive pair (cyclic) must be a
+		// real edge; returns false otherwise. The flags feed SplitMeshBySeam.
+		bool BuildSeamFromVertexLoop(
+			const std::vector<OpenMesh::VertexHandle>& loop,
+			std::vector<char>& out_edge_is_seam) const;
+
+		// Splits the mesh along a picked margin loop into exactly two welded
+		// patches. Fails (returns false, emits nothing) unless the seam is a
+		// valid simple loop that separates the surface into two parts. The
+		// patch with the smaller total triangle area is returned in the
+		// _small outputs, the other in _large. Requires a built spatial hash.
+		bool SplitByMarginLoop(
+			const std::vector<Eigen::Vector3f>& picked_points,
+			std::vector<Eigen::Vector3f>& out_small_points,
+			std::vector<Eigen::Vector3i>& out_small_indices,
+			std::vector<Eigen::Vector3f>& out_large_points,
+			std::vector<Eigen::Vector3i>& out_large_indices) const;
 
 	protected:
 		Eigen::Vector3f grid_min;

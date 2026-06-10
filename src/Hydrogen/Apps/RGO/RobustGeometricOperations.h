@@ -58,6 +58,21 @@ namespace RGO
 
 		virtual bool Execute() override;
 
+		// Single-mesh entry point for cutting a mesh along a surface curve
+		// (a dental margin line) instead of along another mesh's
+		// intersection. The curve is given as ordered surface points with,
+		// for each point, the face it lies on (as BuildGeodesicSurfaceCurve
+		// produces). The curve is split at every face boundary it crosses so
+		// each emitted segment lies within a single face, then the same
+		// canonicalize / validate / BuildLoops path used for the two-mesh
+		// case runs unchanged. closed connects the last point back to the
+		// first. Returns false on degenerate input or validation failure.
+		bool ExecuteFromSurfaceCurve(
+			Mesh* mesh,
+			const std::vector<Eigen::Vector3f>& curve_points,
+			const std::vector<OpenMesh::FaceHandle>& curve_faces,
+			bool closed);
+
 		const std::vector<IntersectionSegment>& GetSegments() const { return segments; }
 		const std::vector<IntersectionLoop>& GetLoops() const { return loops; }
 		const robin_hood::unordered_map<int, std::vector<int>>& GetSegmentIndicesByFaceA() const { return segments_by_face_a; }
@@ -156,8 +171,60 @@ namespace RGO
 			const std::vector<Eigen::Vector3f>& node_positions,
 			std::vector<char>& segment_used) const;
 
+		// Splits the surface curve into per-face segments. For each ordered
+		// pair of curve points it walks the face strip between their faces,
+		// emitting one segment per face crossed and cutting at the shared
+		// edge where the strip moves to the next face. Every emitted segment
+		// has face_a = face_b = its owning face (single-mesh mode), so the
+		// two-mesh canonicalization and validation run without change.
+		bool CollectSegmentsFromCurve(
+			const std::vector<Eigen::Vector3f>& curve_points,
+			const std::vector<OpenMesh::FaceHandle>& curve_faces,
+			bool closed);
+
+		// Walks from face fa toward fb across shared edges, appending the
+		// boundary crossing points (in order) between p_from (on fa) and
+		// p_to (on fb). Returns false if the faces are not connected within
+		// a bounded number of steps, which signals a curve sample gap too
+		// large to bridge safely.
+		bool WalkFaceStrip(
+			OpenMesh::FaceHandle fa,
+			OpenMesh::FaceHandle fb,
+			const Eigen::Vector3f& p_from,
+			const Eigen::Vector3f& p_to,
+			std::vector<Eigen::Vector3f>& out_crossings,
+			std::vector<OpenMesh::FaceHandle>& out_faces) const;
+
+		// Shared edge between two faces, if any. Returns the halfedge of fa
+		// whose opposite face is fb, else an invalid handle.
+		OpenMesh::HalfedgeHandle SharedHalfedge(
+			OpenMesh::FaceHandle fa,
+			OpenMesh::FaceHandle fb) const;
+
+		// Point where segment p0->p1 crosses the line of edge eh, computed
+		// in the plane of face fa. Returns false if they do not cross within
+		// the segment and edge extents.
+		bool SegmentEdgeCrossing(
+			OpenMesh::FaceHandle fa,
+			OpenMesh::HalfedgeHandle edge_he,
+			const Eigen::Vector3f& p0,
+			const Eigen::Vector3f& p1,
+			Eigen::Vector3f& out_point) const;
+
+		// Appends one single-mesh segment (face_a = face_b = face) unless it
+		// is shorter than EPSILON. Used by the curve decomposition.
+		void EmitCurveSegment(
+			const Eigen::Vector3f& p0,
+			const Eigen::Vector3f& p1,
+			int face_index);
+
 		Mesh* meshA = nullptr;
 		Mesh* meshB = nullptr;
+
+		// True when the loops were built from a single-mesh surface curve
+		// (ExecuteFromSurfaceCurve) rather than a two-mesh intersection.
+		// Both meshA and meshB point to the same mesh in that mode.
+		bool single_mesh_mode = false;
 
 		std::vector<IntersectionSegment> segments;
 		std::vector<IntersectionLoop> loops;

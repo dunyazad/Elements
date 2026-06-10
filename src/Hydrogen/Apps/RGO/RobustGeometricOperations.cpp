@@ -303,6 +303,321 @@ namespace RGO
 		return true;
 	}
 
+	bool OperatorIntersectionLoops::ExecuteFromSurfaceCurve(
+		Mesh* mesh,
+		const std::vector<Eigen::Vector3f>& curve_points,
+		const std::vector<OpenMesh::FaceHandle>& curve_faces,
+		bool closed)
+	{
+		segments.clear();
+		loops.clear();
+		segments_by_face_a.clear();
+		segments_by_face_b.clear();
+		input_boundary_edges.clear();
+		coplanar_face_pairs.clear();
+		open_chain_count = 0;
+
+		if (nullptr == mesh) return false;
+		if (0 == mesh->n_faces()) return false;
+
+		// Single-mesh mode: both face references in every segment point to
+		// the same mesh, so the existing two-mesh canonicalize and validate
+		// code runs unchanged with meshA == meshB.
+		meshA = mesh;
+		meshB = mesh;
+		single_mesh_mode = true;
+
+		CollectInputBoundaryEdges(mesh, "curveMesh");
+
+		if (false == CollectSegmentsFromCurve(curve_points, curve_faces, closed))
+		{
+			std::cout << "[Error] ExecuteFromSurfaceCurve: no segments produced from curve." << std::endl;
+			return false;
+		}
+
+		// From here the path is identical to the two-mesh Execute: snap and
+		// weld endpoints to mesh features, build the face lookup, validate
+		// CDT-input safety, then trace the loop.
+		CanonicalizeSegments();
+
+		BuildFaceLookupTables();
+
+		if (false == ValidateCanonicalization()) return false;
+
+		BuildLoops();
+
+		if (false == ValidateSegmentEndpoints()) return false;
+
+		if (false == ValidateOpenChains()) return false;
+
+		return true;
+	}
+
+	OpenMesh::HalfedgeHandle OperatorIntersectionLoops::SharedHalfedge(
+		OpenMesh::FaceHandle fa,
+		OpenMesh::FaceHandle fb) const
+	{
+		if (false == fa.is_valid() || false == fb.is_valid())
+			return OpenMesh::HalfedgeHandle();
+
+		for (auto fh_it = meshA->cfh_iter(fa); fh_it.is_valid(); ++fh_it)
+		{
+			OpenMesh::HalfedgeHandle opp = meshA->opposite_halfedge_handle(*fh_it);
+			if (meshA->is_boundary(opp)) continue;
+
+			if (meshA->face_handle(opp) == fb)
+			{
+				return *fh_it;
+			}
+		}
+
+		return OpenMesh::HalfedgeHandle();
+	}
+
+	bool OperatorIntersectionLoops::SegmentEdgeCrossing(
+		OpenMesh::FaceHandle fa,
+		OpenMesh::HalfedgeHandle edge_he,
+		const Eigen::Vector3f& p0,
+		const Eigen::Vector3f& p1,
+		Eigen::Vector3f& out_point) const
+	{
+		// Edge endpoints.
+		Eigen::Vector3f e0(meshA->point(meshA->from_vertex_handle(edge_he)).data());
+		Eigen::Vector3f e1(meshA->point(meshA->to_vertex_handle(edge_he)).data());
+
+		// Work in the plane of face fa: the curve point pair and the edge
+		// both lie on (or within EPSILON of) this plane, so a planar
+		// segment-segment crossing is well defined and avoids the
+		// ill-conditioned 3D skew-line solve.
+		Eigen::Vector3f fv0, fv1, fv2;
+		meshA->GetFaceVertices(fa, fv0, fv1, fv2);
+		Eigen::Vector3f n = (fv1 - fv0).cross(fv2 - fv0);
+		float nlen = n.norm();
+		if (nlen < 1e-12f) return false;
+		n /= nlen;
+
+		Eigen::Vector3f bx = (fv1 - fv0);
+		float bxl = bx.norm();
+		if (bxl < 1e-12f) return false;
+		bx /= bxl;
+		Eigen::Vector3f by = n.cross(bx);
+
+		auto to2d = [&](const Eigen::Vector3f& p) -> Eigen::Vector2f
+			{
+				Eigen::Vector3f d = p - fv0;
+				return Eigen::Vector2f(d.dot(bx), d.dot(by));
+			};
+
+		Eigen::Vector2f a0 = to2d(p0);
+		Eigen::Vector2f a1 = to2d(p1);
+		Eigen::Vector2f b0 = to2d(e0);
+		Eigen::Vector2f b1 = to2d(e1);
+
+		Eigen::Vector2f da = a1 - a0;
+		Eigen::Vector2f db = b1 - b0;
+
+		float denom = da.x() * db.y() - da.y() * db.x();
+		if (std::abs(denom) < 1e-12f) return false;
+
+		Eigen::Vector2f diff = b0 - a0;
+		float t = (diff.x() * db.y() - diff.y() * db.x()) / denom;
+		float u = (diff.x() * da.y() - diff.y() * da.x()) / denom;
+
+		// A small overshoot is tolerated so a crossing exactly at an edge
+		// endpoint or curve sample is not missed; canonicalization snaps
+		// the result onto the edge afterwards.
+		const float lo = -1e-3f;
+		const float hi = 1.0f + 1e-3f;
+		if (t < lo || t > hi || u < lo || u > hi) return false;
+
+		out_point = p0 + (p1 - p0) * std::max(0.0f, std::min(1.0f, t));
+		return true;
+	}
+
+	bool OperatorIntersectionLoops::WalkFaceStrip(
+		OpenMesh::FaceHandle fa,
+		OpenMesh::FaceHandle fb,
+		const Eigen::Vector3f& p_from,
+		const Eigen::Vector3f& p_to,
+		std::vector<Eigen::Vector3f>& out_crossings,
+		std::vector<OpenMesh::FaceHandle>& out_faces) const
+	{
+		out_crossings.clear();
+		out_faces.clear();
+
+		// Same face: no boundary crossing, the segment stays whole.
+		if (fa == fb)
+		{
+			out_faces.push_back(fa);
+			return true;
+		}
+
+		// Directly adjacent: one crossing on the shared edge.
+		OpenMesh::HalfedgeHandle shared = SharedHalfedge(fa, fb);
+		if (shared.is_valid())
+		{
+			Eigen::Vector3f x;
+			if (SegmentEdgeCrossing(fa, shared, p_from, p_to, x))
+			{
+				out_faces.push_back(fa);
+				out_crossings.push_back(x);
+				out_faces.push_back(fb);
+				return true;
+			}
+			// The shared edge exists but the straight chord misses it
+			// (the two faces meet at a reflex angle relative to the
+			// chord). Fall through to the BFS walk, which follows the
+			// chord toward fb face by face.
+		}
+
+		// General case: walk from fa toward fb, at each face leaving
+		// through the edge whose crossing with the chord lies closest to
+		// p_to in the travel direction. Bounded to avoid an infinite loop
+		// on a pathological strip; the cap scales with mesh size.
+		const Eigen::Vector3f dir = (p_to - p_from);
+
+		OpenMesh::FaceHandle current = fa;
+		Eigen::Vector3f enter_point = p_from;
+
+		out_faces.push_back(current);
+
+		const size_t max_steps = meshA->n_faces() + 1;
+		size_t steps = 0;
+
+		while (current != fb)
+		{
+			if (++steps > max_steps) return false;
+
+			// Among the three edges, pick the forward crossing with the
+			// chord that advances most toward p_to and is not the edge we
+			// just entered through.
+			OpenMesh::HalfedgeHandle best_he;
+			Eigen::Vector3f best_x;
+			float best_adv = -std::numeric_limits<float>::max();
+
+			for (auto fh_it = meshA->cfh_iter(current); fh_it.is_valid(); ++fh_it)
+			{
+				OpenMesh::HalfedgeHandle opp = meshA->opposite_halfedge_handle(*fh_it);
+				if (meshA->is_boundary(opp)) continue;
+
+				Eigen::Vector3f x;
+				if (false == SegmentEdgeCrossing(current, *fh_it, p_from, p_to, x)) continue;
+
+				float adv = (x - enter_point).dot(dir);
+				if (adv <= 0.0f) continue;
+
+				if (adv > best_adv)
+				{
+					best_adv = adv;
+					best_he = *fh_it;
+					best_x = x;
+				}
+			}
+
+			if (false == best_he.is_valid()) return false;
+
+			out_crossings.push_back(best_x);
+			enter_point = best_x;
+
+			current = meshA->face_handle(meshA->opposite_halfedge_handle(best_he));
+			if (false == current.is_valid()) return false;
+			out_faces.push_back(current);
+		}
+
+		return true;
+	}
+
+	void OperatorIntersectionLoops::EmitCurveSegment(
+		const Eigen::Vector3f& p0,
+		const Eigen::Vector3f& p1,
+		int face_index)
+	{
+		if ((p0 - p1).squaredNorm() < EPSILON * EPSILON) return;
+
+		IntersectionSegment seg;
+		seg.p0 = p0;
+		seg.p1 = p1;
+
+		// Single-mesh mode: the segment belongs to one face of one mesh,
+		// recorded as both face_a and face_b so the two-mesh canonicalize
+		// and validation logic, which scans both, runs unchanged.
+		seg.face_a = face_index;
+		seg.face_b = face_index;
+
+		segments.push_back(seg);
+	}
+
+	bool OperatorIntersectionLoops::CollectSegmentsFromCurve(
+		const std::vector<Eigen::Vector3f>& curve_points,
+		const std::vector<OpenMesh::FaceHandle>& curve_faces,
+		bool closed)
+	{
+		const size_t n = curve_points.size();
+		if (n < 2 || curve_faces.size() != n)
+		{
+			std::cout << "[Error] CollectSegmentsFromCurve: need matching point and"
+				<< " face arrays of length >= 2." << std::endl;
+			return false;
+		}
+
+		const size_t pair_count = closed ? n : (n - 1);
+		size_t walk_failures = 0;
+
+		for (size_t i = 0; i < pair_count; ++i)
+		{
+			const Eigen::Vector3f& p_from = curve_points[i];
+			const Eigen::Vector3f& p_to = curve_points[(i + 1) % n];
+
+			OpenMesh::FaceHandle fa = curve_faces[i];
+			OpenMesh::FaceHandle fb = curve_faces[(i + 1) % n];
+
+			if (false == fa.is_valid() || false == fb.is_valid())
+			{
+				++walk_failures;
+				continue;
+			}
+
+			std::vector<Eigen::Vector3f> crossings;
+			std::vector<OpenMesh::FaceHandle> strip_faces;
+			if (false == WalkFaceStrip(fa, fb, p_from, p_to, crossings, strip_faces))
+			{
+				// The chord could not be tracked across the surface between
+				// these two samples. Fall back to a single segment on fa so
+				// no curve piece is silently dropped; canonicalization and
+				// the seam validators will flag it loudly if it breaks the
+				// seam, which is the correct place to surface a sample gap.
+				++walk_failures;
+				EmitCurveSegment(p_from, p_to, fa.idx());
+				continue;
+			}
+
+			// strip_faces has one more entry than crossings. The piece in
+			// strip_faces[k] runs from the previous boundary point (or
+			// p_from for k == 0) to the next boundary point (or p_to for
+			// the last face).
+			Eigen::Vector3f seg_start = p_from;
+			for (size_t k = 0; k < strip_faces.size(); ++k)
+			{
+				Eigen::Vector3f seg_end = (k < crossings.size()) ? crossings[k] : p_to;
+				EmitCurveSegment(seg_start, seg_end, strip_faces[k].idx());
+				seg_start = seg_end;
+			}
+		}
+
+		if (walk_failures > 0)
+		{
+			std::cout << "[Warning] CollectSegmentsFromCurve: " << walk_failures
+				<< " curve spans could not be tracked across the surface and were"
+				<< " emitted as direct chords. If the seam validation fails, the"
+				<< " curve samples are too sparse for the local triangle size." << std::endl;
+		}
+
+		std::cout << "[Info] CollectSegmentsFromCurve: " << segments.size()
+			<< " per-face segments from " << n << " curve points." << std::endl;
+
+		return false == segments.empty();
+	}
+
 	void OperatorIntersectionLoops::CollectSegmentsForFaceB(
 		int face_b_index,
 		std::vector<IntersectionSegment>& out_segments,

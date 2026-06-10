@@ -1604,10 +1604,6 @@ namespace RGO
 		const int end_idx = end.idx();
 		out_distance = dist[end_idx];
 
-		// Walk predecessors from end back to start, then reverse so the
-		// path reads start to end. prev[start] is -1, which terminates the
-		// walk. The guard rejects a corrupt predecessor chain instead of
-		// looping forever.
 		std::vector<OpenMesh::VertexHandle> reversed;
 		int cur = end_idx;
 		size_t guard = 0;
@@ -1678,7 +1674,6 @@ namespace RGO
 			if (d > out_dist[u]) continue;
 			finalized[u] = 1;
 
-			// The target is finalized: its distance is now optimal, stop.
 			if (u == end_idx) return true;
 
 			OpenMesh::VertexHandle uh = vertex_handle(u);
@@ -1767,8 +1762,7 @@ namespace RGO
 			}
 
 			// Once the best hit is within the queried box, no closer face
-			// can lie outside it: any unqueried face is entirely outside the
-			// box and therefore farther than radius >= best distance.
+			// can lie outside it.
 			if (best_f.is_valid() && std::sqrt(best_d2) <= radius) break;
 
 			if (radius >= diag) break;
@@ -2005,8 +1999,6 @@ namespace RGO
 				out_is_anchor.push_back(static_cast<char>(anchor ? 1 : 0));
 			};
 
-		// First anchor seeds the polyline; later segments skip their start
-		// vertex because it duplicates the previous segment's end.
 		append_vertex(anchors[0], true);
 
 		for (size_t s = 0; s < seg_count; ++s)
@@ -2020,15 +2012,10 @@ namespace RGO
 			float dist = 0.0f;
 			if (false == GeodesicShortestPath(a, b, path, dist) || path.size() < 2)
 			{
-				// No surface path (disconnected component or invalid handle).
-				// Smoothing cannot pull this onto a surface that has no route,
-				// so the gap is bridged directly and reported, not hidden.
 				std::cout << "[Warning] BuildGeodesicAnchorPolyline: no geodesic between"
 					<< " anchors " << a.idx() << " and " << b.idx()
 					<< "; bridging directly." << std::endl;
 
-				// The closing segment's destination is anchors[0], already
-				// present at index 0, so it is never re-appended.
 				if (false == closing)
 				{
 					append_vertex(b, true);
@@ -2036,9 +2023,6 @@ namespace RGO
 				continue;
 			}
 
-			// path is start..end inclusive. Skip path[0] (shared with the
-			// previous end). On the closing segment also skip path.back()
-			// (equal to anchors[0], already at index 0).
 			const size_t last = closing ? (path.size() - 1) : path.size();
 			for (size_t k = 1; k < last; ++k)
 			{
@@ -2069,15 +2053,12 @@ namespace RGO
 		{
 			for (size_t i = 0; i < n; ++i)
 			{
-				// Anchors are the picked points: keep them fixed so the
-				// curve still passes through every pick.
 				if (i < is_anchor.size() && 0 != is_anchor[i])
 				{
 					next[i] = curve[i];
 					continue;
 				}
 
-				// Open-chain endpoints have only one neighbor: leave fixed.
 				if (false == closed && (0 == i || n - 1 == i))
 				{
 					next[i] = curve[i];
@@ -2090,7 +2071,6 @@ namespace RGO
 				Eigen::Vector3f target = 0.5f * (prev + nxt);
 				Eigen::Vector3f moved = (1.0f - strength) * curve[i] + strength * target;
 
-				// Reproject so the smoothed point cannot leave the surface.
 				Eigen::Vector3f surf;
 				OpenMesh::FaceHandle fh;
 				if (ClosestPointOnSurface(moved, surf, fh)) next[i] = surf;
@@ -2124,7 +2104,6 @@ namespace RGO
 			return false;
 		}
 
-		// Drop coincident picks so two of them cannot snap to one vertex.
 		std::vector<Eigen::Vector3f> deduped;
 		DedupeConsecutivePoints(picked_points, closed, deduped);
 		if (deduped.size() < 2)
@@ -2138,7 +2117,6 @@ namespace RGO
 			return false;
 		}
 
-		// Snap each pick to its nearest vertex: geodesics run vertex to vertex.
 		std::vector<OpenMesh::VertexHandle> anchors;
 		anchors.reserve(deduped.size());
 		for (const auto& p : deduped)
@@ -2149,12 +2127,10 @@ namespace RGO
 				std::cout << "[Error] BuildGeodesicSurfaceCurve: a picked point has no nearby vertex." << std::endl;
 				return false;
 			}
-			// Two picks landing on the same vertex collapse to one anchor.
 			if (false == anchors.empty() && anchors.back() == vh) continue;
 			anchors.push_back(vh);
 		}
 
-		// A closed loop must not start and end on the same vertex.
 		if (closed && anchors.size() >= 2 && anchors.front() == anchors.back())
 		{
 			anchors.pop_back();
@@ -2201,6 +2177,230 @@ namespace RGO
 		}
 
 		return out_curve.size() >= 2;
+	}
+
+	bool Mesh::BuildCutSeamVertexLoop(
+		const std::vector<Eigen::Vector3f>& picked_points,
+		std::vector<OpenMesh::VertexHandle>& out_loop) const
+	{
+		out_loop.clear();
+
+		if (0 == n_faces() || hash_map.empty())
+		{
+			std::cout << "[Error] BuildCutSeamVertexLoop: spatial hash is empty;"
+				<< " call BuildSpatialHashMap first." << std::endl;
+			return false;
+		}
+
+		std::vector<Eigen::Vector3f> deduped;
+		DedupeConsecutivePoints(picked_points, true, deduped);
+		if (deduped.size() < 3)
+		{
+			std::cout << "[Warning] BuildCutSeamVertexLoop: a closed cut needs at least 3 distinct points." << std::endl;
+			return false;
+		}
+
+		std::vector<OpenMesh::VertexHandle> anchors;
+		anchors.reserve(deduped.size());
+		for (const auto& p : deduped)
+		{
+			OpenMesh::VertexHandle vh = ClosestVertex(p);
+			if (false == vh.is_valid())
+			{
+				std::cout << "[Error] BuildCutSeamVertexLoop: a picked point has no nearby vertex." << std::endl;
+				return false;
+			}
+			if (false == anchors.empty() && anchors.back() == vh) continue;
+			anchors.push_back(vh);
+		}
+
+		if (anchors.size() >= 2 && anchors.front() == anchors.back())
+		{
+			anchors.pop_back();
+		}
+		if (anchors.size() < 3)
+		{
+			std::cout << "[Warning] BuildCutSeamVertexLoop: fewer than 3 distinct anchor vertices." << std::endl;
+			return false;
+		}
+
+		std::vector<OpenMesh::VertexHandle> loop;
+		const size_t n = anchors.size();
+
+		loop.push_back(anchors[0]);
+
+		for (size_t s = 0; s < n; ++s)
+		{
+			OpenMesh::VertexHandle a = anchors[s];
+			OpenMesh::VertexHandle b = anchors[(s + 1) % n];
+			const bool closing = (s + 1 == n);
+
+			std::vector<OpenMesh::VertexHandle> path;
+			float dist = 0.0f;
+			if (false == GeodesicShortestPath(a, b, path, dist) || path.size() < 2)
+			{
+				std::cout << "[Error] BuildCutSeamVertexLoop: no geodesic between anchors "
+					<< a.idx() << " and " << b.idx() << "; cannot form a safe seam." << std::endl;
+				out_loop.clear();
+				return false;
+			}
+
+			const size_t last = closing ? (path.size() - 1) : path.size();
+			for (size_t k = 1; k < last; ++k)
+			{
+				loop.push_back(path[k]);
+			}
+		}
+
+		if (loop.size() < 3)
+		{
+			std::cout << "[Error] BuildCutSeamVertexLoop: seam loop too short." << std::endl;
+			return false;
+		}
+
+		// Verify the loop is simple: no vertex visited twice.
+		{
+			robin_hood::unordered_set<int> seen;
+			seen.reserve(loop.size() * 2);
+			for (const auto& vh : loop)
+			{
+				if (false == seen.insert(vh.idx()).second)
+				{
+					std::cout << "[Error] BuildCutSeamVertexLoop: seam revisits vertex "
+						<< vh.idx() << " (self-intersecting loop). Adjust the picked"
+						<< " points so the path does not cross itself." << std::endl;
+					out_loop.clear();
+					return false;
+				}
+			}
+		}
+
+		// Verify every consecutive pair (cyclic) is a real mesh edge.
+		for (size_t i = 0; i < loop.size(); ++i)
+		{
+			OpenMesh::VertexHandle a = loop[i];
+			OpenMesh::VertexHandle b = loop[(i + 1) % loop.size()];
+
+			bool connected = false;
+			for (auto voh_it = cvoh_iter(a); voh_it.is_valid(); ++voh_it)
+			{
+				if (to_vertex_handle(*voh_it) == b) { connected = true; break; }
+			}
+			if (false == connected)
+			{
+				std::cout << "[Error] BuildCutSeamVertexLoop: loop vertices "
+					<< a.idx() << " and " << b.idx() << " are not edge-connected."
+					<< " Cannot form a seam without inserting vertices." << std::endl;
+				out_loop.clear();
+				return false;
+			}
+		}
+
+		out_loop = std::move(loop);
+		return true;
+	}
+
+	bool Mesh::BuildSeamFromVertexLoop(
+		const std::vector<OpenMesh::VertexHandle>& loop,
+		std::vector<char>& out_edge_is_seam) const
+	{
+		out_edge_is_seam.assign(n_edges(), 0);
+
+		if (loop.size() < 3)
+		{
+			std::cout << "[Error] BuildSeamFromVertexLoop: loop too short." << std::endl;
+			return false;
+		}
+
+		for (size_t i = 0; i < loop.size(); ++i)
+		{
+			OpenMesh::VertexHandle a = loop[i];
+			OpenMesh::VertexHandle b = loop[(i + 1) % loop.size()];
+
+			OpenMesh::EdgeHandle eh;
+			for (auto voh_it = cvoh_iter(a); voh_it.is_valid(); ++voh_it)
+			{
+				if (to_vertex_handle(*voh_it) == b)
+				{
+					eh = edge_handle(*voh_it);
+					break;
+				}
+			}
+
+			if (false == eh.is_valid())
+			{
+				std::cout << "[Error] BuildSeamFromVertexLoop: no edge between vertices "
+					<< a.idx() << " and " << b.idx() << "." << std::endl;
+				out_edge_is_seam.assign(n_edges(), 0);
+				return false;
+			}
+
+			out_edge_is_seam[eh.idx()] = 1;
+		}
+
+		return true;
+	}
+
+	bool Mesh::SplitByMarginLoop(
+		const std::vector<Eigen::Vector3f>& picked_points,
+		std::vector<Eigen::Vector3f>& out_small_points,
+		std::vector<Eigen::Vector3i>& out_small_indices,
+		std::vector<Eigen::Vector3f>& out_large_points,
+		std::vector<Eigen::Vector3i>& out_large_indices) const
+	{
+		out_small_points.clear();
+		out_small_indices.clear();
+		out_large_points.clear();
+		out_large_indices.clear();
+
+		std::vector<OpenMesh::VertexHandle> loop;
+		if (false == BuildCutSeamVertexLoop(picked_points, loop)) return false;
+
+		std::vector<char> edge_is_seam;
+		if (false == BuildSeamFromVertexLoop(loop, edge_is_seam)) return false;
+
+		std::vector<std::vector<Eigen::Vector3f>> patch_points;
+		std::vector<std::vector<Eigen::Vector3i>> patch_indices;
+		int patch_count = SplitMeshBySeam(edge_is_seam, patch_points, patch_indices);
+
+		if (2 != patch_count)
+		{
+			std::cout << "[Error] SplitByMarginLoop: seam produced " << patch_count
+				<< " patches, expected exactly 2. The margin loop does not cleanly"
+				<< " separate the mesh; adjust the picked points." << std::endl;
+			return false;
+		}
+
+		auto patch_area = [](const std::vector<Eigen::Vector3f>& pts,
+			const std::vector<Eigen::Vector3i>& idx) -> float
+			{
+				float area = 0.0f;
+				for (const auto& t : idx)
+				{
+					const Eigen::Vector3f& a = pts[t[0]];
+					const Eigen::Vector3f& b = pts[t[1]];
+					const Eigen::Vector3f& c = pts[t[2]];
+					area += 0.5f * (b - a).cross(c - a).norm();
+				}
+				return area;
+			};
+
+		float area0 = patch_area(patch_points[0], patch_indices[0]);
+		float area1 = patch_area(patch_points[1], patch_indices[1]);
+
+		int small_idx = (area0 <= area1) ? 0 : 1;
+		int large_idx = 1 - small_idx;
+
+		out_small_points = patch_points[small_idx];
+		out_small_indices = patch_indices[small_idx];
+		out_large_points = patch_points[large_idx];
+		out_large_indices = patch_indices[large_idx];
+
+		std::cout << "[Info] SplitByMarginLoop: split into areas "
+			<< patch_area(out_small_points, out_small_indices) << " (small) and "
+			<< patch_area(out_large_points, out_large_indices) << " (large)." << std::endl;
+
+		return true;
 	}
 
 	// ------------------------------------------------------------
