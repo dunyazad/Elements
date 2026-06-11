@@ -104,6 +104,10 @@ public:
 							SplitByMarginLine(mesh_a);
 						else if (KeyCode::K == event.keyCode)
 							MoveSmallPiece(Eigen::Vector3f(0.0f, 0.0f, 2.0f));
+						else if (KeyCode::LeftBracket == event.keyCode)
+							SaveMarginLineInputToFile(mesh_a);
+						else if (KeyCode::RightBracket == event.keyCode)
+							LoadMarginLineInputFromFile(mesh_a);
 						else if (KeyCode::Z == event.keyCode && event.IsCtrlPressed())
 							Undo(mesh_a);
 						else if (KeyCode::Y == event.keyCode && event.IsCtrlPressed())
@@ -484,6 +488,10 @@ public:
 			return;
 		}
 
+		// Diagnose curve self-proximity before carving: folds here become
+		// degree-4 nodes and open chains downstream.
+		DiagnoseCurveSelfProximity(margin_curve, margin_closed);
+
 		// Stage 1: turn the surface curve into per-face intersection
 		// segments on this single mesh.
 		RGO::OperatorIntersectionLoops loop_op(&source, &source);
@@ -533,8 +541,11 @@ public:
 		int small_idx = (area0 <= area1) ? 0 : 1;
 		int large_idx = 1 - small_idx;
 
-		std::cout << "[Info] SplitByMarginLine: areas " << std::min(area0, area1)
-			<< " (small) and " << std::max(area0, area1) << " (large)." << std::endl;
+		if (RGO::Log::AtInfo())
+		{
+			std::cout << "[Info] SplitByMarginLine: areas " << std::min(area0, area1)
+				<< " (small) and " << std::max(area0, area1) << " (large)." << std::endl;
+		}
 
 		// Hide the carved source; show the two extracted pieces.
 		source.mesh_color = Eigen::Vector4f(0.0f, 0.0f, 0.0f, 0.0f);
@@ -597,7 +608,10 @@ public:
 	{
 		if (undo_stack.empty())
 		{
-			std::cout << "[Info] Undo: nothing to undo." << std::endl;
+			if (RGO::Log::AtInfo())
+			{
+				std::cout << "[Info] Undo: nothing to undo." << std::endl;
+			}
 			return;
 		}
 
@@ -614,7 +628,10 @@ public:
 	{
 		if (redo_stack.empty())
 		{
-			std::cout << "[Info] Redo: nothing to redo." << std::endl;
+			if (RGO::Log::AtInfo())
+			{
+				std::cout << "[Info] Redo: nothing to redo." << std::endl;
+			}
 			return;
 		}
 
@@ -719,9 +736,12 @@ public:
 			return false;
 		}
 
-		std::cout << "[Info] BuildSeamFlagsFromSegments: " << seam_count
-			<< " seam edges matched from " << seg_pairs.size()
-			<< " unique segment pairs." << std::endl;
+		if (RGO::Log::AtInfo())
+		{
+			std::cout << "[Info] BuildSeamFlagsFromSegments: " << seam_count
+				<< " seam edges matched from " << seg_pairs.size()
+				<< " unique segment pairs." << std::endl;
+		}
 		return true;
 	}
 
@@ -738,6 +758,599 @@ public:
 			area += 0.5f * (b - a).cross(c - a).norm();
 		}
 		return area;
+	}
+
+	bool SaveMarginLineInput(
+		const std::string& path,
+		const std::vector<Eigen::Vector3f>& picked_points,
+		const std::vector<Eigen::Vector3f>& curve_points,
+		const std::vector<OpenMesh::FaceHandle>& curve_faces,
+		bool closed)
+	{
+		// Binary layout, little-endian, tightly packed:
+		//   char[8]   magic   "RGOMARGN"
+		//   uint32    version 1
+		//   uint8     closed  (0 or 1)
+		//   uint64    picked_count
+		//   float[3]  * picked_count
+		//   uint64    curve_count
+		//   float[3]  * curve_count
+		//   uint64    face_count           (must equal curve_count)
+		//   int32     * face_count         (face index, -1 for invalid)
+		// curve_faces is stored as raw face indices: the SAME mesh must be
+		// loaded for these to be valid, since a FaceHandle is only an index
+		// into that mesh's face array.
+		if (curve_points.size() != curve_faces.size())
+		{
+			std::cout << "[Error] SaveMarginLineInput: curve_points (" << curve_points.size()
+				<< ") and curve_faces (" << curve_faces.size()
+				<< ") sizes differ; refusing to save inconsistent input." << std::endl;
+			return false;
+		}
+
+		std::ofstream out(path, std::ios::binary | std::ios::trunc);
+		if (false == out.is_open())
+		{
+			std::cout << "[Error] SaveMarginLineInput: cannot open file for writing: "
+				<< path << std::endl;
+			return false;
+		}
+
+		const char magic[8] = { 'R', 'G', 'O', 'M', 'A', 'R', 'G', 'N' };
+		const uint32_t version = 1;
+		const uint8_t closed_flag = closed ? 1 : 0;
+
+		out.write(magic, 8);
+		out.write(reinterpret_cast<const char*>(&version), sizeof(version));
+		out.write(reinterpret_cast<const char*>(&closed_flag), sizeof(closed_flag));
+
+		uint64_t picked_count = static_cast<uint64_t>(picked_points.size());
+		out.write(reinterpret_cast<const char*>(&picked_count), sizeof(picked_count));
+		for (const auto& p : picked_points)
+		{
+			float xyz[3] = { p.x(), p.y(), p.z() };
+			out.write(reinterpret_cast<const char*>(xyz), sizeof(xyz));
+		}
+
+		uint64_t curve_count = static_cast<uint64_t>(curve_points.size());
+		out.write(reinterpret_cast<const char*>(&curve_count), sizeof(curve_count));
+		for (const auto& p : curve_points)
+		{
+			float xyz[3] = { p.x(), p.y(), p.z() };
+			out.write(reinterpret_cast<const char*>(xyz), sizeof(xyz));
+		}
+
+		uint64_t face_count = static_cast<uint64_t>(curve_faces.size());
+		out.write(reinterpret_cast<const char*>(&face_count), sizeof(face_count));
+		for (const auto& fh : curve_faces)
+		{
+			int32_t idx = fh.is_valid() ? static_cast<int32_t>(fh.idx()) : -1;
+			out.write(reinterpret_cast<const char*>(&idx), sizeof(idx));
+		}
+
+		if (false == out.good())
+		{
+			std::cout << "[Error] SaveMarginLineInput: write failed (disk full or stream error): "
+				<< path << std::endl;
+			return false;
+		}
+
+		if (RGO::Log::AtInfo())
+		{
+			std::cout << "[Info] SaveMarginLineInput: wrote " << picked_count
+				<< " picked points, " << curve_count << " curve points to "
+				<< path << "." << std::endl;
+		}
+		return true;
+	}
+
+	bool LoadMarginLineInput(
+		const std::string& path,
+		const RGO::Mesh* mesh,
+		std::vector<Eigen::Vector3f>& out_picked_points,
+		std::vector<Eigen::Vector3f>& out_curve_points,
+		std::vector<OpenMesh::FaceHandle>& out_curve_faces,
+		bool& out_closed)
+	{
+		out_picked_points.clear();
+		out_curve_points.clear();
+		out_curve_faces.clear();
+		out_closed = false;
+
+		if (nullptr == mesh)
+		{
+			std::cout << "[Error] LoadMarginLineInput: a mesh is required to rebuild"
+				<< " face handles from stored indices." << std::endl;
+			return false;
+		}
+
+		std::ifstream in(path, std::ios::binary);
+		if (false == in.is_open())
+		{
+			std::cout << "[Error] LoadMarginLineInput: cannot open file for reading: "
+				<< path << std::endl;
+			return false;
+		}
+
+		char magic[8] = { 0 };
+		in.read(magic, 8);
+		const char expect[8] = { 'R', 'G', 'O', 'M', 'A', 'R', 'G', 'N' };
+		if (false == in.good() || 0 != std::memcmp(magic, expect, 8))
+		{
+			std::cout << "[Error] LoadMarginLineInput: bad magic; not an RGO margin file: "
+				<< path << std::endl;
+			return false;
+		}
+
+		uint32_t version = 0;
+		in.read(reinterpret_cast<char*>(&version), sizeof(version));
+		if (false == in.good() || 1 != version)
+		{
+			std::cout << "[Error] LoadMarginLineInput: unsupported version " << version
+				<< " (expected 1)." << std::endl;
+			return false;
+		}
+
+		uint8_t closed_flag = 0;
+		in.read(reinterpret_cast<char*>(&closed_flag), sizeof(closed_flag));
+		if (false == in.good())
+		{
+			std::cout << "[Error] LoadMarginLineInput: truncated file at closed flag." << std::endl;
+			return false;
+		}
+		out_closed = (0 != closed_flag);
+
+		uint64_t picked_count = 0;
+		in.read(reinterpret_cast<char*>(&picked_count), sizeof(picked_count));
+		if (false == in.good())
+		{
+			std::cout << "[Error] LoadMarginLineInput: truncated file at picked count." << std::endl;
+			return false;
+		}
+		out_picked_points.reserve(static_cast<size_t>(picked_count));
+		for (uint64_t i = 0; i < picked_count; ++i)
+		{
+			float xyz[3] = { 0.0f, 0.0f, 0.0f };
+			in.read(reinterpret_cast<char*>(xyz), sizeof(xyz));
+			if (false == in.good())
+			{
+				std::cout << "[Error] LoadMarginLineInput: truncated at picked point "
+					<< i << "." << std::endl;
+				out_picked_points.clear();
+				return false;
+			}
+			out_picked_points.emplace_back(xyz[0], xyz[1], xyz[2]);
+		}
+
+		uint64_t curve_count = 0;
+		in.read(reinterpret_cast<char*>(&curve_count), sizeof(curve_count));
+		if (false == in.good())
+		{
+			std::cout << "[Error] LoadMarginLineInput: truncated file at curve count." << std::endl;
+			out_picked_points.clear();
+			return false;
+		}
+		out_curve_points.reserve(static_cast<size_t>(curve_count));
+		for (uint64_t i = 0; i < curve_count; ++i)
+		{
+			float xyz[3] = { 0.0f, 0.0f, 0.0f };
+			in.read(reinterpret_cast<char*>(xyz), sizeof(xyz));
+			if (false == in.good())
+			{
+				std::cout << "[Error] LoadMarginLineInput: truncated at curve point "
+					<< i << "." << std::endl;
+				out_picked_points.clear();
+				out_curve_points.clear();
+				return false;
+			}
+			out_curve_points.emplace_back(xyz[0], xyz[1], xyz[2]);
+		}
+
+		uint64_t face_count = 0;
+		in.read(reinterpret_cast<char*>(&face_count), sizeof(face_count));
+		if (false == in.good())
+		{
+			std::cout << "[Error] LoadMarginLineInput: truncated file at face count." << std::endl;
+			out_picked_points.clear();
+			out_curve_points.clear();
+			return false;
+		}
+		if (face_count != curve_count)
+		{
+			std::cout << "[Error] LoadMarginLineInput: face count " << face_count
+				<< " does not match curve count " << curve_count
+				<< "; file is inconsistent." << std::endl;
+			out_picked_points.clear();
+			out_curve_points.clear();
+			return false;
+		}
+
+		const int num_faces = static_cast<int>(mesh->n_faces());
+		size_t invalid_faces = 0;
+		out_curve_faces.reserve(static_cast<size_t>(face_count));
+		for (uint64_t i = 0; i < face_count; ++i)
+		{
+			int32_t idx = -1;
+			in.read(reinterpret_cast<char*>(&idx), sizeof(idx));
+			if (false == in.good())
+			{
+				std::cout << "[Error] LoadMarginLineInput: truncated at face index "
+					<< i << "." << std::endl;
+				out_picked_points.clear();
+				out_curve_points.clear();
+				out_curve_faces.clear();
+				return false;
+			}
+
+			// A stored -1 was an invalid handle at save time. A non-negative
+			// index must be within this mesh's face range, otherwise the
+			// file was saved against a different mesh and the handles are
+			// meaningless: fail loudly rather than carve with wrong faces.
+			if (idx < 0)
+			{
+				out_curve_faces.push_back(OpenMesh::FaceHandle());
+				++invalid_faces;
+			}
+			else if (idx >= num_faces)
+			{
+				std::cout << "[Error] LoadMarginLineInput: stored face index " << idx
+					<< " at position " << i << " exceeds mesh face count " << num_faces
+					<< ". This file was saved against a different mesh." << std::endl;
+				out_picked_points.clear();
+				out_curve_points.clear();
+				out_curve_faces.clear();
+				return false;
+			}
+			else
+			{
+				out_curve_faces.push_back(mesh->face_handle(idx));
+			}
+		}
+
+		if (RGO::Log::AtInfo())
+		{
+			std::cout << "[Info] LoadMarginLineInput: read " << picked_count
+				<< " picked points, " << curve_count << " curve points ("
+				<< invalid_faces << " invalid face handles) from " << path
+				<< ", closed " << (out_closed ? "true" : "false") << "." << std::endl;
+		}
+		return true;
+	}
+
+	void SaveMarginLineInputToFile(RGO::HeliumMesh& mesh)
+	{
+		if (margin_curve.size() < 2 || margin_curve_faces.size() != margin_curve.size())
+		{
+			std::cout << "[Warning] SaveMarginLineInputToFile: no valid margin curve to save."
+				<< " Pick points and build the curve first." << std::endl;
+			return;
+		}
+
+		const std::string path = "D:\\Temp\\margin_input.bin";
+		if (SaveMarginLineInput(path, control_points, margin_curve, margin_curve_faces, margin_closed))
+		{
+			if (RGO::Log::AtInfo())
+			{
+				std::cout << "[Info] SaveMarginLineInputToFile: saved current margin input to "
+					<< path << "." << std::endl;
+			}
+		}
+	}
+
+	void LoadMarginLineInputFromFile(RGO::HeliumMesh& mesh)
+	{
+		const std::string path = "D:\\Temp\\margin_input.bin";
+
+		std::vector<Eigen::Vector3f> picked;
+		std::vector<Eigen::Vector3f> curve;
+		std::vector<OpenMesh::FaceHandle> faces;
+		bool closed = false;
+
+		if (false == LoadMarginLineInput(path, &mesh, picked, curve, faces, closed))
+		{
+			std::cout << "[Warning] LoadMarginLineInputFromFile: load failed; see messages above." << std::endl;
+			return;
+		}
+
+		// Replace the live edit state with the loaded input so the picked
+		// points, closed flag, and the exact curve all match what was saved.
+		// The curve and its faces are taken verbatim from the file, so
+		// BuildGeodesicSurfaceCurve is bypassed and the co-refine input is
+		// bit-identical across runs.
+		control_points = picked;
+		margin_closed = closed;
+		margin_curve = curve;
+		margin_curve_faces = faces;
+
+		dragging_index = -1;
+		undo_stack.clear();
+		redo_stack.clear();
+
+		// Redraw control points and the loaded curve directly. The curve is
+		// NOT rebuilt from control points here, since the whole point is to
+		// reuse the saved curve exactly; only the visualization is refreshed.
+		RedrawControlPoints(mesh);
+		RedrawLoadedMarginCurve(mesh);
+
+		if (RGO::Log::AtInfo())
+		{
+			std::cout << "[Info] LoadMarginLineInputFromFile: loaded " << control_points.size()
+				<< " picked points and " << margin_curve.size()
+				<< " curve points; running split." << std::endl;
+		}
+
+		SplitByMarginLine(mesh);
+	}
+
+	void RedrawLoadedMarginCurve(RGO::HeliumMesh& mesh)
+	{
+		VD::Clear("MarginLines");
+		VD::Clear("MarginCurve");
+
+		if (margin_curve.size() < 2) return;
+
+		// Draw the already-loaded curve without rebuilding it from control
+		// points. Closed loop draws red, open chain draws magenta, matching
+		// RebuildAndDrawMarginCurve.
+		const Eigen::Vector4f color = margin_closed
+			? Eigen::Vector4f(1.0f, 0.0f, 0.0f, 1.0f)
+			: Eigen::Vector4f(1.0f, 0.0f, 1.0f, 1.0f);
+
+		size_t seg_count = margin_closed ? margin_curve.size() : (margin_curve.size() - 1);
+		for (size_t i = 0; i < seg_count; ++i)
+		{
+			Eigen::Vector3f a = margin_curve[i] + mesh.offset;
+			Eigen::Vector3f b = margin_curve[(i + 1) % margin_curve.size()] + mesh.offset;
+			VD::AddLine("MarginCurve", a, b, color);
+		}
+	}
+
+	bool LoadMarginLineInput(
+		const std::string& path,
+		const RGO::HeliumMesh* mesh,
+		std::vector<Eigen::Vector3f>& out_picked_points,
+		std::vector<Eigen::Vector3f>& out_curve_points,
+		std::vector<OpenMesh::FaceHandle>& out_curve_faces,
+		bool& out_closed)
+	{
+		out_picked_points.clear();
+		out_curve_points.clear();
+		out_curve_faces.clear();
+		out_closed = false;
+
+		if (nullptr == mesh)
+		{
+			std::cout << "[Error] LoadMarginLineInput: a mesh is required to rebuild"
+				<< " face handles from stored indices." << std::endl;
+			return false;
+		}
+
+		std::ifstream in(path, std::ios::binary);
+		if (false == in.is_open())
+		{
+			std::cout << "[Error] LoadMarginLineInput: cannot open file for reading: "
+				<< path << std::endl;
+			return false;
+		}
+
+		char magic[8] = { 0 };
+		in.read(magic, 8);
+		const char expect[8] = { 'R', 'G', 'O', 'M', 'A', 'R', 'G', 'N' };
+		if (false == in.good() || 0 != std::memcmp(magic, expect, 8))
+		{
+			std::cout << "[Error] LoadMarginLineInput: bad magic; not an RGO margin file: "
+				<< path << std::endl;
+			return false;
+		}
+
+		uint32_t version = 0;
+		in.read(reinterpret_cast<char*>(&version), sizeof(version));
+		if (false == in.good() || 1 != version)
+		{
+			std::cout << "[Error] LoadMarginLineInput: unsupported version " << version
+				<< " (expected 1)." << std::endl;
+			return false;
+		}
+
+		uint8_t closed_flag = 0;
+		in.read(reinterpret_cast<char*>(&closed_flag), sizeof(closed_flag));
+		if (false == in.good())
+		{
+			std::cout << "[Error] LoadMarginLineInput: truncated file at closed flag." << std::endl;
+			return false;
+		}
+		out_closed = (0 != closed_flag);
+
+		uint64_t picked_count = 0;
+		in.read(reinterpret_cast<char*>(&picked_count), sizeof(picked_count));
+		if (false == in.good())
+		{
+			std::cout << "[Error] LoadMarginLineInput: truncated file at picked count." << std::endl;
+			return false;
+		}
+		out_picked_points.reserve(static_cast<size_t>(picked_count));
+		for (uint64_t i = 0; i < picked_count; ++i)
+		{
+			float xyz[3] = { 0.0f, 0.0f, 0.0f };
+			in.read(reinterpret_cast<char*>(xyz), sizeof(xyz));
+			if (false == in.good())
+			{
+				std::cout << "[Error] LoadMarginLineInput: truncated at picked point "
+					<< i << "." << std::endl;
+				out_picked_points.clear();
+				return false;
+			}
+			out_picked_points.emplace_back(xyz[0], xyz[1], xyz[2]);
+		}
+
+		uint64_t curve_count = 0;
+		in.read(reinterpret_cast<char*>(&curve_count), sizeof(curve_count));
+		if (false == in.good())
+		{
+			std::cout << "[Error] LoadMarginLineInput: truncated file at curve count." << std::endl;
+			out_picked_points.clear();
+			return false;
+		}
+		out_curve_points.reserve(static_cast<size_t>(curve_count));
+		for (uint64_t i = 0; i < curve_count; ++i)
+		{
+			float xyz[3] = { 0.0f, 0.0f, 0.0f };
+			in.read(reinterpret_cast<char*>(xyz), sizeof(xyz));
+			if (false == in.good())
+			{
+				std::cout << "[Error] LoadMarginLineInput: truncated at curve point "
+					<< i << "." << std::endl;
+				out_picked_points.clear();
+				out_curve_points.clear();
+				return false;
+			}
+			out_curve_points.emplace_back(xyz[0], xyz[1], xyz[2]);
+		}
+
+		uint64_t face_count = 0;
+		in.read(reinterpret_cast<char*>(&face_count), sizeof(face_count));
+		if (false == in.good())
+		{
+			std::cout << "[Error] LoadMarginLineInput: truncated file at face count." << std::endl;
+			out_picked_points.clear();
+			out_curve_points.clear();
+			return false;
+		}
+		if (face_count != curve_count)
+		{
+			std::cout << "[Error] LoadMarginLineInput: face count " << face_count
+				<< " does not match curve count " << curve_count
+				<< "; file is inconsistent." << std::endl;
+			out_picked_points.clear();
+			out_curve_points.clear();
+			return false;
+		}
+
+		const int num_faces = static_cast<int>(mesh->n_faces());
+		size_t invalid_faces = 0;
+		out_curve_faces.reserve(static_cast<size_t>(face_count));
+		for (uint64_t i = 0; i < face_count; ++i)
+		{
+			int32_t idx = -1;
+			in.read(reinterpret_cast<char*>(&idx), sizeof(idx));
+			if (false == in.good())
+			{
+				std::cout << "[Error] LoadMarginLineInput: truncated at face index "
+					<< i << "." << std::endl;
+				out_picked_points.clear();
+				out_curve_points.clear();
+				out_curve_faces.clear();
+				return false;
+			}
+
+			// A stored -1 was an invalid handle at save time. A non-negative
+			// index must be within this mesh's face range; otherwise the file
+			// was saved against a different mesh and the handles are
+			// meaningless, so fail loudly rather than carve with wrong faces.
+			if (idx < 0)
+			{
+				out_curve_faces.push_back(OpenMesh::FaceHandle());
+				++invalid_faces;
+			}
+			else if (idx >= num_faces)
+			{
+				std::cout << "[Error] LoadMarginLineInput: stored face index " << idx
+					<< " at position " << i << " exceeds mesh face count " << num_faces
+					<< ". This file was saved against a different mesh." << std::endl;
+				out_picked_points.clear();
+				out_curve_points.clear();
+				out_curve_faces.clear();
+				return false;
+			}
+			else
+			{
+				out_curve_faces.push_back(mesh->face_handle(idx));
+			}
+		}
+
+		if (RGO::Log::AtInfo())
+		{
+			std::cout << "[Info] LoadMarginLineInput: read " << picked_count
+				<< " picked points, " << curve_count << " curve points ("
+				<< invalid_faces << " invalid face handles) from " << path
+				<< ", closed " << (out_closed ? "true" : "false") << "." << std::endl;
+		}
+		return true;
+	}
+
+	void DiagnoseCurveSelfProximity(
+		const std::vector<Eigen::Vector3f>& curve,
+		bool closed) const
+	{
+		const size_t n = curve.size();
+		if (n < 4) return;
+
+		// A self-proximity is two curve samples that are far apart ALONG the
+		// curve (index distance large) yet close in space. That is the
+		// signature of the curve folding back near itself, which co-refine
+		// turns into a degree-4 node and an open chain. Sliver segments of
+		// length ~1e-5 in the loop tracer come from exactly these folds.
+		// Consecutive samples are skipped (their closeness is normal); only
+		// pairs at least min_index_gap apart are reported.
+		const size_t min_index_gap = 3;
+
+		// Proximity threshold scaled to the mean curve sample spacing, so a
+		// fold is flagged relative to how densely the curve is sampled.
+		double total = 0.0;
+		size_t spans = closed ? n : (n - 1);
+		for (size_t i = 0; i < spans; ++i)
+		{
+			total += (curve[(i + 1) % n] - curve[i]).norm();
+		}
+		float mean_spacing = (spans > 0) ? static_cast<float>(total / spans) : 0.0f;
+		float near_threshold = 0.5f * mean_spacing;
+
+		std::cout << std::setprecision(10);
+		if (RGO::Log::Diag())
+		{
+			std::cout << "[Debug] DiagnoseCurveSelfProximity: " << n << " samples, mean spacing "
+				<< mean_spacing << ", flagging pairs closer than " << near_threshold
+				<< " at least " << min_index_gap << " indices apart." << std::endl;
+		}
+
+		size_t reported = 0;
+		float min_fold_dist = std::numeric_limits<float>::max();
+
+		for (size_t i = 0; i < n; ++i)
+		{
+			for (size_t j = i + min_index_gap; j < n; ++j)
+			{
+				// In a closed curve the wrap-around neighbours are also
+				// consecutive, so skip pairs whose cyclic index gap is small.
+				size_t cyclic_gap = std::min(j - i, n - (j - i));
+				if (cyclic_gap < min_index_gap) continue;
+
+				float d = (curve[i] - curve[j]).norm();
+				if (d >= near_threshold) continue;
+
+				if (d < min_fold_dist) min_fold_dist = d;
+
+				if (reported < 20)
+				{
+					++reported;
+					if (RGO::Log::Diag())
+					{
+						std::cout << "[Debug]   fold: sample " << i << " (" << curve[i].x()
+							<< ", " << curve[i].y() << ", " << curve[i].z() << ") and sample "
+							<< j << " (" << curve[j].x() << ", " << curve[j].y() << ", "
+							<< curve[j].z() << ") are " << d << " apart, "
+							<< (j - i) << " indices apart." << std::endl;
+					}
+				}
+			}
+		}
+
+		if (RGO::Log::Diag())
+		{
+			std::cout << "[Debug] DiagnoseCurveSelfProximity: " << reported
+				<< " folds reported, closest fold distance " << min_fold_dist << "." << std::endl;
+		}
+		std::cout << std::setprecision(6);
 	}
 
 protected:

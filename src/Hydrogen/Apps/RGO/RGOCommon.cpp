@@ -58,6 +58,9 @@ namespace Eigen
 
 namespace RGO
 {
+	LogLevel Log::level = LogLevel::Info;
+	bool Log::diagnostics = false;
+
 	// ------------------------------------------------------------
 	// Distance
 	// ------------------------------------------------------------
@@ -234,16 +237,40 @@ namespace RGO
 			return result;
 		}
 
+		// In-plane containment with an epsilon band. Each edge cross product
+		// c = edge x (proj - edge_start) has magnitude (edge_length * signed
+		// perpendicular distance of proj from that edge), and c.dot(n) is its
+		// signed component along the face normal. Dividing the negative
+		// overshoot by the edge length converts it to the actual in-plane
+		// distance proj lies OUTSIDE that edge. A bare >= 0 test gives this
+		// distance a zero tolerance, so a point projected exactly onto its
+		// own face plane but a few 1e-7 beyond a triangle edge (curve samples
+		// whose owning face the sampler picked one triangle over) is wrongly
+		// classified Outside. Allowing an overshoot up to epsilon, the same
+		// epsilon used for the perpendicular plane test above, makes the
+		// in-plane and out-of-plane tolerances consistent. Points genuinely
+		// outside (overshoot beyond epsilon) still return Outside.
 		Eigen::Vector3f proj = p - dist * n;
-		Eigen::Vector3f c0 = (v1 - v0).cross(proj - v0);
-		Eigen::Vector3f c1 = (v2 - v1).cross(proj - v1);
-		Eigen::Vector3f c2 = (v0 - v2).cross(proj - v2);
 
-		if (c0.dot(n) >= 0.0f && c1.dot(n) >= 0.0f && c2.dot(n) >= 0.0f)
+		const Eigen::Vector3f ea[3] = { v0, v1, v2 };
+		const Eigen::Vector3f eb[3] = { v1, v2, v0 };
+
+		for (int i = 0; i < 3; ++i)
 		{
-			result.type = PointToTriangleType::Inside;
+			Eigen::Vector3f edge = eb[i] - ea[i];
+			float edge_len = edge.norm();
+			if (edge_len < 1e-12f) return result;
+
+			float signed_area2 = edge.cross(proj - ea[i]).dot(n);
+			float in_plane_dist = signed_area2 / edge_len;
+
+			if (in_plane_dist < -epsilon)
+			{
+				return result;
+			}
 		}
 
+		result.type = PointToTriangleType::Inside;
 		return result;
 	}
 
@@ -527,6 +554,7 @@ namespace RGO
 		}
 
 		size_t failed_count = 0;
+		size_t reported = 0;
 		for (const auto& idx : indices)
 		{
 			std::vector<VertexHandle> face_v_handles;
@@ -538,6 +566,31 @@ namespace RGO
 			if (false == fh.is_valid())
 			{
 				++failed_count;
+
+				// Forensics: the three vertex positions of each rejected
+				// face. A zero-length edge (two identical coordinates) means
+				// a degenerate triangle reached Build; distinct coordinates
+				// that still fail mean the face would make an edge incident
+				// to three or more faces (non-manifold) at this location.
+				if (reported < 12)
+				{
+					++reported;
+					const Eigen::Vector3f& p0 = points[idx[0]];
+					const Eigen::Vector3f& p1 = points[idx[1]];
+					const Eigen::Vector3f& p2 = points[idx[2]];
+					std::cout << std::setprecision(10);
+					if (Log::Diag())
+					{
+						std::cout << "[Debug] Build rejected face: idx (" << idx[0] << ", "
+							<< idx[1] << ", " << idx[2] << ") 3D ("
+							<< p0.x() << ", " << p0.y() << ", " << p0.z() << ") ("
+							<< p1.x() << ", " << p1.y() << ", " << p1.z() << ") ("
+							<< p2.x() << ", " << p2.y() << ", " << p2.z() << ")"
+							<< " edge lens " << (p1 - p0).norm() << " / "
+							<< (p2 - p1).norm() << " / " << (p0 - p2).norm() << std::endl;
+					}
+					std::cout << std::setprecision(6);
+				}
 			}
 		}
 
@@ -2396,9 +2449,12 @@ namespace RGO
 		out_large_points = patch_points[large_idx];
 		out_large_indices = patch_indices[large_idx];
 
-		std::cout << "[Info] SplitByMarginLoop: split into areas "
-			<< patch_area(out_small_points, out_small_indices) << " (small) and "
-			<< patch_area(out_large_points, out_large_indices) << " (large)." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] SplitByMarginLoop: split into areas "
+				<< patch_area(out_small_points, out_small_indices) << " (small) and "
+				<< patch_area(out_large_points, out_large_indices) << " (large)." << std::endl;
+		}
 
 		return true;
 	}
@@ -2599,9 +2655,12 @@ namespace RGO
 				}
 			}
 
-			std::cout << "[Info] SoupTopology(" << label << "): min edge length " << min_len
-				<< ", edges shorter than 2e/10e/100e EPSILON: "
-				<< len_t1 << " / " << len_t2 << " / " << len_t3 << "." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] SoupTopology(" << label << "): min edge length " << min_len
+					<< ", edges shorter than 2e/10e/100e EPSILON: "
+					<< len_t1 << " / " << len_t2 << " / " << len_t3 << "." << std::endl;
+			}
 
 			if (holes > 0)
 			{
@@ -2774,8 +2833,11 @@ namespace RGO
 
 		if (0 == failures)
 		{
-			std::cout << "[Info] SoupTopology(" << label << "): 2-manifold, no duplicate"
-				<< " or degenerate triangles, no bowtie vertices." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] SoupTopology(" << label << "): 2-manifold, no duplicate"
+					<< " or degenerate triangles, no bowtie vertices." << std::endl;
+			}
 			return true;
 		}
 

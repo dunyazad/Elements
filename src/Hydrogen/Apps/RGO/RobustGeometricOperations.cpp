@@ -120,9 +120,12 @@ namespace RGO
 			}
 		}
 
-		std::cout << "[Info] OperatorCreateSkirt: extended " << loops_built
-			<< " of " << loops.size() << " border loops by height "
-			<< skirt_height << " (direction computed from each loop)." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] OperatorCreateSkirt: extended " << loops_built
+				<< " of " << loops.size() << " border loops by height "
+				<< skirt_height << " (direction computed from each loop)." << std::endl;
+		}
 
 		meshTarget->clear();
 		meshTarget->Build(flat_points, flat_indices);
@@ -263,8 +266,11 @@ namespace RGO
 		}
 		if (false == coplanar_face_pairs.empty())
 		{
-			std::cout << "[Info] OperatorIntersectionLoops: " << coplanar_face_pairs.size()
-				<< " coplanar overlapping face pairs recorded for the OnSurface stage." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] OperatorIntersectionLoops: " << coplanar_face_pairs.size()
+					<< " coplanar overlapping face pairs recorded for the OnSurface stage." << std::endl;
+			}
 		}
 
 		size_t total = 0;
@@ -381,14 +387,16 @@ namespace RGO
 		const Eigen::Vector3f& p1,
 		Eigen::Vector3f& out_point) const
 	{
-		// Edge endpoints.
 		Eigen::Vector3f e0(meshA->point(meshA->from_vertex_handle(edge_he)).data());
 		Eigen::Vector3f e1(meshA->point(meshA->to_vertex_handle(edge_he)).data());
 
-		// Work in the plane of face fa: the curve point pair and the edge
-		// both lie on (or within EPSILON of) this plane, so a planar
-		// segment-segment crossing is well defined and avoids the
-		// ill-conditioned 3D skew-line solve.
+		// Solve the crossing in the plane of face fa. The shared edge
+		// vertices e0,e1 lie exactly on fa's plane and on the neighbour's
+		// plane, so returning the point parametrized ALONG the edge places
+		// it on both face planes and, crucially, makes the crossing of a
+		// given mesh edge identical no matter which of the two incident
+		// faces computed it. That identity is what lets neighbouring curve
+		// segments weld into one chain instead of tearing into open chains.
 		Eigen::Vector3f fv0, fv1, fv2;
 		meshA->GetFaceVertices(fa, fv0, fv1, fv2);
 		Eigen::Vector3f n = (fv1 - fv0).cross(fv2 - fv0);
@@ -423,14 +431,15 @@ namespace RGO
 		float t = (diff.x() * db.y() - diff.y() * db.x()) / denom;
 		float u = (diff.x() * da.y() - diff.y() * da.x()) / denom;
 
-		// A small overshoot is tolerated so a crossing exactly at an edge
-		// endpoint or curve sample is not missed; canonicalization snaps
-		// the result onto the edge afterwards.
 		const float lo = -1e-3f;
 		const float hi = 1.0f + 1e-3f;
 		if (t < lo || t > hi || u < lo || u > hi) return false;
 
-		out_point = p0 + (p1 - p0) * std::max(0.0f, std::min(1.0f, t));
+		// Place the point on the edge via the edge parameter u, NOT on the
+		// chord via t. e0,e1 are mesh vertices, so this is bit-identical
+		// across both incident faces for the same u.
+		float uc = std::max(0.0f, std::min(1.0f, u));
+		out_point = e0 + (e1 - e0) * uc;
 		return true;
 	}
 
@@ -445,83 +454,36 @@ namespace RGO
 		out_crossings.clear();
 		out_faces.clear();
 
-		// Same face: no boundary crossing, the segment stays whole.
+		// Same face: the whole curve piece stays inside fa, no crossing.
 		if (fa == fb)
 		{
 			out_faces.push_back(fa);
 			return true;
 		}
 
-		// Directly adjacent: one crossing on the shared edge.
-		OpenMesh::HalfedgeHandle shared = SharedHalfedge(fa, fb);
-		if (shared.is_valid())
+		// Find the actual mesh face path fa ... fb. A straight chord between
+		// two surface samples does not follow the surface across curvature,
+		// so the previous chord-vs-edge crossing solve missed the shared
+		// edge even for directly adjacent faces (hops == 1 in diagnostics).
+		// The BFS path is purely topological and always connects the two
+		// faces; each consecutive pair shares exactly one edge, and the
+		// crossing is placed on that edge.
+		std::vector<OpenMesh::FaceHandle> path;
+		if (false == FindFacePathBFS(fa, fb, path)) return false;
+		if (path.size() < 2) return false;
+
+		out_faces.push_back(path[0]);
+
+		for (size_t k = 0; k + 1 < path.size(); ++k)
 		{
+			OpenMesh::HalfedgeHandle shared = SharedHalfedge(path[k], path[k + 1]);
+			if (false == shared.is_valid()) return false;
+
 			Eigen::Vector3f x;
-			if (SegmentEdgeCrossing(fa, shared, p_from, p_to, x))
-			{
-				out_faces.push_back(fa);
-				out_crossings.push_back(x);
-				out_faces.push_back(fb);
-				return true;
-			}
-			// The shared edge exists but the straight chord misses it
-			// (the two faces meet at a reflex angle relative to the
-			// chord). Fall through to the BFS walk, which follows the
-			// chord toward fb face by face.
-		}
+			if (false == CrossingOnSharedEdge(shared, p_from, p_to, x)) return false;
 
-		// General case: walk from fa toward fb, at each face leaving
-		// through the edge whose crossing with the chord lies closest to
-		// p_to in the travel direction. Bounded to avoid an infinite loop
-		// on a pathological strip; the cap scales with mesh size.
-		const Eigen::Vector3f dir = (p_to - p_from);
-
-		OpenMesh::FaceHandle current = fa;
-		Eigen::Vector3f enter_point = p_from;
-
-		out_faces.push_back(current);
-
-		const size_t max_steps = meshA->n_faces() + 1;
-		size_t steps = 0;
-
-		while (current != fb)
-		{
-			if (++steps > max_steps) return false;
-
-			// Among the three edges, pick the forward crossing with the
-			// chord that advances most toward p_to and is not the edge we
-			// just entered through.
-			OpenMesh::HalfedgeHandle best_he;
-			Eigen::Vector3f best_x;
-			float best_adv = -std::numeric_limits<float>::max();
-
-			for (auto fh_it = meshA->cfh_iter(current); fh_it.is_valid(); ++fh_it)
-			{
-				OpenMesh::HalfedgeHandle opp = meshA->opposite_halfedge_handle(*fh_it);
-				if (meshA->is_boundary(opp)) continue;
-
-				Eigen::Vector3f x;
-				if (false == SegmentEdgeCrossing(current, *fh_it, p_from, p_to, x)) continue;
-
-				float adv = (x - enter_point).dot(dir);
-				if (adv <= 0.0f) continue;
-
-				if (adv > best_adv)
-				{
-					best_adv = adv;
-					best_he = *fh_it;
-					best_x = x;
-				}
-			}
-
-			if (false == best_he.is_valid()) return false;
-
-			out_crossings.push_back(best_x);
-			enter_point = best_x;
-
-			current = meshA->face_handle(meshA->opposite_halfedge_handle(best_he));
-			if (false == current.is_valid()) return false;
-			out_faces.push_back(current);
+			out_crossings.push_back(x);
+			out_faces.push_back(path[k + 1]);
 		}
 
 		return true;
@@ -530,21 +492,80 @@ namespace RGO
 	void OperatorIntersectionLoops::EmitCurveSegment(
 		const Eigen::Vector3f& p0,
 		const Eigen::Vector3f& p1,
-		int face_index)
+		int face_index,
+		bool project_p0,
+		bool project_p1)
 	{
-		if ((p0 - p1).squaredNorm() < EPSILON * EPSILON) return;
+		// Curve samples are true surface points off the face plane and must
+		// be projected onto face_index's plane. Edge crossings already lie
+		// on a shared edge (hence on both incident planes) and are passed
+		// through unprojected: projecting a crossing onto one of its two
+		// faces would split the single mesh-edge point into two slightly
+		// different coordinates and tear the chain apart at that node.
+		OpenMesh::FaceHandle f = meshA->face_handle(face_index);
+
+		Eigen::Vector3f q0 = p0;
+		Eigen::Vector3f q1 = p1;
+		if (f.is_valid())
+		{
+			if (project_p0) q0 = ProjectToFacePlane(f, p0);
+			if (project_p1) q1 = ProjectToFacePlane(f, p1);
+		}
+
+		if ((q0 - q1).squaredNorm() < EPSILON * EPSILON) return;
 
 		IntersectionSegment seg;
-		seg.p0 = p0;
-		seg.p1 = p1;
+		seg.p0 = q0;
+		seg.p1 = q1;
 
-		// Single-mesh mode: the segment belongs to one face of one mesh,
-		// recorded as both face_a and face_b so the two-mesh canonicalize
-		// and validation logic, which scans both, runs unchanged.
 		seg.face_a = face_index;
 		seg.face_b = face_index;
 
 		segments.push_back(seg);
+	}
+
+	bool OperatorIntersectionLoops::FaceVerticesSafe(
+		OpenMesh::FaceHandle f,
+		Eigen::Vector3f& a,
+		Eigen::Vector3f& b,
+		Eigen::Vector3f& c) const
+	{
+		if (false == f.is_valid()) return false;
+
+		Eigen::Vector3f v[3];
+		int cnt = 0;
+		for (auto fv_it = meshA->cfv_iter(f); fv_it.is_valid(); ++fv_it)
+		{
+			if (cnt < 3)
+			{
+				const auto& p = meshA->point(*fv_it);
+				v[cnt] = Eigen::Vector3f(p[0], p[1], p[2]);
+			}
+			++cnt;
+		}
+
+		if (3 != cnt) return false;
+
+		a = v[0];
+		b = v[1];
+		c = v[2];
+		return true;
+	}
+
+	Eigen::Vector3f OperatorIntersectionLoops::ProjectToFacePlane(
+		OpenMesh::FaceHandle f,
+		const Eigen::Vector3f& p) const
+	{
+		Eigen::Vector3f a, b, c;
+		if (false == FaceVerticesSafe(f, a, b, c)) return p;
+
+		Eigen::Vector3f n = (b - a).cross(c - a);
+		float len = n.norm();
+		if (len < 1e-20f) return p;
+		n /= len;
+
+		float signed_dist = (p - a).dot(n);
+		return p - n * signed_dist;
 	}
 
 	bool OperatorIntersectionLoops::CollectSegmentsFromCurve(
@@ -559,6 +580,11 @@ namespace RGO
 				<< " face arrays of length >= 2." << std::endl;
 			return false;
 		}
+
+		// One crossing per mesh edge across the whole curve. Cleared here so
+		// a fresh curve starts with no cached crossings; CrossingOnSharedEdge
+		// fills it and reuses each edge's first crossing on later visits.
+		edge_crossing_cache.clear();
 
 		const size_t pair_count = closed ? n : (n - 1);
 		size_t walk_failures = 0;
@@ -581,39 +607,39 @@ namespace RGO
 			std::vector<OpenMesh::FaceHandle> strip_faces;
 			if (false == WalkFaceStrip(fa, fb, p_from, p_to, crossings, strip_faces))
 			{
-				// The chord could not be tracked across the surface between
-				// these two samples. Fall back to a single segment on fa so
-				// no curve piece is silently dropped; canonicalization and
-				// the seam validators will flag it loudly if it breaks the
-				// seam, which is the correct place to surface a sample gap.
 				++walk_failures;
-				EmitCurveSegment(p_from, p_to, fa.idx());
+				EmitCurveSegment(p_from, p_to, fa.idx(), true, true);
 				continue;
 			}
 
-			// strip_faces has one more entry than crossings. The piece in
-			// strip_faces[k] runs from the previous boundary point (or
-			// p_from for k == 0) to the next boundary point (or p_to for
-			// the last face).
 			Eigen::Vector3f seg_start = p_from;
+			bool start_is_sample = true;
+
 			for (size_t k = 0; k < strip_faces.size(); ++k)
 			{
-				Eigen::Vector3f seg_end = (k < crossings.size()) ? crossings[k] : p_to;
-				EmitCurveSegment(seg_start, seg_end, strip_faces[k].idx());
+				bool end_is_sample = (k >= crossings.size());
+				Eigen::Vector3f seg_end = end_is_sample ? p_to : crossings[k];
+
+				EmitCurveSegment(seg_start, seg_end, strip_faces[k].idx(),
+					start_is_sample, end_is_sample);
+
 				seg_start = seg_end;
+				start_is_sample = false;
 			}
 		}
 
 		if (walk_failures > 0)
 		{
 			std::cout << "[Warning] CollectSegmentsFromCurve: " << walk_failures
-				<< " curve spans could not be tracked across the surface and were"
-				<< " emitted as direct chords. If the seam validation fails, the"
-				<< " curve samples are too sparse for the local triangle size." << std::endl;
+				<< " curve spans had invalid faces or were emitted as a single"
+				<< " in-face chord." << std::endl;
 		}
 
-		std::cout << "[Info] CollectSegmentsFromCurve: " << segments.size()
-			<< " per-face segments from " << n << " curve points." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] CollectSegmentsFromCurve: " << segments.size()
+				<< " per-face segments from " << n << " curve points." << std::endl;
+		}
 
 		return false == segments.empty();
 	}
@@ -1017,23 +1043,29 @@ namespace RGO
 
 				if (duplicate_count <= report_limit)
 				{
-					std::cout << "[Info] BuildLoops: segment " << i
-						<< " (faceA " << segments[i].face_a
-						<< ", faceB " << segments[i].face_b
-						<< ", len " << (segments[i].p0 - segments[i].p1).norm()
-						<< ") duplicates segment " << it->second
-						<< " (faceA " << segments[it->second].face_a
-						<< ", faceB " << segments[it->second].face_b
-						<< "): excluded from curve topology." << std::endl;
+					if (Log::AtInfo())
+					{
+						std::cout << "[Info] BuildLoops: segment " << i
+							<< " (faceA " << segments[i].face_a
+							<< ", faceB " << segments[i].face_b
+							<< ", len " << (segments[i].p0 - segments[i].p1).norm()
+							<< ") duplicates segment " << it->second
+							<< " (faceA " << segments[it->second].face_a
+							<< ", faceB " << segments[it->second].face_b
+							<< "): excluded from curve topology." << std::endl;
+					}
 				}
 			}
 
 			if (duplicate_count > 0)
 			{
-				std::cout << "[Info] BuildLoops: " << duplicate_count
-					<< " duplicate segments excluded from topology, "
-					<< (segments.size() - duplicate_count)
-					<< " remain for loop tracing." << std::endl;
+				if (Log::AtInfo())
+				{
+					std::cout << "[Info] BuildLoops: " << duplicate_count
+						<< " duplicate segments excluded from topology, "
+						<< (segments.size() - duplicate_count)
+						<< " remain for loop tracing." << std::endl;
+				}
 			}
 		}
 
@@ -1168,10 +1200,13 @@ namespace RGO
 			segments.end());
 
 		size_t removed = before - segments.size();
-		std::cout << "[Info] CanonicalizeSegments: " << canonical_snap_count
-			<< " nodes snapped to features, " << removed
-			<< " degenerate segments removed, " << segments.size()
-			<< " segments remain." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] CanonicalizeSegments: " << canonical_snap_count
+				<< " nodes snapped to features, " << removed
+				<< " degenerate segments removed, " << segments.size()
+				<< " segments remain." << std::endl;
+		}
 	}
 
 	void OperatorIntersectionLoops::GatherNodeFaces(
@@ -1437,9 +1472,12 @@ namespace RGO
 
 		if (merged_count > 0)
 		{
-			std::cout << "[Info] MergeSnappedNodes: " << merged_count
-				<< " nodes merged after snapping, " << dirty_reps.size()
-				<< " representatives re-snapped with merged face unions." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] MergeSnappedNodes: " << merged_count
+					<< " nodes merged after snapping, " << dirty_reps.size()
+					<< " representatives re-snapped with merged face unions." << std::endl;
+			}
 		}
 	}
 
@@ -1512,9 +1550,12 @@ namespace RGO
 			}
 		}
 
-		std::cout << "[Info] CanonicalIdempotence: " << clusters.size()
-			<< " canonical points checked, max re-snap movement "
-			<< max_move << " (tolerance " << move_tol << ")." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] CanonicalIdempotence: " << clusters.size()
+				<< " canonical points checked, max re-snap movement "
+				<< max_move << " (tolerance " << move_tol << ")." << std::endl;
+		}
 
 		canonical_validation_failure_count += failures;
 		return 0 == failures;
@@ -1534,8 +1575,11 @@ namespace RGO
 
 		if (ok)
 		{
-			std::cout << "[Info] ValidateCanonicalization: all invariants hold for "
-				<< segments.size() << " segments." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] ValidateCanonicalization: all invariants hold for "
+					<< segments.size() << " segments." << std::endl;
+			}
 		}
 		else
 		{
@@ -1646,10 +1690,13 @@ namespace RGO
 
 		if (0 == failures)
 		{
-			std::cout << "[Info] ConstraintSpacing: all per-face constraint point sets"
-				<< " are safely separated (>= EPSILON) for "
-				<< segments_by_face_a.size() << " A faces and "
-				<< segments_by_face_b.size() << " B faces." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] ConstraintSpacing: all per-face constraint point sets"
+					<< " are safely separated (>= EPSILON) for "
+					<< segments_by_face_a.size() << " A faces and "
+					<< segments_by_face_b.size() << " B faces." << std::endl;
+			}
 		}
 
 		canonical_validation_failure_count += failures;
@@ -1692,13 +1739,26 @@ namespace RGO
 				{
 					++validation_failure_count;
 
+					// Forensic distances: how far the endpoint really is from
+					// its own triangle in 3D (clamped closest point). This
+					// separates an in-plane tolerance miss (distance within a
+					// few EPSILON) from a wrong curve_faces assignment
+					// (distance well above EPSILON, the sample belongs to a
+					// different triangle than the one recorded).
+					Eigen::Vector3f cp_a = Distance::ClosestPointOnTriangle(*endpoints[e], a0, a1, a2);
+					Eigen::Vector3f cp_b = Distance::ClosestPointOnTriangle(*endpoints[e], b0, b1, b2);
+					float d_tri_a = (*endpoints[e] - cp_a).norm();
+					float d_tri_b = (*endpoints[e] - cp_b).norm();
+
 					std::cout << "[Error] Segment " << i << " endpoint " << e
 						<< " (" << endpoints[e]->x() << ", " << endpoints[e]->y() << ", " << endpoints[e]->z() << ")"
 						<< " not on " << (ok_a ? "" : "meshA face ") << (ok_a ? "" : std::to_string(seg.face_a))
 						<< (false == ok_a && false == ok_b ? " and " : "")
 						<< (ok_b ? "" : "meshB face ") << (ok_b ? "" : std::to_string(seg.face_b))
 						<< " (plane dist A: " << on_a.plane_distance
-						<< ", B: " << on_b.plane_distance << ")" << std::endl;
+						<< ", B: " << on_b.plane_distance
+						<< "; dist to triangle A: " << d_tri_a
+						<< ", B: " << d_tri_b << ")" << std::endl;
 				}
 			}
 		}
@@ -1712,8 +1772,11 @@ namespace RGO
 		}
 		else
 		{
-			std::cout << "[Info] ValidateSegmentEndpoints: All " << segments.size() * 2
-				<< " endpoints valid. Co-refinement on this data should yield no boundary edges." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] ValidateSegmentEndpoints: All " << segments.size() * 2
+					<< " endpoints valid. Co-refinement on this data should yield no boundary edges." << std::endl;
+			}
 		}
 		return true;
 	}
@@ -1738,8 +1801,11 @@ namespace RGO
 			input_boundary_edges.push_back(be);
 		}
 
-		std::cout << "[Info] CollectInputBoundaryEdges(" << label << "): "
-			<< (input_boundary_edges.size() - before) << " boundary edges." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] CollectInputBoundaryEdges(" << label << "): "
+				<< (input_boundary_edges.size() - before) << " boundary edges." << std::endl;
+		}
 	}
 
 	float OperatorIntersectionLoops::DistanceToInputBoundary(const Eigen::Vector3f& p) const
@@ -1793,9 +1859,12 @@ namespace RGO
 
 			if (head_ok && tail_ok)
 			{
-				std::cout << "[Info] OpenChains: curve " << li << " ("
-					<< loop.segment_indices.size() << " segments) ends on the"
-					<< " input border at both ends: accepted." << std::endl;
+				if (Log::AtInfo())
+				{
+					std::cout << "[Info] OpenChains: curve " << li << " ("
+						<< loop.segment_indices.size() << " segments) ends on the"
+						<< " input border at both ends: accepted." << std::endl;
+				}
 				continue;
 			}
 
@@ -1823,8 +1892,11 @@ namespace RGO
 
 		if (open_chain_count > 0 && 0 == invalid)
 		{
-			std::cout << "[Info] OpenChains: " << open_chain_count
-				<< " open chains, all ending on input borders." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] OpenChains: " << open_chain_count
+					<< " open chains, all ending on input borders." << std::endl;
+			}
 		}
 
 		return 0 == invalid;
@@ -1839,9 +1911,12 @@ namespace RGO
 		// are a few EPSILON and vanish at the default 6 significant
 		// digits.
 		std::cout << std::setprecision(10);
-		std::cout << "[Debug] Neighborhood(" << tag << ") of ("
-			<< p.x() << ", " << p.y() << ", " << p.z()
-			<< "), radius " << radius << ":" << std::endl;
+		if (Log::Diag())
+		{
+			std::cout << "[Debug] Neighborhood(" << tag << ") of ("
+				<< p.x() << ", " << p.y() << ", " << p.z()
+				<< "), radius " << radius << ":" << std::endl;
+		}
 
 		size_t exact_degree = 0;
 		size_t found = 0;
@@ -1862,18 +1937,192 @@ namespace RGO
 				if (exact) ++exact_degree;
 
 				++found;
-				std::cout << "[Debug]   segment " << i << " endpoint " << e
-					<< " (" << endpoints[e]->x() << ", " << endpoints[e]->y()
-					<< ", " << endpoints[e]->z() << ") dist " << std::sqrt(d2)
-					<< (exact ? " EXACT" : "")
-					<< " faceA " << s.face_a << " faceB " << s.face_b
-					<< " len " << (s.p0 - s.p1).norm() << std::endl;
+				if (Log::Diag())
+				{
+					std::cout << "[Debug]   segment " << i << " endpoint " << e
+						<< " (" << endpoints[e]->x() << ", " << endpoints[e]->y()
+						<< ", " << endpoints[e]->z() << ") dist " << std::sqrt(d2)
+						<< (exact ? " EXACT" : "")
+						<< " faceA " << s.face_a << " faceB " << s.face_b
+						<< " len " << (s.p0 - s.p1).norm() << std::endl;
+				}
 			}
 		}
 
-		std::cout << "[Debug]   " << found << " endpoints in radius, "
-			<< exact_degree << " bit-identical (node degree)." << std::endl;
+		if (Log::Diag())
+		{
+			std::cout << "[Debug]   " << found << " endpoints in radius, "
+				<< exact_degree << " bit-identical (node degree)." << std::endl;
+		}
 		std::cout << std::setprecision(6);
+	}
+
+	bool OperatorIntersectionLoops::FindFacePathBFS(
+		OpenMesh::FaceHandle fa,
+		OpenMesh::FaceHandle fb,
+		std::vector<OpenMesh::FaceHandle>& out_path) const
+	{
+		out_path.clear();
+
+		if (false == fa.is_valid() || false == fb.is_valid()) return false;
+
+		if (fa == fb)
+		{
+			out_path.push_back(fa);
+			return true;
+		}
+
+		// Breadth-first search over face adjacency through shared
+		// non-boundary edges. The predecessor map reconstructs the face
+		// sequence fa ... fb, which is guaranteed to be a chain of
+		// edge-adjacent faces regardless of how the straight chord between
+		// the two curve samples behaves over a curved surface.
+		robin_hood::unordered_map<int, int> prev;
+		prev[fa.idx()] = -1;
+
+		std::deque<OpenMesh::FaceHandle> queue;
+		queue.push_back(fa);
+
+		const size_t max_visited = meshA->n_faces() + 1;
+		size_t visited = 0;
+		bool found = false;
+
+		while (false == queue.empty())
+		{
+			if (++visited > max_visited) return false;
+
+			OpenMesh::FaceHandle cur = queue.front();
+			queue.pop_front();
+
+			if (cur == fb)
+			{
+				found = true;
+				break;
+			}
+
+			for (auto fh_it = meshA->cfh_iter(cur); fh_it.is_valid(); ++fh_it)
+			{
+				OpenMesh::HalfedgeHandle opp = meshA->opposite_halfedge_handle(*fh_it);
+				if (meshA->is_boundary(opp)) continue;
+
+				OpenMesh::FaceHandle nfh = meshA->face_handle(opp);
+				if (false == nfh.is_valid()) continue;
+				if (meshA->status(nfh).deleted()) continue;
+				if (prev.find(nfh.idx()) != prev.end()) continue;
+
+				prev[nfh.idx()] = cur.idx();
+				queue.push_back(nfh);
+			}
+		}
+
+		if (false == found) return false;
+
+		// Reconstruct fa ... fb by walking predecessors back from fb.
+		std::vector<OpenMesh::FaceHandle> reversed;
+		int cur_idx = fb.idx();
+		const size_t max_steps = meshA->n_faces() + 1;
+		size_t steps = 0;
+
+		while (cur_idx != -1)
+		{
+			reversed.push_back(meshA->face_handle(cur_idx));
+			if (++steps > max_steps) return false;
+
+			auto it = prev.find(cur_idx);
+			if (it == prev.end()) return false;
+			cur_idx = it->second;
+		}
+
+		out_path.assign(reversed.rbegin(), reversed.rend());
+		return out_path.size() >= 1 && out_path.front() == fa && out_path.back() == fb;
+	}
+
+	bool OperatorIntersectionLoops::CrossingOnSharedEdge(
+		OpenMesh::HalfedgeHandle shared_he,
+		const Eigen::Vector3f& p_from,
+		const Eigen::Vector3f& p_to,
+		Eigen::Vector3f& out_point) const
+	{
+		// One crossing list per mesh edge, matched by direct distance rather
+		// than by a quantized slot. The previous slot-keyed cache split the
+		// same physical crossing across two adjacent slots when two curve
+		// spans hit the edge at almost the same parameter but on opposite
+		// sides of a slot boundary. That produced two crossings a few EPSILON
+		// apart on the same edge, which co-refinement then carved as a tiny
+		// T-junction (a NEW boundary edge) or, when welding fused them after
+		// the face was already split, a zero-length edge that add_face
+		// rejected. Comparing the new crossing's distance to every crossing
+		// already registered on this edge removes the slot boundary entirely:
+		// within 2 * EPSILON it is the same point and is reused bit-for-bit;
+		// beyond that it is a genuinely different crossing and is kept apart.
+		OpenMesh::EdgeHandle eh = meshA->edge_handle(shared_he);
+		int edge_idx = eh.idx();
+
+		Eigen::Vector3f e0(meshA->point(meshA->from_vertex_handle(shared_he)).data());
+		Eigen::Vector3f e1(meshA->point(meshA->to_vertex_handle(shared_he)).data());
+
+		Eigen::Vector3f edge = e1 - e0;
+		float edge_len2 = edge.squaredNorm();
+		if (edge_len2 < 1e-20f) return false;
+
+		Eigen::Vector3f d1 = edge;
+		Eigen::Vector3f d2 = p_to - p_from;
+		Eigen::Vector3f r = e0 - p_from;
+
+		float a = d1.dot(d1);
+		float e = d2.dot(d2);
+		float f = d2.dot(r);
+
+		float s;
+		if (e < 1e-20f)
+		{
+			s = -d1.dot(r) / a;
+		}
+		else
+		{
+			float c = d1.dot(r);
+			float b = d1.dot(d2);
+			float denom = a * e - b * b;
+			if (std::abs(denom) > 1e-20f)
+			{
+				s = (b * f - c * e) / denom;
+			}
+			else
+			{
+				Eigen::Vector3f mid = 0.5f * (p_from + p_to);
+				s = (mid - e0).dot(edge) / edge_len2;
+			}
+		}
+
+		s = std::max(0.0f, std::min(1.0f, s));
+		Eigen::Vector3f crossing = e0 + edge * s;
+
+		// Reuse an existing crossing on this edge if the new one is within
+		// 2 * EPSILON of it. The nearest existing crossing is chosen so the
+		// decision is deterministic when several are registered.
+		std::vector<Eigen::Vector3f>& existing = edge_crossing_cache[edge_idx];
+
+		int best = -1;
+		float best_d2 = (2.0f * EPSILON) * (2.0f * EPSILON);
+		for (int i = 0; i < static_cast<int>(existing.size()); ++i)
+		{
+			float d2i = (existing[i] - crossing).squaredNorm();
+			if (d2i < best_d2)
+			{
+				best_d2 = d2i;
+				best = i;
+			}
+		}
+
+		if (best >= 0)
+		{
+			out_point = existing[best];
+			return true;
+		}
+
+		existing.push_back(crossing);
+		out_point = crossing;
+		return true;
 	}
 
 	OperatorCoRefine::OperatorCoRefine(Mesh* a, Mesh* b, const OperatorIntersectionLoops* loops)
@@ -1890,7 +2139,10 @@ namespace RGO
 
 		if (loop_op->GetSegments().empty())
 		{
-			std::cout << "[Info] OperatorCoRefine: no intersection segments, nothing to refine." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] OperatorCoRefine: no intersection segments, nothing to refine." << std::endl;
+			}
 			return true;
 		}
 
@@ -1979,11 +2231,14 @@ namespace RGO
 
 		out_new_boundary_edge_count = CountNewBoundaryEdges(mesh, input_boundary, mesh_label);
 
-		std::cout << "[Info] RefineMesh(" << mesh_label << "): " << refined_faces
-			<< " faces refined, " << failed_faces << " failures, "
-			<< indices.size() << " triangles total, "
-			<< input_boundary.size() << " input boundary edges, "
-			<< out_new_boundary_edge_count << " NEW boundary edges after rebuild." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] RefineMesh(" << mesh_label << "): " << refined_faces
+				<< " faces refined, " << failed_faces << " failures, "
+				<< indices.size() << " triangles total, "
+				<< input_boundary.size() << " input boundary edges, "
+				<< out_new_boundary_edge_count << " NEW boundary edges after rebuild." << std::endl;
+		}
 
 		// New boundary edges mean the co-refinement guarantee is broken on
 		// this data: report failure loudly instead of patching.
@@ -2079,8 +2334,6 @@ namespace RGO
 		Eigen::Vector3f c0, c1, c2;
 		mesh->GetFaceVertices(mesh->face_handle(face_index), c0, c1, c2);
 
-		// On any failure the original triangle is emitted so the mesh
-		// stays closed, and false is returned so the failure stays loud.
 		auto emit_original = [&]()
 			{
 				out_soup.push_back(c0);
@@ -2098,14 +2351,9 @@ namespace RGO
 		}
 		n /= n_len;
 
-		// Orthonormal in-plane basis. (e1, e2, n) is right-handed, so CCW
-		// triangles in 2D map back to triangles whose normal matches n.
 		Eigen::Vector3f e1 = (c1 - c0).normalized();
 		Eigen::Vector3f e2 = n.cross(e1);
 
-		// Point list: corners first, then unique extra points.
-		// Exact-bit dedupe is correct because canonicalization made
-		// logically identical points bit-identical.
 		std::vector<Eigen::Vector3f> pts3;
 		pts3.reserve(3 + input.points.size());
 		pts3.push_back(c0);
@@ -2148,13 +2396,6 @@ namespace RGO
 				edges.push_back(CDT::Edge(static_cast<unsigned int>(a), static_cast<unsigned int>(b)));
 			};
 
-		// Face boundary edges, split by the extra points lying on them.
-		// The neighbor across each edge receives the same split points via
-		// PropagateEdgePointsToNeighbors, which is what prevents
-		// T-junctions. Constraining the boundary also lets
-		// eraseOuterTriangles trim everything outside the face while
-		// keeping regions enclosed by intersection loops (it peels from
-		// the outside only and does not treat inner loops as holes).
 		const int corner_edges[3][2] = { { 0, 1 }, { 1, 2 }, { 2, 0 } };
 		for (int eidx = 0; eidx < 3; ++eidx)
 		{
@@ -2174,6 +2415,30 @@ namespace RGO
 			}
 			std::sort(on_edge.begin(), on_edge.end());
 
+			// Forensics: two constraint points landing on the SAME face edge
+			// only slightly more than EPSILON apart split that edge into a
+			// sub-segment the neighbour across the edge may not reproduce,
+			// leaving a T-junction that surfaces as a NEW boundary edge after
+			// the rebuild. Report any such close pair on this edge.
+			for (size_t i = 1; i < on_edge.size(); ++i)
+			{
+				const Eigen::Vector3f& pa = pts3[on_edge[i - 1].second];
+				const Eigen::Vector3f& pb = pts3[on_edge[i].second];
+				float gap = (pa - pb).norm();
+				if (gap < 10.0f * EPSILON)
+				{
+					std::cout << std::setprecision(10);
+					if (Log::Diag())
+					{
+						std::cout << "[Debug] TriangulateFace face " << face_index
+							<< " edge " << eidx << ": two on-edge constraint points "
+							<< gap << " apart at (" << pa.x() << ", " << pa.y() << ", " << pa.z()
+							<< ") and (" << pb.x() << ", " << pb.y() << ", " << pb.z() << ")" << std::endl;
+					}
+					std::cout << std::setprecision(6);
+				}
+			}
+
 			int prev = corner_edges[eidx][0];
 			for (const auto& tp : on_edge)
 			{
@@ -2183,7 +2448,6 @@ namespace RGO
 			add_edge(prev, corner_edges[eidx][1]);
 		}
 
-		// Intersection segment constraints
 		for (const auto& con : input.constraints)
 		{
 			int ia = find_exact(con.first);
@@ -2221,8 +2485,6 @@ namespace RGO
 			return false;
 		}
 
-		// CDT should not invent vertices with this input, but if it ever
-		// does they are unprojected back onto the face plane.
 		std::vector<Eigen::Vector3f> out_positions;
 		out_positions.reserve(cdt.vertices.size());
 		for (size_t i = 0; i < cdt.vertices.size(); ++i)
@@ -2481,11 +2743,14 @@ namespace RGO
 		bool a_closed = (0 == boundary_a);
 		bool b_closed = (0 == boundary_b);
 
-		std::cout << "[Info] OperatorBoolean: meshA is "
-			<< (a_closed ? "closed" : "open") << " (" << boundary_a
-			<< " boundary edges), meshB is "
-			<< (b_closed ? "closed" : "open") << " (" << boundary_b
-			<< " boundary edges)." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] OperatorBoolean: meshA is "
+				<< (a_closed ? "closed" : "open") << " (" << boundary_a
+				<< " boundary edges), meshB is "
+				<< (b_closed ? "closed" : "open") << " (" << boundary_b
+				<< " boundary edges)." << std::endl;
+		}
 
 		if (a_closed && b_closed)
 		{
@@ -2624,9 +2889,12 @@ namespace RGO
 		// The operation and the per-side selection are logged so any run
 		// is identifiable from its log alone: different operations on the
 		// same data can coincidentally produce equal triangle totals.
-		std::cout << "[Info] OperatorBoolean: assembling " << BooleanTypeNameString(type)
-			<< ": kept " << kept_a << " faces from meshA, "
-			<< kept_b << " faces from meshB." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] OperatorBoolean: assembling " << BooleanTypeNameString(type)
+				<< ": kept " << kept_a << " faces from meshA, "
+				<< kept_b << " faces from meshB." << std::endl;
+		}
 
 		std::vector<Eigen::Vector3f> points;
 		std::vector<Eigen::Vector3i> indices;
@@ -2646,8 +2914,11 @@ namespace RGO
 
 		result_boundary_edge_count = CountBoundaryEdges(result);
 
-		std::cout << "[Info] OperatorBoolean: " << indices.size() << " result triangles, "
-			<< result_boundary_edge_count << " boundary edges in result." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] OperatorBoolean: " << indices.size() << " result triangles, "
+				<< result_boundary_edge_count << " boundary edges in result." << std::endl;
+		}
 
 		return soup_ok && 0 == result_boundary_edge_count;
 	}
@@ -2692,11 +2963,14 @@ namespace RGO
 		// border. Only boundary edges outside those two sets are failures.
 		size_t invalid = CountInvalidResultBoundaryEdges(result, input_boundary, "result");
 
-		std::cout << "[Info] OperatorBoolean: " << BooleanTypeNameString(type)
-			<< " trim kept " << indices.size()
-			<< " triangles from " << open_label << ", "
-			<< result_boundary_edge_count << " boundary edges, "
-			<< invalid << " invalid." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] OperatorBoolean: " << BooleanTypeNameString(type)
+				<< " trim kept " << indices.size()
+				<< " triangles from " << open_label << ", "
+				<< result_boundary_edge_count << " boundary edges, "
+				<< invalid << " invalid." << std::endl;
+		}
 
 		return 0 == invalid;
 	}
@@ -2822,9 +3096,12 @@ namespace RGO
 				<< (missing - 10) << " more missing segments not shown." << std::endl;
 		}
 
-		std::cout << "[Info] BuildSeamEdgeFlags(" << label << "): " << seam_count
-			<< " seam edges (bit-exact, " << segment_pairs.size()
-			<< " unique segment pairs), total length " << seam_length << "." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] BuildSeamEdgeFlags(" << label << "): " << seam_count
+				<< " seam edges (bit-exact, " << segment_pairs.size()
+				<< " unique segment pairs), total length " << seam_length << "." << std::endl;
+		}
 
 		return 0 == missing;
 	}
@@ -2871,9 +3148,12 @@ namespace RGO
 				Eigen::Vector3f a(p[0], p[1], p[2]);
 
 				std::cout << std::setprecision(10);
-				std::cout << "[Debug] SeamVertex(" << label << ") ("
-					<< a.x() << ", " << a.y() << ", " << a.z()
-					<< ") seam degree " << degree << ", incident edges:" << std::endl;
+				if (Log::Diag())
+				{
+					std::cout << "[Debug] SeamVertex(" << label << ") ("
+						<< a.x() << ", " << a.y() << ", " << a.z()
+						<< ") seam degree " << degree << ", incident edges:" << std::endl;
+				}
 
 				for (auto voh_it = mesh->cvoh_iter(vh); voh_it.is_valid(); ++voh_it)
 				{
@@ -2905,18 +3185,21 @@ namespace RGO
 						break;
 					}
 
-					std::cout << "[Debug]   to (" << b.x() << ", " << b.y() << ", " << b.z()
-						<< ") len " << (b - a).norm()
-						<< (is_seam ? " SEAM" : " ----");
-					if (match >= 0)
+					if (Log::Diag())
 					{
-						std::cout << " runs along segment " << match
-							<< " (faceA " << segments[match].face_a
-							<< ", faceB " << segments[match].face_b
-							<< ", len " << (segments[match].p0 - segments[match].p1).norm()
-							<< ") dists " << dist_a << " / " << dist_m << " / " << dist_b;
+						std::cout << "[Debug]   to (" << b.x() << ", " << b.y() << ", " << b.z()
+							<< ") len " << (b - a).norm()
+							<< (is_seam ? " SEAM" : " ----");
+						if (match >= 0)
+						{
+							std::cout << " runs along segment " << match
+								<< " (faceA " << segments[match].face_a
+								<< ", faceB " << segments[match].face_b
+								<< ", len " << (segments[match].p0 - segments[match].p1).norm()
+								<< ") dists " << dist_a << " / " << dist_m << " / " << dist_b;
+						}
+						std::cout << std::endl;
 					}
-					std::cout << std::endl;
 				}
 				std::cout << std::setprecision(6);
 			};
@@ -2981,8 +3264,11 @@ namespace RGO
 
 		if (0 == failures)
 		{
-			std::cout << "[Info] SeamIntegrity(" << label << "): seam is closed and complete"
-				<< " (length " << seam_length << " vs expected " << expected << ")." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] SeamIntegrity(" << label << "): seam is closed and complete"
+					<< " (length " << seam_length << " vs expected " << expected << ")." << std::endl;
+			}
 			return true;
 		}
 
@@ -3036,8 +3322,11 @@ namespace RGO
 
 		data.patch_side.assign(data.patch_count, FaceSide::Unknown);
 
-		std::cout << "[Info] BuildFacePatches(" << label << "): " << data.patch_count
-			<< " patches." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] BuildFacePatches(" << label << "): " << data.patch_count
+				<< " patches." << std::endl;
+		}
 		return data.patch_count > 0;
 	}
 
@@ -3116,9 +3405,12 @@ namespace RGO
 			}
 		}
 
-		std::cout << "[Info] ClassifyPatches(" << label << "): " << inside << " inside, "
-			<< outside << " outside, " << on_same << " on-surface-same, "
-			<< on_opposite << " on-surface-opposite patches." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] ClassifyPatches(" << label << "): " << inside << " inside, "
+				<< outside << " outside, " << on_same << " on-surface-same, "
+				<< on_opposite << " on-surface-opposite patches." << std::endl;
+		}
 		return true;
 	}
 
@@ -3295,8 +3587,11 @@ namespace RGO
 
 		if (0 == failures)
 		{
-			std::cout << "[Info] PatchAdjacency(" << label << "): every seam edge separates"
-				<< " differently classified patches." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] PatchAdjacency(" << label << "): every seam edge separates"
+					<< " differently classified patches." << std::endl;
+			}
 			return true;
 		}
 
@@ -3351,14 +3646,20 @@ namespace RGO
 		{
 			if (p >= report_limit)
 			{
-				std::cout << "[Info] PatchStats(" << label << "): "
-					<< (data.patch_count - report_limit) << " more patches not shown." << std::endl;
+				if (Log::AtInfo())
+				{
+					std::cout << "[Info] PatchStats(" << label << "): "
+						<< (data.patch_count - report_limit) << " more patches not shown." << std::endl;
+				}
 				break;
 			}
-			std::cout << "[Info] PatchStats(" << label << "): patch " << p
-				<< " has " << patch_faces[p] << " faces, touches "
-				<< patch_seam_edges[p] << " seam edge sides, side "
-				<< FaceSideNameString(data.patch_side[p]) << "." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] PatchStats(" << label << "): patch " << p
+					<< " has " << patch_faces[p] << " faces, touches "
+					<< patch_seam_edges[p] << " seam edge sides, side "
+					<< FaceSideNameString(data.patch_side[p]) << "." << std::endl;
+			}
 		}
 	}
 
@@ -3758,9 +4059,12 @@ namespace RGO
 			ClassifyFeatureVertex(vh, corner_cos_threshold);
 		}
 
-		std::cout << "[Info] DetectFeatureEdges: " << feature_edge_count
-			<< " feature edges at dihedral angle > " << feature_angle_degree
-			<< " degrees." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] DetectFeatureEdges: " << feature_edge_count
+				<< " feature edges at dihedral angle > " << feature_angle_degree
+				<< " degrees." << std::endl;
+		}
 	}
 
 	bool OperatorRemesh::ReprojectToReference(const Eigen::Vector3f& p, Eigen::Vector3f& out_point) const
@@ -4041,7 +4345,10 @@ namespace RGO
 
 	size_t OperatorRemesh::CollapseShortEdges()
 	{
-		std::cout << "[Debug] CollapseShortEdges BUILD MARKER 2026-06-08-A: reference deviation guard active." << std::endl;
+		if (Log::Diag())
+		{
+			std::cout << "[Debug] CollapseShortEdges BUILD MARKER 2026-06-08-A: reference deviation guard active." << std::endl;
+		}
 
 		size_t collapse_count = 0;
 
@@ -4172,13 +4479,16 @@ namespace RGO
 			++flip_count;
 		}
 
-		std::cout << "[Info] FlipDiag: considered " << considered
-			<< ", rejected feature " << reject_feature
-			<< ", boundary " << reject_boundary
-			<< ", flip_ok " << reject_flip_ok
-			<< ", angle " << reject_angle
-			<< ", orientation " << reject_orientation
-			<< ", flipped " << flip_count << "." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] FlipDiag: considered " << considered
+				<< ", rejected feature " << reject_feature
+				<< ", boundary " << reject_boundary
+				<< ", flip_ok " << reject_flip_ok
+				<< ", angle " << reject_angle
+				<< ", orientation " << reject_orientation
+				<< ", flipped " << flip_count << "." << std::endl;
+		}
 
 		return flip_count;
 	}
@@ -4216,10 +4526,13 @@ namespace RGO
 			{
 				if (watch)
 				{
-					std::cout << "[Debug] RelaxGuard REJECT at (" << old_pos.x() << ", "
-						<< old_pos.y() << ", " << old_pos.z() << ") -> (" << new_pos.x()
-						<< ", " << new_pos.y() << ", " << new_pos.z()
-						<< "): own-ring face would flip." << std::endl;
+					if (Log::Diag())
+					{
+						std::cout << "[Debug] RelaxGuard REJECT at (" << old_pos.x() << ", "
+							<< old_pos.y() << ", " << old_pos.z() << ") -> (" << new_pos.x()
+							<< ", " << new_pos.y() << ", " << new_pos.z()
+							<< "): own-ring face would flip." << std::endl;
+					}
 				}
 				return false;
 			}
@@ -4232,10 +4545,13 @@ namespace RGO
 
 		if (watch)
 		{
-			std::cout << "[Debug] RelaxGuard PASS at (" << old_pos.x() << ", "
-				<< old_pos.y() << ", " << old_pos.z() << ") -> (" << new_pos.x()
-				<< ", " << new_pos.y() << ", " << new_pos.z()
-				<< "): all own-ring faces valid. Fold must be on a NEIGHBOR's ring." << std::endl;
+			if (Log::Diag())
+			{
+				std::cout << "[Debug] RelaxGuard PASS at (" << old_pos.x() << ", "
+					<< old_pos.y() << ", " << old_pos.z() << ") -> (" << new_pos.x()
+					<< ", " << new_pos.y() << ", " << new_pos.z()
+					<< "): all own-ring faces valid. Fold must be on a NEIGHBOR's ring." << std::endl;
+			}
 		}
 
 		return true;
@@ -4432,9 +4748,12 @@ namespace RGO
 		size_t total = non_manifold_edges + non_manifold_vertices;
 		if (0 == total)
 		{
-			std::cout << "[Info] Manifold(" << stage_label << "): clean ("
-				<< meshTarget->n_vertices() << " vertices, "
-				<< meshTarget->n_faces() << " faces)." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] Manifold(" << stage_label << "): clean ("
+					<< meshTarget->n_vertices() << " vertices, "
+					<< meshTarget->n_faces() << " faces)." << std::endl;
+			}
 		}
 		else
 		{
@@ -4521,9 +4840,12 @@ namespace RGO
 
 		if (0 == misclassified)
 		{
-			std::cout << "[Info] FeatureParity(" << stage_label << "): intact ("
-				<< feature_edges << " feature edges, " << curve_points
-				<< " through-points, " << corners << " corners, all consistent)." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] FeatureParity(" << stage_label << "): intact ("
+					<< feature_edges << " feature edges, " << curve_points
+					<< " through-points, " << corners << " corners, all consistent)." << std::endl;
+			}
 		}
 		else
 		{
@@ -4649,8 +4971,11 @@ namespace RGO
 
 		if (0 == flipped_edges)
 		{
-			std::cout << "[Info] FlippedFaces(" << stage_label << "): none ("
-				<< ridge_skipped << " valid sharp ridges skipped)." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] FlippedFaces(" << stage_label << "): none ("
+					<< ridge_skipped << " valid sharp ridges skipped)." << std::endl;
+			}
 		}
 		else
 		{
@@ -4680,8 +5005,11 @@ namespace RGO
 		}
 		else
 		{
-			std::cout << "[Info] Boundary(" << stage_label << "): " << boundary
-				<< " edges (preserved)." << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] Boundary(" << stage_label << "): " << boundary
+					<< " edges (preserved)." << std::endl;
+			}
 		}
 
 		bool ok = (0 == nm) && (0 == parity) && (0 == flipped) && boundary_ok;
@@ -4771,12 +5099,15 @@ namespace RGO
 			}
 		}
 
-		std::cout << "[Info] FeatureOnlyFaces(" << stage_label << "): "
-			<< feature_only_faces << " of " << total_faces
-			<< " faces have all 3 vertices on features, "
-			<< two_feature_faces << " have exactly 2. Worst aspect ratio "
-			<< worst_aspect << " near (" << worst_centroid.x() << ", "
-			<< worst_centroid.y() << ", " << worst_centroid.z() << ")." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] FeatureOnlyFaces(" << stage_label << "): "
+				<< feature_only_faces << " of " << total_faces
+				<< " faces have all 3 vertices on features, "
+				<< two_feature_faces << " have exactly 2. Worst aspect ratio "
+				<< worst_aspect << " near (" << worst_centroid.x() << ", "
+				<< worst_centroid.y() << ", " << worst_centroid.z() << ")." << std::endl;
+		}
 	}
 
 	bool OperatorRemesh::ClosestPointOnReference(const Eigen::Vector3f& p, Eigen::Vector3f& out_point) const
@@ -4851,10 +5182,13 @@ namespace RGO
 
 		float mean_dev = (counted > 0) ? static_cast<float>(sum_dev / counted) : 0.0f;
 
-		std::cout << "[Info] SurfaceDeviation(" << stage_label << "): max "
-			<< max_dev << " near (" << worst_pos.x() << ", " << worst_pos.y()
-			<< ", " << worst_pos.z() << "), mean " << mean_dev
-			<< " over " << counted << " vertices." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] SurfaceDeviation(" << stage_label << "): max "
+				<< max_dev << " near (" << worst_pos.x() << ", " << worst_pos.y()
+				<< ", " << worst_pos.z() << "), mean " << mean_dev
+				<< " over " << counted << " vertices." << std::endl;
+		}
 	}
 
 	float OperatorRemesh::MinAngleOfTwoTriangles(
@@ -5093,19 +5427,28 @@ namespace RGO
 		// Baseline: the invariants must already hold on the input before any
 		// edit. If Pass 0 detection itself produced odd parity, the problem is
 		// in detection, not in the operators.
-		std::cout << "[Info] OperatorRemesh: --- stage Pass0 (detection) ---" << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] OperatorRemesh: --- stage Pass0 (detection) ---" << std::endl;
+		}
 		ValidateStage("Pass0", input_boundary_count);
 		DiagnoseFeatureOnlyFaces("Pass0");
 		DiagnoseSurfaceDeviation("Pass0");
 		bool all_ok = true;
 		for (int iter = 0; iter < iterations; ++iter)
 		{
-			std::cout << "[Info] OperatorRemesh: ===== iteration " << iter << " =====" << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] OperatorRemesh: ===== iteration " << iter << " =====" << std::endl;
+			}
 			if (passes.split)
 			{
 				size_t s = SplitLongEdges();
 				total_split_count += s;
-				std::cout << "[Info] OperatorRemesh iter " << iter << ": " << s << " splits." << std::endl;
+				if (Log::AtInfo())
+				{
+					std::cout << "[Info] OperatorRemesh iter " << iter << ": " << s << " splits." << std::endl;
+				}
 				if (false == ValidateStage("split", input_boundary_count)) all_ok = false;
 				DiagnoseSurfaceDeviation("split");
 			}
@@ -5113,7 +5456,10 @@ namespace RGO
 			{
 				size_t c = CollapseShortEdges();
 				total_collapse_count += c;
-				std::cout << "[Info] OperatorRemesh iter " << iter << ": " << c << " collapses." << std::endl;
+				if (Log::AtInfo())
+				{
+					std::cout << "[Info] OperatorRemesh iter " << iter << ": " << c << " collapses." << std::endl;
+				}
 				if (false == ValidateStage("collapse", input_boundary_count)) all_ok = false;
 				DiagnoseSurfaceDeviation("collapse");
 			}
@@ -5121,7 +5467,10 @@ namespace RGO
 			{
 				size_t f = FlipToImproveValence();
 				total_flip_count += f;
-				std::cout << "[Info] OperatorRemesh iter " << iter << ": " << f << " flips." << std::endl;
+				if (Log::AtInfo())
+				{
+					std::cout << "[Info] OperatorRemesh iter " << iter << ": " << f << " flips." << std::endl;
+				}
 				if (false == ValidateStage("flip", input_boundary_count)) all_ok = false;
 				DiagnoseSurfaceDeviation("flip");
 			}
@@ -5130,7 +5479,10 @@ namespace RGO
 				meshTarget->update_face_normals();
 				meshTarget->update_vertex_normals();
 				TangentialRelaxation();
-				std::cout << "[Info] OperatorRemesh iter " << iter << ": relaxation done." << std::endl;
+				if (Log::AtInfo())
+				{
+					std::cout << "[Info] OperatorRemesh iter " << iter << ": relaxation done." << std::endl;
+				}
 				if (false == ValidateStage("relax", input_boundary_count)) all_ok = false;
 				DiagnoseSurfaceDeviation("relax");
 			}
@@ -5141,10 +5493,13 @@ namespace RGO
 		std::vector<Eigen::Vector3i> indices;
 		ExtractMeshSoup(meshTarget, points, indices);
 		bool soup_ok = ValidateTriangleSoup(points, indices, "remesh", 100.0f * EPSILON);
-		std::cout << "[Info] OperatorRemesh: " << total_split_count << " splits, "
-			<< total_collapse_count << " collapses, " << total_flip_count
-			<< " flips total over " << iterations << " iterations, "
-			<< indices.size() << " result triangles." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] OperatorRemesh: " << total_split_count << " splits, "
+				<< total_collapse_count << " collapses, " << total_flip_count
+				<< " flips total over " << iterations << " iterations, "
+				<< indices.size() << " result triangles." << std::endl;
+		}
 		return soup_ok && all_ok;
 	}
 
@@ -5203,8 +5558,11 @@ namespace RGO
 				return false;
 			}
 
-			std::cout << "[Info] Pipeline: --- stage " << i << " ("
-				<< stages[i].label << ") ---" << std::endl;
+			if (Log::AtInfo())
+			{
+				std::cout << "[Info] Pipeline: --- stage " << i << " ("
+					<< stages[i].label << ") ---" << std::endl;
+			}
 
 			if (false == stages[i].op->Execute())
 			{
@@ -5217,8 +5575,11 @@ namespace RGO
 			}
 		}
 
-		std::cout << "[Info] Pipeline: all " << stages.size()
-			<< " stages succeeded." << std::endl;
+		if (Log::AtInfo())
+		{
+			std::cout << "[Info] Pipeline: all " << stages.size()
+				<< " stages succeeded." << std::endl;
+		}
 		return true;
 	}
 }

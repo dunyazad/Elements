@@ -216,7 +216,19 @@ namespace RGO
 		void EmitCurveSegment(
 			const Eigen::Vector3f& p0,
 			const Eigen::Vector3f& p1,
-			int face_index);
+			int face_index,
+			bool project_p0,
+			bool project_p1);
+
+		bool FaceVerticesSafe(
+			OpenMesh::FaceHandle f,
+			Eigen::Vector3f& a,
+			Eigen::Vector3f& b,
+			Eigen::Vector3f& c) const;
+
+		Eigen::Vector3f ProjectToFacePlane(
+			OpenMesh::FaceHandle f,
+			const Eigen::Vector3f& p) const;
 
 		Mesh* meshA = nullptr;
 		Mesh* meshB = nullptr;
@@ -264,7 +276,57 @@ namespace RGO
 		// (nothing nearby).
 		void DumpEndpointNeighborhood(const Eigen::Vector3f& p, const char* tag) const;
 
+		bool FindFacePathBFS(
+			OpenMesh::FaceHandle fa,
+			OpenMesh::FaceHandle fb,
+			std::vector<OpenMesh::FaceHandle>& out_path) const;
+
+		bool CrossingOnSharedEdge(
+			OpenMesh::HalfedgeHandle shared_he,
+			const Eigen::Vector3f& p_from,
+			const Eigen::Vector3f& p_to,
+			Eigen::Vector3f& out_point) const;
+
 		std::vector<std::pair<int, int>> coplanar_face_pairs;
+
+		// One crossing per (mesh edge, quantized position on edge). Keying
+		// on the edge index alone forced a genuine U-turn crossing of the
+		// same edge at a different spot to collapse onto the first one,
+		// which produced zero-area round-trip segments and open chains.
+		// The position slot keeps distinct crossings distinct while still
+		// unifying near-coincident ones (T-junctions).
+		struct EdgeCrossingKey
+		{
+			int edge_idx;
+			int slot;
+		};
+		struct EdgeCrossingKeyHash
+		{
+			size_t operator()(const EdgeCrossingKey& k) const
+			{
+				return static_cast<size_t>(static_cast<unsigned int>(k.edge_idx)) * 73856093ull
+					^ static_cast<size_t>(static_cast<unsigned int>(k.slot)) * 19349663ull;
+			}
+		};
+		struct EdgeCrossingKeyEqual
+		{
+			bool operator()(const EdgeCrossingKey& a, const EdgeCrossingKey& b) const
+			{
+				return a.edge_idx == b.edge_idx && a.slot == b.slot;
+			}
+		};
+
+		// One crossing list per mesh edge. A new crossing reuses an existing
+		// one on the same edge when it lies within 2 * EPSILON of it (a
+		// T-junction: the curve re-enters the edge at essentially the same
+		// spot, and the split must be identical on both incident faces).
+		// Otherwise it is added as a distinct crossing (a U-turn: the curve
+		// crosses the same edge at a clearly different spot, and the two
+		// crossings must stay separate or they collapse into a zero-area
+		// round trip). Direct distance comparison has no quantization-slot
+		// boundary, so the same physical crossing is treated identically no
+		// matter which curve span produced it.
+		mutable robin_hood::unordered_map<int, std::vector<Eigen::Vector3f>> edge_crossing_cache;
 	};
 
 	class OperatorCoRefine : public Operator

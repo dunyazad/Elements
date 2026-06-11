@@ -50,6 +50,28 @@ namespace RGO
 {
 	const float EPSILON = 1e-5f;
 
+	// Runtime log and diagnostic toggle. [Error] and [Warning] always
+	// print. [Info] prints only at Info level or above; [Debug]
+	// diagnostics print only when diagnostics is enabled. The pipeline
+	// sets these from the application before running an operation.
+	enum class LogLevel
+	{
+		Silent = 0,
+		Error = 1,
+		Info = 2,
+		Debug = 3
+	};
+
+	struct Log
+	{
+		static LogLevel level;
+		static bool diagnostics;
+
+		static bool AtInfo() { return static_cast<int>(level) >= static_cast<int>(LogLevel::Info); }
+		static bool AtDebug() { return static_cast<int>(level) >= static_cast<int>(LogLevel::Debug); }
+		static bool Diag() { return diagnostics; }
+	};
+
 	// Shared quantization for hashing and equality.
 	// Hash and Equal must agree on the same grid, otherwise the
 	// unordered_map invariant (equal keys imply equal hashes) breaks.
