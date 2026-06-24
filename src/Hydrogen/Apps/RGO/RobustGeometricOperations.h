@@ -276,6 +276,15 @@ namespace RGO
 		// (nothing nearby).
 		void DumpEndpointNeighborhood(const Eigen::Vector3f& p, const char* tag) const;
 
+		// Failure forensics for non-manifold T-junctions: scans canonical
+		// segment endpoints for pairs that are close but NOT merged (gap in
+		// (EPSILON, 25 * EPSILON]). For each pair it prints the gap and, for
+		// both points, the distance to the nearest corner of its owning face.
+		// A small nearest-corner distance means the pair straddles a mesh
+		// vertex (snap-to-vertex can reconcile it); a large one means a
+		// genuine mid-edge crossing pair (a different repair is needed).
+		void DiagnoseNonManifoldClusters() const;
+
 		bool FindFacePathBFS(
 			OpenMesh::FaceHandle fa,
 			OpenMesh::FaceHandle fb,
@@ -338,6 +347,15 @@ namespace RGO
 
 		size_t GetNewBoundaryEdgeCountA() const { return new_boundary_edge_count_a; }
 		size_t GetNewBoundaryEdgeCountB() const { return new_boundary_edge_count_b; }
+
+		// Graceful-degrade switch. When true, a small number of residual NEW
+		// boundary edges (from a few add_face rejections at near-tangent,
+		// ill-conditioned spots) no longer fails the whole co-refinement: the
+		// counts are still reported, but Execute() returns true so the caller
+		// can attempt seam reconstruction anyway. Off by default so the strict
+		// two-mesh boolean path keeps failing loudly. CDT failures
+		// (failed_faces) remain a hard failure regardless.
+		bool allow_residual_boundary = false;
 
 	protected:
 		struct FaceRefinementInput

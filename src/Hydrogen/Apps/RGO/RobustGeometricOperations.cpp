@@ -346,6 +346,11 @@ namespace RGO
 		// CDT-input safety, then trace the loop.
 		CanonicalizeSegments();
 
+		// Forensics: report near-but-unmerged endpoint pairs (the seeds of the
+		// non-manifold T-junctions seen at the rebuild) with their distance to
+		// the nearest mesh vertex, to decide the reconciliation strategy.
+		DiagnoseNonManifoldClusters();
+
 		BuildFaceLookupTables();
 
 		if (false == ValidateCanonicalization()) return false;
@@ -1957,6 +1962,71 @@ namespace RGO
 		std::cout << std::setprecision(6);
 	}
 
+	void OperatorIntersectionLoops::DiagnoseNonManifoldClusters() const
+	{
+		if (false == Log::Diag()) return;
+		if (nullptr == meshA) return;
+
+		// One incident face per endpoint instance is enough to measure how
+		// close the point sits to a real mesh vertex (a feature both incident
+		// faces share, hence a safe snap target).
+		struct EP { Eigen::Vector3f p; int face; };
+		std::vector<EP> eps;
+		eps.reserve(segments.size() * 2);
+		for (const auto& s : segments)
+		{
+			eps.push_back({ s.p0, s.face_a });
+			eps.push_back({ s.p1, s.face_a });
+		}
+
+		auto nearest_corner = [&](const EP& e) -> float
+		{
+			Eigen::Vector3f v0, v1, v2;
+			meshA->GetFaceVertices(meshA->face_handle(e.face), v0, v1, v2);
+			float d2 = std::min({ (e.p - v0).squaredNorm(),
+								  (e.p - v1).squaredNorm(),
+								  (e.p - v2).squaredNorm() });
+			return std::sqrt(d2);
+		};
+
+		// Pairs already merged sit below EPSILON; the dangerous band is just
+		// above it, up to a few EPSILON beyond the observed 1.17e-4 slivers.
+		const float lo2 = EPSILON * EPSILON;
+		const float hi = 25.0f * EPSILON;
+		const float hi2 = hi * hi;
+
+		// One report per physical cluster: the same near-pair recurs once per
+		// (segment, incident face) instance, so dedup on a coarse grid of the
+		// pair midpoint to keep distinct clusters across the whole curve.
+		robin_hood::unordered_map<Eigen::Vector3i, char, Int3Hash, Int3Equal> seen;
+		size_t reported = 0;
+		std::cout << std::setprecision(10);
+		for (size_t i = 0; i < eps.size() && reported < 120; ++i)
+		{
+			for (size_t j = i + 1; j < eps.size() && reported < 120; ++j)
+			{
+				float d2 = (eps[i].p - eps[j].p).squaredNorm();
+				if (d2 <= lo2 || d2 > hi2) continue;
+
+				Eigen::Vector3f mid = 0.5f * (eps[i].p + eps[j].p);
+				Eigen::Vector3i key = QuantizePoint(mid, 1e-3f);
+				if (false == seen.emplace(key, 1).second) continue;
+
+				float ci = nearest_corner(eps[i]);
+				float cj = nearest_corner(eps[j]);
+				++reported;
+				std::cout << "[Debug] NonManifoldCluster gap " << std::sqrt(d2)
+					<< " | A (" << eps[i].p.x() << ", " << eps[i].p.y() << ", " << eps[i].p.z()
+					<< ") faceA " << eps[i].face << " nearestVtx " << ci
+					<< " | B (" << eps[j].p.x() << ", " << eps[j].p.y() << ", " << eps[j].p.z()
+					<< ") faceA " << eps[j].face << " nearestVtx " << cj << std::endl;
+			}
+		}
+		std::cout << "[Debug] DiagnoseNonManifoldClusters: " << reported
+			<< " distinct near-but-unmerged clusters in (EPSILON, 25*EPSILON]." << std::endl;
+		std::cout << std::setprecision(6);
+	}
+
 	bool OperatorIntersectionLoops::FindFacePathBFS(
 		OpenMesh::FaceHandle fa,
 		OpenMesh::FaceHandle fb,
@@ -2241,8 +2311,13 @@ namespace RGO
 		}
 
 		// New boundary edges mean the co-refinement guarantee is broken on
-		// this data: report failure loudly instead of patching.
-		return 0 == failed_faces && 0 == out_new_boundary_edge_count;
+		// this data: report failure loudly instead of patching. In
+		// graceful-degrade mode a few residual edges (ill-conditioned,
+		// near-tangent spots) are tolerated so the caller can still attempt
+		// seam reconstruction; CDT failures always fail.
+		if (failed_faces > 0) return false;
+		if (out_new_boundary_edge_count > 0 && false == allow_residual_boundary) return false;
+		return true;
 	}
 
 	void OperatorCoRefine::GatherFaceInputs(
@@ -2528,30 +2603,45 @@ namespace RGO
 		out_points.clear();
 		out_indices.clear();
 
-		robin_hood::unordered_map<Eigen::Vector3f, int, Vector3fHash, Vector3fEqual> vertex_map;
-		vertex_map.reserve(soup.size());
+		// Spatial bucket grid keyed by EPSILON-sized cells. Two points are welded
+		// when they are closer than EPSILON, matching the coincidence test used in
+		// TriangulateFace / PropagateEdgePointsToNeighbors. A bare floor-grid
+		// (QuantizePoint) merges only within the SAME cell, so two reprojected
+		// copies of one point that straddle a cell boundary land in different
+		// cells and never merge, leaving a near-zero-area sliver that add_face
+		// later rejects as a degenerate face (the "slot boundary" failure that was
+		// already removed from the edge-crossing cache). Searching the 27
+		// neighbouring cells and merging on actual distance removes that boundary.
+		robin_hood::unordered_map<Eigen::Vector3i, std::vector<int>, Int3Hash, Int3Equal> grid;
+		const float merge2 = EPSILON * EPSILON;
+
+		auto intern = [&](const Eigen::Vector3f& p) -> int
+		{
+			Eigen::Vector3i cell = QuantizePoint(p);
+			for (int dx = -1; dx <= 1; ++dx)
+				for (int dy = -1; dy <= 1; ++dy)
+					for (int dz = -1; dz <= 1; ++dz)
+					{
+						auto it = grid.find(Eigen::Vector3i(cell.x() + dx, cell.y() + dy, cell.z() + dz));
+						if (it == grid.end()) continue;
+						for (int idx : it->second)
+						{
+							if ((out_points[idx] - p).squaredNorm() < merge2) return idx;
+						}
+					}
+			int ni = static_cast<int>(out_points.size());
+			out_points.push_back(p);
+			grid[cell].push_back(ni);
+			return ni;
+		};
 
 		for (size_t i = 0; i + 2 < soup.size(); i += 3)
 		{
-			Eigen::Vector3i tri;
-			for (int j = 0; j < 3; ++j)
-			{
-				const Eigen::Vector3f& p = soup[i + j];
-				auto it = vertex_map.find(p);
-				if (it != vertex_map.end())
-				{
-					tri[j] = it->second;
-				}
-				else
-				{
-					int ni = static_cast<int>(out_points.size());
-					out_points.push_back(p);
-					vertex_map[p] = ni;
-					tri[j] = ni;
-				}
-			}
+			Eigen::Vector3i tri(intern(soup[i + 0]), intern(soup[i + 1]), intern(soup[i + 2]));
 
-			// Collapsed after welding: drop
+			// Collapsed after welding (two corners merged): drop the sliver. With
+			// robust merging this now also drops the degenerate triangles that
+			// previously slipped through and were rejected by add_face.
 			if (tri[0] == tri[1] || tri[1] == tri[2] || tri[2] == tri[0]) continue;
 			out_indices.push_back(tri);
 		}

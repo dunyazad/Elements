@@ -481,6 +481,12 @@ public:
 			std::cout << "[Warning] SplitByMarginLine: close the margin loop first (press C)." << std::endl;
 			return;
 		}
+
+		// TEMP forensic: print near-coincident on-edge constraint points.
+		// TriangulateFace logs any pair < 10*EPSILON apart on a face edge at
+		// full precision (face index, both coords, gap), which pinpoints the
+		// T-junction that add_face rejects. Remove once the cause is fixed.
+		RGO::Log::diagnostics = true;
 		if (margin_curve.size() < 3 || margin_curve_faces.size() != margin_curve.size())
 		{
 			std::cout << "[Warning] SplitByMarginLine: need a built closed margin curve"
@@ -504,12 +510,25 @@ public:
 
 		// Stage 2: carve the curve into the mesh. After this, source has
 		// been rebuilt so the curve coincides with real mesh edges.
+		// Graceful degrade: tolerate a few residual boundary edges from
+		// ill-conditioned, near-tangent spots and let seam reconstruction
+		// decide success (it requires exactly 2 patches). CDT failures still
+		// abort.
 		RGO::OperatorCoRefine corefine(&source, &source, &loop_op);
+		corefine.allow_residual_boundary = true;
 		if (false == corefine.Execute())
 		{
-			std::cout << "[Warning] SplitByMarginLine: co-refinement left boundary"
-				<< " edges; the curve could not be carved cleanly. Adjust the points." << std::endl;
+			std::cout << "[Warning] SplitByMarginLine: co-refinement failed (CDT"
+				<< " error); the curve could not be carved. Adjust the points." << std::endl;
 			return;
+		}
+
+		size_t residual = corefine.GetNewBoundaryEdgeCountA() + corefine.GetNewBoundaryEdgeCountB();
+		if (residual > 0)
+		{
+			std::cout << "[Warning] SplitByMarginLine: co-refinement left " << residual
+				<< " residual boundary edge(s) at ill-conditioned spots; attempting"
+				<< " seam reconstruction anyway (degraded carve)." << std::endl;
 		}
 
 		// The spatial hash and any cached topology are stale after refine.
